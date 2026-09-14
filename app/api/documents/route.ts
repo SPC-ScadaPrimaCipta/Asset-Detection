@@ -4,7 +4,12 @@ import db from '@/lib/db';
 import { saveFile } from '@/lib/storage';
 import { validatePdfFile, getPdfPageCountFromBuffer } from '@/lib/pdf-render';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const projectId = request.nextUrl.searchParams.get('project_id');
+  if (projectId) {
+    const result = await db.query('SELECT * FROM documents WHERE project_id=$1 ORDER BY created_at DESC', [projectId]);
+    return NextResponse.json(result.rows);
+  }
   const result = await db.query('SELECT * FROM documents ORDER BY created_at DESC');
   return NextResponse.json(result.rows);
 }

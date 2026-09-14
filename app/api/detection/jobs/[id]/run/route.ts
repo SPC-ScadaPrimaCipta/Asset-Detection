@@ -9,10 +9,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (job.rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await db.query("UPDATE detection_jobs SET legend_id=$1 WHERE id=$2", [legend_id ?? null, id]);
   try {
-    const { detectionQueue } = await import("@/workers/detection-worker");
-    await detectionQueue.add("detection", { jobId: id, legendId: legend_id }, { jobId: id, removeOnComplete: true, removeOnFail: 100 });
+    const { Queue } = await import('bullmq');
+    const IORedis = (await import('ioredis')).default;
+    const conn = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null, enableOfflineQueue: false, lazyConnect: true });
+    await conn.connect().catch(() => {});
+    const q = new Queue('detection', { connection: conn });
+    await q.add('detection', { jobId: id, legendId: legend_id ?? null }, { jobId: id, removeOnComplete: true, removeOnFail: 100 });
+    conn.disconnect();
   } catch {
-    // Redis unavailable — mark queued; client can poll, worker picks up when available
     await db.query("UPDATE detection_jobs SET status='PENDING' WHERE id=$1", [id]);
   }
   return NextResponse.json({ id, status: "QUEUED" });

@@ -3,7 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
 
 export async function GET() {
-  const result = await db.query('SELECT * FROM legends ORDER BY created_at DESC');
+  const result = await db.query(
+    `SELECT l.*, COUNT(ls.id)::int AS symbol_count
+     FROM legends l
+     LEFT JOIN legend_symbols ls ON ls.legend_id = l.id
+     GROUP BY l.id
+     ORDER BY l.created_at DESC`
+  );
   return NextResponse.json(result.rows);
 }
 
