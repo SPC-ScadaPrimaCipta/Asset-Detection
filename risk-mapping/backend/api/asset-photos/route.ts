@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { saveAssetPhoto } from '@/lib/assetPhotoStorage';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { saveAssetPhoto } from '../../../lib/assetPhotoStorage';
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -166,3 +166,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+
+
+

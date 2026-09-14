@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { savePfdFile, getPdfPageCount, clampDefaultPage } from '@/lib/pfdStorage';
-import { handleRiskMappingApiError } from '@/lib/riskMappingApiError';
-import { getWorkerStatus } from '@/lib/jobQueue';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { savePfdFile, getPdfPageCount, clampDefaultPage } from '../../../lib/pfdStorage';
+import { handleRiskMappingApiError } from '../../../lib/riskMappingApiError';
+import { getWorkerStatus } from '../../../lib/jobQueue';
 
 // GET: list PFD documents (not deleted), optional ?asset_id= and ?search= filters
 export async function GET(request: NextRequest) {
@@ -280,3 +280,6 @@ export async function POST(request: NextRequest) {
         return handleRiskMappingApiError(error, 'PFD create error');
     }
 }
+
+
+

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getConnection, sql } from '@/lib/db';
-import { handleRiskMappingApiError } from '@/lib/riskMappingApiError';
+import { authOptions } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { handleRiskMappingApiError } from '../../../lib/riskMappingApiError';
 
 interface LayoutItem {
     map_id: number;
@@ -150,3 +150,6 @@ export async function DELETE(request: NextRequest) {
         return handleRiskMappingApiError(error, 'Label layout reset error');
     }
 }
+
+
+

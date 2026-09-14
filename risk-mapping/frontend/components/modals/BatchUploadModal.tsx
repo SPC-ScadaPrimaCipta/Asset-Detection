@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { UploadCloud, FileText, Trash2, Loader2, X, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
-import { pAlert } from '@/lib/riskMappingAlert';
+import { pAlert } from '../../../lib/riskMappingAlert';
 import ComponentTreeView from '@/components/risk-analysis/ComponentTreeView';
 import StorageDestinationBanner from '@/components/risk-mapping/StorageDestinationBanner';
 
@@ -454,3 +454,4 @@ export default function BatchUploadModal({ isOpen, onClose, onSuccess }: BatchUp
         </div>
     );
 }
+

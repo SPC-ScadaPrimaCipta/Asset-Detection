@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getTagAttributes, getSystemCardAttributes } from '@/lib/riskAttributes';
+import { authOptions } from '../../lib/adapters';
+import { getTagAttributes, getSystemCardAttributes } from '../../../lib/riskAttributes';
 
 // GET: the tag-attribute payload shown on hover/click for a tagged asset -
 // the 2 mandatory risk fields, plus whichever configurable attributes are
@@ -33,3 +33,4 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+

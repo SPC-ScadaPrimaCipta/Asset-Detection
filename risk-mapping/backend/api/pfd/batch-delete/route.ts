@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { handleRiskMappingApiError } from '@/lib/riskMappingApiError';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { handleRiskMappingApiError } from '../../../../lib/riskMappingApiError';
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -57,3 +57,7 @@ export async function POST(request: NextRequest) {
         return handleRiskMappingApiError(error, 'Batch delete error');
     }
 }
+
+
+
+

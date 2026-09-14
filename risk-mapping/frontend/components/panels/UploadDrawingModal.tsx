@@ -15,7 +15,7 @@ import {
 import Modal from '@/components/ui/Modal';
 import ComponentTreeView from '@/components/risk-analysis/ComponentTreeView';
 import StorageDestinationBanner from '@/components/risk-mapping/StorageDestinationBanner';
-import { pAlert } from '@/lib/riskMappingAlert';
+import { pAlert } from '../../../lib/riskMappingAlert';
 
 interface AssetData {
     asset_id: number;
@@ -490,3 +490,4 @@ export default function UploadDrawingModal({ isOpen, onClose, onSuccess }: Uploa
         </Modal>
     );
 }
+

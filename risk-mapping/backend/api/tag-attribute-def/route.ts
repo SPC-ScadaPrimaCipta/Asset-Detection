@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { handleRiskMappingApiError } from '@/lib/riskMappingApiError';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { handleRiskMappingApiError } from '../../../lib/riskMappingApiError';
 
 // GET: the attribute display config (all rows, enabled or not - the settings
 // screen needs to show disabled ones too so they can be re-enabled).
@@ -74,3 +74,6 @@ export async function PUT(request: NextRequest) {
         return handleRiskMappingApiError(error, 'Tag attribute def update error');
     }
 }
+
+
+

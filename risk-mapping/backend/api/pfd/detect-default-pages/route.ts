@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
 import { backfillDefaultPages } from '@/scripts/backfill-default-pages';
-import { handleRiskMappingApiError } from '@/lib/riskMappingApiError';
+import { handleRiskMappingApiError } from '../../../../lib/riskMappingApiError';
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -26,3 +26,6 @@ export async function POST(request: NextRequest) {
         return handleRiskMappingApiError(error, 'Failed to sync default pages');
     }
 }
+
+
+

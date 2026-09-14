@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { readPfdFile } from '@/lib/pfdStorage';
-import { searchPdfText } from '@/lib/pdfRender';
-import { getCandidateVariants } from '@/lib/pfdAutoTag';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { readPfdFile } from '../../../lib/pfdStorage';
+import { searchPdfText } from '../../../lib/pdfRender';
+import { getCandidateVariants } from '../../../lib/pfdAutoTag';
 
 // POST: scan a PFD version's PDF for asset tag text and suggest matches
 // (editor-only, review-before-write - nothing is inserted into
@@ -266,3 +266,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+
+

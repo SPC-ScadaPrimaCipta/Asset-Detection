@@ -1,4 +1,4 @@
-import { getConnection, sql } from '@/lib/db';
+import { getConnection, sql } from './adapters';
 
 export interface TagAttributeValue {
     key: string;
@@ -411,3 +411,4 @@ export async function getSystemCardAttributes(assetId: number, rbimId: number, p
         attributes: updatedAttributes,
     };
 }
+

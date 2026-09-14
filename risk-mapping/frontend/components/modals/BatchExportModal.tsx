@@ -23,7 +23,7 @@ import {
     RotateCcw,
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
-import { pAlert } from '@/lib/riskMappingAlert';
+import { pAlert } from '../../../lib/riskMappingAlert';
 
 export interface BatchExportItemData {
     pfd_id: number;
@@ -930,3 +930,4 @@ export default function BatchExportModal({
         </Modal>
     );
 }
+

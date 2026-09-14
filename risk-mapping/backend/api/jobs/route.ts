@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getConnection } from '@/lib/db';
-import { getRecentJobs, getWorkerStatus } from '@/lib/jobQueue';
+import { authOptions } from '../../lib/adapters';
+import { getConnection } from '../../lib/adapters';
+import { getRecentJobs, getWorkerStatus } from '../../../lib/jobQueue';
 
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -30,3 +30,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+
+

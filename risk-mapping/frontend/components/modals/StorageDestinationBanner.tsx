@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Cloud, Database, HardDrive, Loader2 } from 'lucide-react';
-import { useStorageInfo, StorageBackendType } from '@/lib/hooks/useStorageInfo';
+import { useStorageInfo, StorageBackendType } from '../../../lib/hooks/useStorageInfo';
 
 export interface StorageDestinationBannerProps {
     compact?: boolean;
@@ -81,3 +81,4 @@ export default function StorageDestinationBanner({ compact = false, className = 
         </div>
     );
 }
+

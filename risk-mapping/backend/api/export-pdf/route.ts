@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getConnection, sql } from '@/lib/db';
-import { readPfdFile } from '@/lib/pfdStorage';
-import { getTagAttributes, getSystemCardAttributes } from '@/lib/riskAttributes';
-import { buildAnnotatedPdf, ExportTag } from '@/lib/pdfExport';
+import { authOptions } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { readPfdFile } from '../../../lib/pfdStorage';
+import { getTagAttributes, getSystemCardAttributes } from '../../../lib/riskAttributes';
+import { buildAnnotatedPdf, ExportTag } from '../../../lib/pdfExport';
 
 // Export deliberately shows a fixed, compact set of values (no labels, no
 // asset name) rather than the full configurable attribute list from the
@@ -472,3 +472,5 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+

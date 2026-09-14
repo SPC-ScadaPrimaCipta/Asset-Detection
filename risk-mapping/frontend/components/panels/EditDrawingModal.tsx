@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import ComponentTreeView from '@/components/risk-analysis/ComponentTreeView';
-import { pAlert } from '@/lib/riskMappingAlert';
+import { pAlert } from '../../../lib/riskMappingAlert';
 
 export interface EditDrawingTarget {
     pfd_id: number;
@@ -671,3 +671,4 @@ export default function EditDrawingModal({ isOpen, onClose, pfd, onSaved }: Edit
         </Modal>
     );
 }
+

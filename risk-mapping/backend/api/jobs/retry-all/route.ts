@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection } from '@/lib/db';
-import { retryAllFailedJobs } from '@/lib/jobQueue';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection } from '../../lib/adapters';
+import { retryAllFailedJobs } from '../../../../lib/jobQueue';
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -30,3 +30,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+
+
+

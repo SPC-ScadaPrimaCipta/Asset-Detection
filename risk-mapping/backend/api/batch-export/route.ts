@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getConnection, sql } from '@/lib/db';
-import { readPfdFile } from '@/lib/pfdStorage';
-import { getTagAttributes, getSystemCardAttributes } from '@/lib/riskAttributes';
+import { authOptions } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { readPfdFile } from '../../../lib/pfdStorage';
+import { getTagAttributes, getSystemCardAttributes } from '../../../lib/riskAttributes';
 import {
     buildAnnotatedPdfDoc,
     generateSummaryCoverPage,
     ExportTag,
     ExportSummaryItem,
-} from '@/lib/pdfExport';
+} from '../../../lib/pdfExport';
 import { PDFDocument } from 'pdf-lib';
 
 interface BatchExportItem {
@@ -484,3 +484,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message || 'Batch export failed' }, { status: 500 });
     }
 }
+
+
+

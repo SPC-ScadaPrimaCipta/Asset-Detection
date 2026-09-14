@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-import { getConnection, sql } from '../lib/db';
+import { getConnection, sql } from '../../lib/db';
 import {
     claimNextJob,
     markJobDone,
@@ -15,9 +15,9 @@ import {
     updateWorkerHeartbeat,
     recordWorkerShutdown,
     BackgroundJob,
-} from '../lib/jobQueue';
-import { readPfdFile, storePdfPageText } from '../lib/pfdStorage';
-import { extractPdfTextByPage } from '../lib/pdfRender';
+} from '../../lib/jobQueue';
+import { readPfdFile, storePdfPageText } from '../../lib/pfdStorage';
+import { extractPdfTextByPage } from '../../lib/pdfRender';
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -219,3 +219,4 @@ runWorker().catch((err) => {
     console.error('[Worker] Fatal crash:', err);
     process.exit(1);
 });
+

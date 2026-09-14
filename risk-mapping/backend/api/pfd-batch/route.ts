@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { isRiskMappingEditor } from '@/lib/authz';
-import { getConnection, sql } from '@/lib/db';
-import { savePfdFile, getPdfPageCount } from '@/lib/pfdStorage';
-import { extractPdfTextByPage } from '@/lib/pdfRender';
-import { extractTitleBlock, buildPfdName } from '@/lib/pfdTitleBlock';
-import { enqueueJob } from '@/lib/jobQueue';
+import { authOptions } from '../../lib/adapters';
+import { isRiskMappingEditor } from '../../lib/adapters';
+import { getConnection, sql } from '../../lib/adapters';
+import { savePfdFile, getPdfPageCount } from '../../../lib/pfdStorage';
+import { extractPdfTextByPage } from '../../../lib/pdfRender';
+import { extractTitleBlock, buildPfdName } from '../../../lib/pfdTitleBlock';
+import { enqueueJob } from '../../../lib/jobQueue';
 
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -253,3 +253,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: error.message || 'Batch upload failed' }, { status: 500 });
     }
 }
+
+
+
+

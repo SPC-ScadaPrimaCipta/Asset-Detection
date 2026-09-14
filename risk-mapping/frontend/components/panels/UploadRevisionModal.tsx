@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import StorageDestinationBanner from '@/components/risk-mapping/StorageDestinationBanner';
-import { pAlert } from '@/lib/riskMappingAlert';
+import { pAlert } from '../../../lib/riskMappingAlert';
 
 export interface PfdTargetItem {
     pfd_id: number;
@@ -404,3 +404,4 @@ export default function UploadRevisionModal({
         </Modal>
     );
 }
+
