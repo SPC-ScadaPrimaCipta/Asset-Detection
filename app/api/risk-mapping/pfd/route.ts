@@ -171,8 +171,8 @@ export async function POST(request: NextRequest) {
         let titleBlockJson: string | null = null;
 
         try {
-            const { extractPdfTextByPage } = await import('@/lib/pdfRender');
-            const { extractMultiPageTitleBlocks, detectDrawingDefaultPage } = await import('@/lib/pfdTitleBlock');
+            const { extractPdfTextByPage } = await import('../../../lib/pdfRender');
+            const { extractMultiPageTitleBlocks, detectDrawingDefaultPage } = await import('../../../lib/pfdTitleBlock');
             const pageTexts = await extractPdfTextByPage(buffer);
             if (pageTexts.length > 0) {
                 const multiResult = extractMultiPageTitleBlocks(pageTexts);
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
         // Enqueue background text indexing job
         let jobId: string | null = null;
         try {
-            const { enqueueJob } = await import('@/lib/jobQueue');
+            const { enqueueJob } = await import('../../../lib/jobQueue');
             jobId = await enqueueJob('TEXT_INDEX', { version_id: versionId }, versionId, uploadedBy, pool);
         } catch (jobErr) {
             console.error('Failed to enqueue TEXT_INDEX job:', jobErr);

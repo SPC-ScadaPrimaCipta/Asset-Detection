@@ -410,7 +410,7 @@ export async function POST(request: NextRequest) {
 
         let cloudWebUrl = '';
         try {
-            const { getConfiguredBackend, putFile, getPresignedDownloadUrl } = await import('@/lib/storageAdapter');
+            const { getConfiguredBackend, putFile, getPresignedDownloadUrl } = await import('../../../lib/storageAdapter');
             const backend = getConfiguredBackend();
 
             if (backend === 'sharepoint') {

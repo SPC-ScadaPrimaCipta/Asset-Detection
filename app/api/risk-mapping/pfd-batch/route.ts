@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
             let detectedDefaultPage = 1;
 
             try {
-                const { extractMultiPageTitleBlocks, buildPfdName, detectDrawingDefaultPage } = await import('@/lib/pfdTitleBlock');
+                const { extractMultiPageTitleBlocks, buildPfdName, detectDrawingDefaultPage } = await import('../../../lib/pfdTitleBlock');
                 const pageTexts = await extractPdfTextByPage(buffer);
                 if (pageTexts.length > 0) {
                     const multiResult = extractMultiPageTitleBlocks(pageTexts);
