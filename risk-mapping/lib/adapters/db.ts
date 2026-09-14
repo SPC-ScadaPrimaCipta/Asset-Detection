@@ -12,16 +12,16 @@
 // 1. Install: npm install mssql
 // 2. Implement connection pool here:
 
-import ConnectionPool from 'mssql';
+import mssql from 'mssql';
 
-let pool: ConnectionPool.ConnectionPool | null = null;
+let pool: mssql.ConnectionPool | null = null;
 
-export async function getConnection(): Promise<ConnectionPool.ConnectionPool> {
+export async function getConnection(): Promise<mssql.ConnectionPool> {
     if (pool && pool.connected) {
         return pool;
     }
 
-    pool = new ConnectionPool({
+    pool = new mssql.ConnectionPool({
         server: process.env.DB_SERVER || 'localhost',
         database: process.env.DB_DATABASE || 'promia',
         authentication: {
@@ -43,6 +43,6 @@ export async function getConnection(): Promise<ConnectionPool.ConnectionPool> {
     return pool;
 }
 
-export const sql = ConnectionPool;
+export { mssql as sql };
 
 

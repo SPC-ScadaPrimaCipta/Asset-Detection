@@ -1,57 +1,45 @@
-/**
- * Storage Adapter
- *
- * Bridge to file storage (local, SharePoint, S3).
- * Implement these to connect Risk Mapping to your storage backend.
- */
+import { promises as fs } from 'fs';
+import path from 'path';
 
-// If Asset-Detection is within promia-web-sb project:
-// export * from '@/lib/storageAdapter';
+const storageRoot = process.env.PFD_STORAGE_PATH || './storage/pfd';
 
-// If Asset-Detection is standalone:
-// Implement storage methods:
+export async function saveFile(filePath: string, buffer: Buffer): Promise<void> {
+    const fullPath = path.join(storageRoot, filePath);
+    const dir = path.dirname(fullPath);
 
-export interface StorageBackendConfig {
-    type: 'local' | 'sharepoint' | 's3';
-    localPath?: string; // for local storage
-    s3Bucket?: string;
-    s3Region?: string;
-    sharepointSite?: string;
-    sharepointDrive?: string;
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(fullPath, buffer);
 }
 
-export async function saveFile(
-    path: string,
-    buffer: Buffer,
-    options?: any
-): Promise<void> {
-    // TODO: Implement file save
-    // Handle: local path, S3 path (s3:bucket/key), SharePoint path (sp:site/drive/path)
-    throw new Error('saveFile not implemented. Configure your storage adapter.');
+export async function readFile(filePath: string): Promise<Buffer> {
+    const fullPath = path.join(storageRoot, filePath);
+    return await fs.readFile(fullPath);
 }
 
-export async function readFile(path: string): Promise<Buffer> {
-    // TODO: Implement file read
-    throw new Error('readFile not implemented. Configure your storage adapter.');
+export async function deleteFile(filePath: string): Promise<void> {
+    const fullPath = path.join(storageRoot, filePath);
+    try {
+        await fs.unlink(fullPath);
+    } catch (err: any) {
+        if (err.code !== 'ENOENT') throw err;
+    }
 }
 
-export async function deleteFile(path: string): Promise<void> {
-    // TODO: Implement file delete
-    throw new Error('deleteFile not implemented. Configure your storage adapter.');
+export async function fileExists(filePath: string): Promise<boolean> {
+    const fullPath = path.join(storageRoot, filePath);
+    try {
+        await fs.access(fullPath);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
-export async function fileExists(path: string): Promise<boolean> {
-    // TODO: Implement file exists check
-    throw new Error('fileExists not implemented. Configure your storage adapter.');
-}
-
-export function getStorageBackend(path: string): 'local' | 's3' | 'sharepoint' {
-    if (path.startsWith('s3:')) return 's3';
-    if (path.startsWith('sp:')) return 'sharepoint';
+export function getStorageBackend(filePath: string): 'local' | 's3' | 'sharepoint' {
+    if (filePath.startsWith('s3:')) return 's3';
+    if (filePath.startsWith('sp:')) return 'sharepoint';
     return 'local';
 }
 
-export function normalizeStoragePath(path: string): string {
-    // Normalize path for storage backend
-    return path;
-}
+export function normalizeStoragePath(filePath: string): string {
+    return filePath.replace(/\\/g, '/');

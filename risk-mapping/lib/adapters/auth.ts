@@ -6,28 +6,32 @@
  */
 
 import type { Session } from 'next-auth';
+import { getServerSession as nextGetServerSession } from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
 
-// If Asset-Detection is within promia-web-sb project:
-// export { getServerSession } from 'next-auth';
-// export { default as authOptions } from './adapters';
-// export { isRiskMappingEditor } from './adapters';
-
-// If Asset-Detection is standalone:
-// Import from your NextAuth setup:
-
-export async function getServerSession(options?: any): Promise<Session | null> {
-    // TODO: Implement your NextAuth session getter
-    // Example:
-    // import { getServerSession as nextGetServerSession } from 'next-auth';
-    // import { authOptions } from '@/path/to/auth';
-    // return await nextGetServerSession(authOptions);
-    throw new Error('getServerSession not implemented. Configure your auth adapter.');
-}
-
-export const authOptions = {
-    // TODO: Configure your NextAuth options
-    // See: https://next-auth.js.org/configuration/options
+export const authOptions: NextAuthOptions = {
+    providers: [],
+    secret: process.env.NEXTAUTH_SECRET,
+    session: { strategy: 'jwt' },
+    callbacks: {
+        async jwt({ token, user }) {
+            if (user) {
+                token.group = (user as any).group;
+            }
+            return token;
+        },
+        async session({ session, token }) {
+            if (session.user) {
+                (session.user as any).group = token.group;
+            }
+            return session;
+        },
+    },
 };
+
+export async function getServerSession(): Promise<Session | null> {
+    return await nextGetServerSession(authOptions);
+}
 
 export function isRiskMappingEditor(session: Session | null): boolean {
     // Check if user belongs to Risk Mapping editor group
