@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   // Return as file download
   const filename = `Asset-Register-${proj.name}-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  return new NextResponse(buf, {
+  return new NextResponse(buf as any, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,

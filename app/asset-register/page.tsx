@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-
 interface Asset {
   id: string;
   asset_tag: string | null;
@@ -19,7 +18,7 @@ interface Asset {
   created_at: string;
 }
 
-export default function AssetRegisterPage() {
+function AssetRegisterContent() {
   const searchParams = useSearchParams();
   const initProjectId = searchParams.get('project_id') ?? '';
 
@@ -140,5 +139,13 @@ export default function AssetRegisterPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AssetRegisterPage() {
+  return (
+    <Suspense>
+      <AssetRegisterContent />
+    </Suspense>
   );
 }

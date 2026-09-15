@@ -5,7 +5,9 @@ import { LegendSymbolSchema } from '@/lib/legend-schemas';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const result = await db.query('SELECT * FROM legend_symbols WHERE legend_id = $1 AND status != \'REJECTED\' ORDER BY asset_type', [id]);
+  const includeDraft = request.nextUrl.searchParams.get("include_draft") === "true";
+  const cond = includeDraft ? "" : "AND status != 'REJECTED'";
+  const result = await db.query(`SELECT * FROM legend_symbols WHERE legend_id = $1 ${cond} ORDER BY asset_type`, [id]);
   return NextResponse.json(result.rows);
 }
 

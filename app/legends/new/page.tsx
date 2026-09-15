@@ -78,7 +78,7 @@ export default function NewLegendPage() {
         throw new Error(body.error ?? `Upload failed (${res.status})`);
       }
       const data = await res.json();
-      router.push(`/legends/${data.id}`);
+      router.push(`/legends/${data.id}/review`);
     } catch (err: any) {
       setUploadError(err.message ?? 'Upload failed');
     } finally {

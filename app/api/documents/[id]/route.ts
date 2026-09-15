@@ -12,8 +12,9 @@ export async function DELETE(
   if (!doc.rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Delete from storage
   try {
-    const storagePath = process.env.STORAGE_PATH || join(process.cwd(), 'storage');
-    await unlink(join(storagePath, doc.rows[0].file_path));
+    const storagePath = join(process.env.STORAGE_PATH ?? /*turbopackIgnore: true*/ process.cwd(), 'storage');
+    const filePath = join(storagePath, doc.rows[0].file_path);
+    await unlink(/*turbopackIgnore: true*/ filePath);
   } catch { /* file may already be gone */ }
   // Cascade deletes detection_jobs, detections, document_pages via FK
   await db.query('DELETE FROM documents WHERE id=$1', [id]);
