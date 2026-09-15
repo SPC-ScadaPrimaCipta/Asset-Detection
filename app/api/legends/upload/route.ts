@@ -46,31 +46,85 @@ export async function POST(request: NextRequest) {
 
 async function parseLegendPdf(buf: Buffer): Promise<any[]> {
   const b64 = buf.toString("base64");
-  const prompt = `You are a P&ID legend parser. Extract every symbol definition visible in this legend PDF.
+  const prompt = `You are an expert P&ID legend analyzer. Extract ALL symbol definitions from this P&ID legend document.
 
-Return ONLY valid JSON (no markdown): { "symbols": [ { "assetType": string, "symbolName": string|null, "tagPattern": string|null, "description": string|null, "aliases": string[] }] }
+For each symbol, extract:
+1. Asset Type (canonical class: Pump, Valve, Vessel, Tank, Compressor, HX, Filter, Motor, Fan, Instrument, PSV, etc.)
+2. Symbol Name (descriptive name visible in legend, e.g., "Pump Symbol", "Gate Valve")
+3. Tag Pattern (if visible, like "P-###", "V-###", "E-##", else null)
+4. Description (brief description of symbol purpose/meaning, or null)
+5. Aliases (alternative names or abbreviations for the symbol)
 
-Rules:
-- assetType is canonical equipment class (Pump, Valve, Vessel, etc.)
-- tagPattern like "P-###" if visible, else null
-- Do not invent symbols.`;
+CRITICAL RULES:
+- Examine the entire legend carefully for all symbols shown
+- Extract canonical asset types ONLY (do NOT invent)
+- Return null for values not visible in the legend
+- Do NOT fabricate symbols, tags, or descriptions
+- Each symbol should have at least asset_type and symbol_name
+- Return structured JSON only, no markdown or explanations
+
+Return ONLY valid JSON in this exact format:
+{
+  "symbols": [
+    {
+      "assetType": "string",
+      "symbolName": "string or null",
+      "tagPattern": "string or null",
+      "description": "string or null",
+      "aliases": ["string"]
+    }
+  ]
+}`;
 
   try {
     const model = getGeminiModel();
+    console.log("[parseLegendPdf] Analyzing legend PDF, size:", buf.length, "bytes");
+    
     const r = await model.generateContent([
       { text: prompt },
       { inlineData: { mimeType: "application/pdf", data: b64 } },
     ]);
+    
     const text = r.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*"symbols"[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[parseLegendPdf] no JSON found:", text.slice(0, 300));
+    console.log("[parseLegendPdf] Gemini response length:", text.length);
+    
+    // Extract JSON: try code block first, then raw JSON
+    let json: any;
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (codeBlockMatch) {
+      json = JSON.parse(codeBlockMatch[1]);
+      console.log("[parseLegendPdf] Parsed from code block");
+    } else {
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      if (jsonStart === -1 || jsonEnd === -1) {
+        console.warn("[parseLegendPdf] No JSON found in response");
+        return [];
+      }
+      json = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+      console.log("[parseLegendPdf] Parsed from raw text");
+    }
+    
+    if (!json.symbols || !Array.isArray(json.symbols)) {
+      console.warn("[parseLegendPdf] Invalid structure, no symbols array");
       return [];
     }
-    const parsed = JSON.parse(jsonMatch[0]);
-    return Array.isArray(parsed.symbols) ? parsed.symbols : [];
+    
+    // Validate and normalize each symbol
+    const symbols = json.symbols
+      .filter((s: any) => s && s.assetType)
+      .map((s: any) => ({
+        assetType: String(s.assetType).trim(),
+        symbolName: s.symbolName ? String(s.symbolName).trim() : null,
+        tagPattern: s.tagPattern ? String(s.tagPattern).trim() : null,
+        description: s.description ? String(s.description).trim() : null,
+        aliases: Array.isArray(s.aliases) ? s.aliases.map((a: any) => String(a).trim()) : [],
+      }));
+    
+    console.log("[parseLegendPdf] Extracted", symbols.length, "valid symbols");
+    return symbols;
   } catch (e: any) {
-    console.warn("[parseLegendPdf] failed:", e.message);
+    console.error("[parseLegendPdf] Failed:", e.message);
     return [];
   }
 }
