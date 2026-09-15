@@ -16,4 +16,4 @@ if [ -f .env.local ]; then
 fi
 
 # Run worker (connects to Redis, listens for jobs)
-npx tsx workers/detection-worker.ts
+npm run worker

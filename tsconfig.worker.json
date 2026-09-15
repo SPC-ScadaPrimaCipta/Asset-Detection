@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "outDir": "./dist-worker",
+    "noEmit": false
+  },
+  "include": ["workers/**/*.ts", "lib/**/*.ts"]
+}

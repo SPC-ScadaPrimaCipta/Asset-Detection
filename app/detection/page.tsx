@@ -313,6 +313,7 @@ function JobProgress({ jobId, onComplete }: { jobId: string; onComplete: () => v
 // ─── PidViewer ───────────────────────────────────────────────────────────────
 
 function PidViewer({
+  documentId,
   detections,
   selectedId,
   onSelect,
@@ -320,6 +321,7 @@ function PidViewer({
   totalPages,
   onPageChange,
 }: {
+  documentId: string;
   detections: Detection[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -327,12 +329,24 @@ function PidViewer({
   totalPages: number;
   onPageChange: (p: number) => void;
 }) {
-  const GRID = 1000;
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // Natural image dimensions — used to map bbox coords (in px space) to display space
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+
+  const imgSrc = documentId ? `/api/documents/${documentId}/pages/${page}/image` : null;
+
+  // Reset image state on page or document change
+  useEffect(() => {
+    setImgNatural(null);
+    setImgLoading(!!documentId);
+    setImgError(false);
+  }, [documentId, page]);
 
   const visible = detections.filter(
     d => d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED'
@@ -346,6 +360,7 @@ function PidViewer({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-bbox]')) return; // let bbox clicks bubble
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -357,12 +372,37 @@ function PidViewer({
 
   const handleMouseUp = () => setDragging(false);
 
+  // Reset pan/zoom when page changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [page]);
+
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
         <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">P&ID Viewer</span>
         <div className="flex items-center gap-3">
           <span className="text-xs text-zinc-400">{visible.length} bbox</span>
+          {/* Zoom controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setZoom(z => Math.max(0.3, +(z - 0.2).toFixed(1)))}
+              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              title="Zoom out"
+            >−</button>
+            <span className="text-xs text-zinc-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(1)))}
+              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              title="Zoom in"
+            >+</button>
+            <button
+              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              title="Reset view"
+            >⊙</button>
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-1.5">
               <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40">◀</button>
@@ -374,56 +414,132 @@ function PidViewer({
       </div>
 
       {/* Viewer area */}
-      <div className="relative bg-zinc-50 dark:bg-zinc-800 overflow-hidden select-none" style={{ aspectRatio: '16/9', minHeight: 300 }}
-        onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
-        ref={viewerRef}>
-        {/* P&ID placeholder background */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center text-zinc-300 dark:text-zinc-600 select-none">
-            <svg className="w-20 h-20 mx-auto mb-2" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <p className="text-sm">P&ID document</p>
-            <p className="text-xs mt-1">Scroll to zoom, drag to pan</p>
-          </div>
-        </div>
-
-        {/* SVG overlay for bounding boxes */}
-        <svg
-          viewBox={`0 0 ${GRID} ${GRID}`}
-          className="absolute inset-0 w-full h-full"
-          style={{ aspectRatio: '1/1', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', cursor: dragging ? 'grabbing' : 'grab' }}
+      <div
+        className="relative bg-zinc-100 dark:bg-zinc-800 overflow-hidden select-none"
+        style={{ minHeight: 400 }}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        ref={viewerRef}
+      >
+        {/* Transformed inner container — zoom + pan applied here */}
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+            transformOrigin: 'top left',
+            cursor: dragging ? 'grabbing' : 'grab',
+          }}
         >
-          {visible.map(d => {
-            const x = d.bbox_x ?? 0;
-            const y = d.bbox_y ?? 0;
-            const w = d.bbox_w ?? 50;
-            const h = d.bbox_h ?? 50;
-            const selected = d.id === selectedId;
-            const color = d.review_status === 'APPROVED'
-              ? '#10b981'
-              : (d.confidence ?? 0) >= 0.95 ? '#3b82f6'
-              : (d.confidence ?? 0) >= 0.80 ? '#f59e0b'
-              : '#ef4444';
-            return (
-              <g key={d.id} onClick={() => onSelect(d.id)} className="cursor-pointer">
-                <rect
-                  x={x} y={y} width={w} height={h}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={selected ? 4 : 2}
-                  strokeDasharray={selected ? undefined : '6 3'}
-                  rx={3}
-                  opacity={selected ? 1 : 0.75}
-                />
-                <rect x={x} y={y - 22} width={Math.max(w, 80)} height={20} fill={color} rx={2} opacity={0.9} />
-                <text x={x + 4} y={y - 7} fill="white" fontSize={12} fontFamily="monospace">
-                  {(d.asset_tag ?? d.asset_type).slice(0, 14)}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+          {/* PDF page image */}
+          {imgSrc && (
+            <div className="relative inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgSrc}
+                alt={`P&ID page ${page}`}
+                onLoad={e => {
+                  const img = e.currentTarget;
+                  setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+                  setImgLoading(false);
+                  setImgError(false);
+                }}
+                onError={() => { setImgLoading(false); setImgError(true); }}
+                className="block max-w-none"
+                style={{ maxWidth: '100%', display: imgLoading ? 'none' : 'block' }}
+                draggable={false}
+              />
+
+              {/* SVG bbox overlay — positioned over image at exact natural pixel scale */}
+              {imgNatural && !imgError && (
+                <svg
+                  viewBox={`0 0 ${imgNatural.w} ${imgNatural.h}`}
+                  className="absolute inset-0 w-full h-full"
+                  style={{ overflow: 'visible', pointerEvents: 'none' }}
+                >
+                  {visible.map(d => {
+                    const x = d.bbox_x ?? 0;
+                    const y = d.bbox_y ?? 0;
+                    const w = d.bbox_w ?? 50;
+                    const h = d.bbox_h ?? 50;
+                    const selected = d.id === selectedId;
+                    const color = d.review_status === 'APPROVED'
+                      ? '#10b981'
+                      : (d.confidence ?? 0) >= 0.95 ? '#3b82f6'
+                      : (d.confidence ?? 0) >= 0.80 ? '#f59e0b'
+                      : '#ef4444';
+                    const labelW = Math.max(w, 90);
+                    const labelY = y > 24 ? y - 24 : y + h + 4;
+                    return (
+                      <g
+                        key={d.id}
+                        data-bbox="true"
+                        onClick={() => onSelect(d.id)}
+                        style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                      >
+                        {/* Invisible hit area */}
+                        <rect x={x} y={y} width={w} height={h} fill="transparent" />
+                        {/* Border */}
+                        <rect
+                          x={x} y={y} width={w} height={h}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={selected ? 3 : 2}
+                          strokeDasharray={selected ? undefined : '8 4'}
+                          rx={3}
+                          opacity={selected ? 1 : 0.8}
+                        />
+                        {/* Label pill */}
+                        <rect
+                          x={x} y={labelY}
+                          width={labelW} height={20}
+                          fill={color} rx={3}
+                          opacity={selected ? 1 : 0.85}
+                        />
+                        <text
+                          x={x + 5} y={labelY + 14}
+                          fill="white" fontSize={13}
+                          fontFamily="ui-monospace, monospace"
+                          fontWeight={selected ? 700 : 400}
+                        >
+                          {(d.asset_tag ?? d.asset_type).slice(0, 16)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
+            </div>
+          )}
+
+          {/* Loading state */}
+          {imgLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center text-zinc-400">
+                <svg className="w-8 h-8 mx-auto mb-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                <p className="text-xs">Rendering page {page}…</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error / no document state */}
+          {(imgError || !imgSrc) && !imgLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center text-zinc-300 dark:text-zinc-600 select-none">
+                <svg className="w-16 h-16 mx-auto mb-2" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-sm">{imgError ? 'Failed to load page' : 'P&ID document'}</p>
+                <p className="text-xs mt-1">{imgError ? 'Check server logs' : 'Run detection to see bounding boxes'}</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Legend */}
@@ -981,6 +1097,7 @@ function DetectionWorkspace() {
           {/* Left: Viewer */}
           <div className="flex-1 min-w-0 flex flex-col gap-4">
             <PidViewer
+              documentId={documentId}
               detections={pageDetections}
               selectedId={selectedId}
               onSelect={id => {

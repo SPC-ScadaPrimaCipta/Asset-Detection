@@ -17,4 +17,4 @@ if exist .env.local (
 )
 
 REM Run worker
-npx tsx workers/detection-worker.ts
+npm run worker

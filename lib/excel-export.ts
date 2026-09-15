@@ -12,6 +12,7 @@ export interface ExportAsset {
   unit: string | null;
   area: string | null;
   legend: string | null;
+  legendSymbol: string | null; // specific symbol name within the legend
   confidence: number | null;
   detectionStatus: string;
   reviewStatus: string;
@@ -124,7 +125,7 @@ export async function buildAssetRegisterWorkbook(
   ];
   ws5.getRow(1).font = { bold: true };
   ws5.views = [{ state: "frozen", ySplit: 1 }];
-  filtered.forEach((a) => ws5.addRow({ tag: a.assetTag ?? "", type: a.assetType, conf: a.confidence ?? "", sym: a.legend ?? "", ev: (a.evidence ?? []).join("; "), pid: a.pidNumber ?? "", pg: a.pidPage ?? "" }));
+  filtered.forEach((a) => ws5.addRow({ tag: a.assetTag ?? "", type: a.assetType, conf: a.confidence ?? "", sym: a.legendSymbol ?? a.legend ?? "", ev: (a.evidence ?? []).join("; "), pid: a.pidNumber ?? "", pg: a.pidPage ?? "" }));
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);

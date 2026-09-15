@@ -1,8 +1,15 @@
 import { writeFile, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, isAbsolute, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
-const STORAGE_PATH = join(process.env.STORAGE_PATH ?? /*turbopackIgnore: true*/ process.cwd(), 'storage');
+// If STORAGE_PATH is set in env, use it directly (already the full path).
+// If not set, default to <cwd>/storage.
+// Do NOT append 'storage' again — that causes double-nesting (storage/storage/).
+const STORAGE_PATH = process.env.STORAGE_PATH
+  ? (isAbsolute(process.env.STORAGE_PATH)
+      ? process.env.STORAGE_PATH
+      : resolve(process.cwd(), process.env.STORAGE_PATH))
+  : join(/*turbopackIgnore: true*/ process.cwd(), 'storage');
 
 if (!existsSync(/*turbopackIgnore: true*/ STORAGE_PATH)) {
   mkdirSync(/*turbopackIgnore: true*/ STORAGE_PATH, { recursive: true });
