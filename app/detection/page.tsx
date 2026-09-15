@@ -316,37 +316,75 @@ function PidViewer({
   detections,
   selectedId,
   onSelect,
+  page,
+  totalPages,
+  onPageChange,
 }: {
   detections: Detection[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
 }) {
-  // Bounding boxes are in 0–1000 normalized coords.
-  // Viewer is a fixed-size container; we scale boxes proportionally.
   const GRID = 1000;
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const viewerRef = useRef<HTMLDivElement>(null);
 
   const visible = detections.filter(
     d => d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED'
        && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
   );
 
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => Math.max(0.3, Math.min(5, prev + delta)));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!dragging) return;
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  const handleMouseUp = () => setDragging(false);
+
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
         <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">P&ID Viewer</span>
-        <span className="text-xs text-zinc-400">{visible.length} bounding box{visible.length !== 1 ? 'es' : ''}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-zinc-400">{visible.length} bbox</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40">◀</button>
+              <span className="text-xs text-zinc-500 w-10 text-center">{page}/{totalPages}</span>
+              <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40">▶</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Viewer area */}
-      <div className="relative bg-zinc-50 dark:bg-zinc-800" style={{ aspectRatio: '16/9', minHeight: 300 }}>
+      <div className="relative bg-zinc-50 dark:bg-zinc-800 overflow-hidden select-none" style={{ aspectRatio: '16/9', minHeight: 300 }}
+        onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+        ref={viewerRef}>
         {/* P&ID placeholder background */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center text-zinc-300 dark:text-zinc-600 select-none pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center text-zinc-300 dark:text-zinc-600 select-none">
             <svg className="w-20 h-20 mx-auto mb-2" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <p className="text-sm">P&ID document</p>
-            <p className="text-xs mt-1">Bounding boxes shown below</p>
+            <p className="text-xs mt-1">Scroll to zoom, drag to pan</p>
           </div>
         </div>
 
@@ -354,7 +392,7 @@ function PidViewer({
         <svg
           viewBox={`0 0 ${GRID} ${GRID}`}
           className="absolute inset-0 w-full h-full"
-          style={{ aspectRatio: '1/1' }}
+          style={{ aspectRatio: '1/1', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', cursor: dragging ? 'grabbing' : 'grab' }}
         >
           {visible.map(d => {
             const x = d.bbox_x ?? 0;
@@ -591,6 +629,8 @@ function DetectionsTable({
   const [status, setStatus] = useState('');
   const [conf, setConf] = useState('');
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState<'tag' | 'type' | 'page' | 'conf' | 'status'>('tag');
+  const [sortAsc, setSortAsc] = useState(true);
   const PAGE_SIZE = 15;
 
   const filtered = detections.filter(d => {
@@ -611,8 +651,30 @@ function DetectionsTable({
     return true;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const slice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sorted = [...filtered].sort((a, b) => {
+    let cmp = 0;
+    if (sortBy === 'tag') cmp = (a.asset_tag ?? '').localeCompare(b.asset_tag ?? '');
+    else if (sortBy === 'type') cmp = (a.asset_type ?? '').localeCompare(b.asset_type ?? '');
+    else if (sortBy === 'page') cmp = (a.pid_page ?? 0) - (b.pid_page ?? 0);
+    else if (sortBy === 'conf') cmp = (a.confidence ?? 0) - (b.confidence ?? 0);
+    else if (sortBy === 'status') cmp = (a.review_status ?? '').localeCompare(b.review_status ?? '');
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const slice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const toggleSort = (col: 'tag' | 'type' | 'page' | 'conf' | 'status') => {
+    if (sortBy === col) setSortAsc(!sortAsc);
+    else { setSortBy(col); setSortAsc(true); }
+    setPage(1);
+  };
+
+  const SortHeader = ({ col, label }: { col: 'tag' | 'type' | 'page' | 'conf' | 'status'; label: string }) => (
+    <th onClick={() => toggleSort(col)} className="text-left px-3 py-2 font-semibold text-zinc-500 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700">
+      {label} {sortBy === col && (sortAsc ? '↑' : '↓')}
+    </th>
+  );
 
   return (
     <div className="flex flex-col h-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
@@ -643,7 +705,7 @@ function DetectionsTable({
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <span className="ml-auto text-xs text-zinc-400 self-center">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="ml-auto text-xs text-zinc-400 self-center">{sorted.length} result{sorted.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Table */}
@@ -652,11 +714,11 @@ function DetectionsTable({
           <thead className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
             <tr>
               <th className="text-left px-3 py-2 font-semibold text-zinc-500">No</th>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">Asset Tag</th>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">Asset Type</th>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">Page</th>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">Conf.</th>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">Status</th>
+              <SortHeader col="tag" label="Asset Tag" />
+              <SortHeader col="type" label="Asset Type" />
+              <SortHeader col="page" label="Page" />
+              <SortHeader col="conf" label="Conf." />
+              <SortHeader col="status" label="Status" />
             </tr>
           </thead>
           <tbody>
@@ -717,9 +779,17 @@ function DetectionWorkspace() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
 
-  // Stats
+  const maxPage = detections.length ? Math.max(1, ...detections.map(d => d.pid_page ?? 1)) : 1;
+
+  // Detections filtered to current page (null means all pages)
+  const pageDetections = currentPage
+    ? detections.filter(d => d.pid_page === currentPage)
+    : detections;
+
+  // Stats (over all detections, not just current page)
   const total = detections.length;
   const confirmed = detections.filter(d => d.review_status === 'APPROVED').length;
   const pending = detections.filter(d => d.review_status === 'PENDING').length;
@@ -911,12 +981,15 @@ function DetectionWorkspace() {
           {/* Left: Viewer */}
           <div className="flex-1 min-w-0 flex flex-col gap-4">
             <PidViewer
-              detections={detections}
+              detections={pageDetections}
               selectedId={selectedId}
               onSelect={id => {
                 const d = detections.find(x => x.id === id);
                 if (d) setSelectedDetection(d);
               }}
+              page={currentPage || 1}
+              totalPages={maxPage}
+              onPageChange={setCurrentPage}
             />
           </div>
 

@@ -20,7 +20,7 @@ export const worker = new Worker("detection", async (job: Job<{ jobId: string; l
   const agentRunId = uuidv4();
   const modelName = process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : "gemini-2.0-flash";
   const promptVersion = "v1";
-  await db.query("INSERT INTO agent_runs (id, job_id, model, prompt_version, status, input_metadata) VALUES ($1,$2,$3,'RUNNING',$4)", [agentRunId, jobId, modelName, JSON.stringify({ pageCount: null })]);
+  await db.query("INSERT INTO agent_runs (id, job_id, model, prompt_version, status, input_metadata) VALUES ($1,$2,$3,$4,'RUNNING',$5)", [agentRunId, jobId, modelName, promptVersion, JSON.stringify({ pageCount: null })]);
 
   try {
     const jrow = (await db.query("SELECT * FROM detection_jobs WHERE id=$1", [jobId])).rows[0];

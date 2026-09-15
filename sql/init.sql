@@ -11,7 +11,9 @@ CREATE TABLE legends (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DRAFT')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE legend_symbols (
@@ -22,7 +24,19 @@ CREATE TABLE legend_symbols (
     tag_pattern TEXT,
     description TEXT,
     aliases TEXT[] DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DRAFT','REJECTED')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE legend_symbol_edits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    symbol_id UUID REFERENCES legend_symbols(id) ON DELETE CASCADE,
+    legend_id UUID REFERENCES legends(id) ON DELETE CASCADE,
+    action TEXT NOT NULL CHECK (action IN ('CREATE','UPDATE','DELETE','APPROVE','REJECT')),
+    old_values JSONB,
+    new_values JSONB,
+    performed_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE documents (
@@ -101,6 +115,15 @@ CREATE TABLE detections (
     review_status TEXT DEFAULT 'PENDING',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS detection_audits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    detection_id UUID REFERENCES detections(id) ON DELETE CASCADE,
+    action TEXT NOT NULL CHECK (action IN ('CONFIRM','REJECT','EDIT','MANUAL_CREATE')),
+    old_values JSONB,
+    new_values JSONB,
+    performed_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE assets (

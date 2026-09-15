@@ -7,6 +7,9 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
   const d = (await db.query("SELECT * FROM detections WHERE id=$1", [id])).rows[0];
   if (!d) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await db.query("UPDATE detections SET detection_status='CONFIRMED', review_status='APPROVED', updated_at=NOW() WHERE id=$1", [id]);
+  await db.query("INSERT INTO detection_audits (detection_id, action, old_values, new_values) VALUES ($1,'EDIT',$2,$3)",
+    [id, JSON.stringify({ detection_status: d.detection_status, review_status: d.review_status }),
+       JSON.stringify({ detection_status: 'CONFIRMED', review_status: 'APPROVED' })]);
   // Upsert into assets
   const exists = await db.query("SELECT id FROM assets WHERE detection_id=$1", [id]);
   if (!exists.rows.length) {

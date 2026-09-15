@@ -23,8 +23,12 @@ export async function POST(request: NextRequest) {
   try {
     draft = await parseLegendPdf(buf);
     for (const s of draft) {
-      await db.query("INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases) VALUES ($1,$2,$3,$4,$5,$6,$7)", [uuidv4(), legendId, s.assetType ?? s.asset_type ?? "Unknown", s.symbolName ?? s.symbol_name ?? null, s.tagPattern ?? s.tag_pattern ?? null, s.description ?? null, s.aliases ?? []]);
+      const parsed = { asset_type: s.assetType ?? s.asset_type ?? "Unknown", symbol_name: s.symbolName ?? s.symbol_name ?? null, tag_pattern: s.tagPattern ?? s.tag_pattern ?? null, description: s.description ?? null, aliases: s.aliases ?? [] };
+      await db.query("INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT')",
+        [uuidv4(), legendId, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.aliases]);
     }
+    // Legend stays DRAFT until symbols reviewed
+    if (draft.length > 0) await db.query("UPDATE legends SET status='DRAFT' WHERE id=$1", [legendId]);
   } catch (e: any) {
     console.warn("[legend/upload] AI parse failed:", e.message);
   }

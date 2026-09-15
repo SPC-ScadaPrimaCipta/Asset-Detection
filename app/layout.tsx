@@ -1,10 +1,27 @@
-import React from 'react';
-import Link from 'next/link';
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
+import "./globals.css";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Asset Detection",
+  description: "Automatic P&ID Asset Detection",
+};
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="flex h-full bg-zinc-50 dark:bg-zinc-950">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="flex h-full bg-zinc-50 dark:bg-zinc-950 font-sans">
         <aside className="w-56 shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col">
           {/* Brand */}
           <div className="px-4 py-4 border-b border-zinc-100 dark:border-zinc-800">

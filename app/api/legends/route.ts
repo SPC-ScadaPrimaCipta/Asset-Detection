@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
+import { LegendSchema, LegendSymbolSchema } from '@/lib/legend-schemas';
 
 export async function GET() {
   const result = await db.query(
@@ -14,11 +15,13 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const { name, description } = await request.json();
-  if (!name) return NextResponse.json({ error: 'Name required' }, { status: 400 });
-  
+  const body = await request.json();
+  const parsed = LegendSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, { status: 400 });
+
+  const { name, description } = parsed.data;
   const id = uuidv4();
-  await db.query('INSERT INTO legends (id, name, description) VALUES ($1, $2, $3)', [id, name, description]);
-  
-  return NextResponse.json({ id, name, description }, { status: 201 });
+  await db.query('INSERT INTO legends (id, name, description, status) VALUES ($1, $2, $3, $4)', [id, name, description, parsed.data.status]);
+
+  return NextResponse.json({ id, name, description, status: parsed.data.status }, { status: 201 });
 }
