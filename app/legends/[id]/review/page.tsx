@@ -24,6 +24,11 @@ interface LegendSymbol {
   description: string | null;
   aliases: string[];
   status: string;
+  bbox_x: number | null;
+  bbox_y: number | null;
+  bbox_w: number | null;
+  bbox_h: number | null;
+  pid_page: number | null;
 }
 
 export default function LegendReviewPage() {
@@ -50,6 +55,49 @@ export default function LegendReviewPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
+
+  // bbox overlay state — mirror detection viewer pattern
+  const [viewport, setViewport] = useState<{ w: number; h: number } | null>(null);
+  const [dragBbox, setDragBbox] = useState<{
+    id: string; x: number; y: number; w: number; h: number;
+    startX: number; startY: number; origX: number; origY: number;
+  } | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Global drag handlers — tracks mouse even when cursor leaves bbox
+  useEffect(() => {
+    if (!dragBbox || !viewport) return;
+    const onMove = (e: MouseEvent) => {
+      const dx = e.clientX - dragBbox.startX;
+      const dy = e.clientY - dragBbox.startY;
+      const nx = dragBbox.origX + dx / (viewport.w / 1000);
+      const ny = dragBbox.origY + dy / (viewport.h / 1000);
+      const clampedX = Math.max(0, Math.min(1000 - dragBbox.w, nx));
+      const clampedY = Math.max(0, Math.min(1000 - dragBbox.h, ny));
+      setDragBbox(prev => prev ? { ...prev, x: clampedX, y: clampedY } : prev);
+    };
+    const onUp = async (e: MouseEvent) => {
+      const dx = e.clientX - dragBbox.startX;
+      const dy = e.clientY - dragBbox.startY;
+      const nx = dragBbox.origX + dx / (viewport.w / 1000);
+      const ny = dragBbox.origY + dy / (viewport.h / 1000);
+      const clampedX = Math.max(0, Math.min(1000 - dragBbox.w, nx));
+      const clampedY = Math.max(0, Math.min(1000 - dragBbox.h, ny));
+      const id = dragBbox.id;
+      const sym = symbols.find(s => s.id === id);
+      setDragBbox(null);
+      if (sym && (Math.round(clampedX) !== sym.bbox_x || Math.round(clampedY) !== sym.bbox_y)) {
+        try { await persistSymbol(sym, { bbox_x: Math.round(clampedX), bbox_y: Math.round(clampedY) }); }
+        catch (err: unknown) { setError(err instanceof Error ? err.message : 'Drag save failed'); }
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragBbox, viewport, symbols]);
 
   // Load legend + symbols
   useEffect(() => {
@@ -94,13 +142,14 @@ export default function LegendReviewPage() {
     }
 
     const page = await doc.getPage(pageNum);
-    const viewport = page.getViewport({ scale });
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    const vp = page.getViewport({ scale });
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    setViewport({ w: vp.width, h: vp.height });
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const task = page.render({ canvasContext: ctx, viewport });
+    const task = page.render({ canvasContext: ctx, viewport: vp });
     renderTaskRef.current = task;
     try {
       await task.promise;
@@ -160,16 +209,35 @@ export default function LegendReviewPage() {
     }
   };
 
+  const persistSymbol = async (sym: LegendSymbol, patch: Partial<LegendSymbol>) => {
+    const payload = {
+      asset_type: patch.asset_type ?? sym.asset_type,
+      symbol_name: patch.symbol_name !== undefined ? patch.symbol_name : sym.symbol_name,
+      tag_pattern: patch.tag_pattern !== undefined ? patch.tag_pattern : sym.tag_pattern,
+      description: patch.description !== undefined ? patch.description : sym.description,
+      aliases: patch.aliases ?? sym.aliases,
+      status: patch.status ?? sym.status,
+      bbox_x: patch.bbox_x !== undefined ? patch.bbox_x : sym.bbox_x,
+      bbox_y: patch.bbox_y !== undefined ? patch.bbox_y : sym.bbox_y,
+      bbox_w: patch.bbox_w !== undefined ? patch.bbox_w : sym.bbox_w,
+      bbox_h: patch.bbox_h !== undefined ? patch.bbox_h : sym.bbox_h,
+      pid_page: patch.pid_page !== undefined ? patch.pid_page : sym.pid_page,
+    };
+    const res = await fetch(`/api/legends/${legendId}/symbols/${sym.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    const updated = await res.json() as LegendSymbol;
+    setSymbols(prev => prev.map(s => s.id === updated.id ? updated : s));
+  };
+
   const handleApprove = async (symId: string) => {
     try {
-      const res = await fetch(`/api/legends/${legendId}/symbols/${symId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'ACTIVE' }),
-      });
-      if (!res.ok) throw new Error('Approve failed');
-      const updated = await res.json() as LegendSymbol;
-      setSymbols(prev => prev.map(s => s.id === updated.id ? updated : s));
+      const sym = symbols.find(s => s.id === symId);
+      if (!sym) return;
+      await persistSymbol(sym, { status: 'ACTIVE' });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Approve failed');
     }
@@ -177,14 +245,9 @@ export default function LegendReviewPage() {
 
   const handleReject = async (symId: string) => {
     try {
-      const res = await fetch(`/api/legends/${legendId}/symbols/${symId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'REJECTED' }),
-      });
-      if (!res.ok) throw new Error('Reject failed');
-      const updated = await res.json() as LegendSymbol;
-      setSymbols(prev => prev.map(s => s.id === updated.id ? updated : s));
+      const sym = symbols.find(s => s.id === symId);
+      if (!sym) return;
+      await persistSymbol(sym, { status: 'REJECTED' });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Reject failed');
     }
@@ -193,16 +256,23 @@ export default function LegendReviewPage() {
   const handleSaveEdit = async () => {
     if (!editForm.asset_type?.trim()) { setError('Asset type required'); return; }
     try {
+      const payload = {
+        asset_type: editForm.asset_type.trim(),
+        symbol_name: editForm.symbol_name?.trim() || null,
+        tag_pattern: editForm.tag_pattern?.trim() || null,
+        description: editForm.description?.trim() || null,
+        aliases: editForm.aliases || [],
+        bbox_x: editForm.bbox_x ?? null,
+        bbox_y: editForm.bbox_y ?? null,
+        bbox_w: editForm.bbox_w ?? null,
+        bbox_h: editForm.bbox_h ?? null,
+        pid_page: editForm.pid_page ?? null,
+        status: editForm.status ?? 'ACTIVE',
+      };
       const res = await fetch(`/api/legends/${legendId}/symbols/${editingId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          asset_type: editForm.asset_type.trim(),
-          symbol_name: editForm.symbol_name?.trim() || null,
-          tag_pattern: editForm.tag_pattern?.trim() || null,
-          description: editForm.description?.trim() || null,
-          aliases: editForm.aliases || [],
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Save failed');
       const updated = await res.json() as LegendSymbol;
@@ -295,7 +365,12 @@ export default function LegendReviewPage() {
       {error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400 flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="ml-3 text-red-400 hover:text-red-600">✕</button>
+          <div className="flex gap-2">
+            {error.includes('sibuk') && (
+              <button onClick={handleReparse} className="px-2 py-1 text-xs font-semibold bg-red-100 rounded">Coba Lagi</button>
+            )}
+            <button onClick={() => setError('')} className="ml-3 text-red-400 hover:text-red-600">✕</button>
+          </div>
         </div>
       )}
 
@@ -336,13 +411,84 @@ export default function LegendReviewPage() {
               </div>
             </div>
           </div>
-          {/* Canvas */}
-          <div ref={containerRef} className="flex-1 overflow-auto bg-zinc-100 dark:bg-zinc-900 p-2">
-            <canvas
-              ref={canvasRef}
-              className="shadow-md mx-auto block"
-              style={{ background: '#fff' }}
-            />
+          {/* Canvas + Overlay — wrapper is inline-block sized to canvas so SVG aligns exactly */}
+          <div ref={containerRef} className="flex-1 overflow-auto bg-zinc-100 dark:bg-zinc-900 p-2 flex items-start justify-center">
+            <div className="relative inline-block shadow-md">
+              <canvas
+                ref={canvasRef}
+                className="block"
+                style={{ background: '#fff', display: 'block' }}
+              />
+              {/* ponytail: SVG overlay uses same 0-1000 normalized bbox space as detection viewer; page sync via pid_page */}
+              {viewport && (
+                <svg
+                  viewBox="0 0 1000 1000"
+                  preserveAspectRatio="none"
+                  className="absolute inset-0 w-full h-full"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {symbols
+                    .filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null)
+                    .map(sym => {
+                      const isSelected = sym.id === selectedId;
+                      // bbox already 0-1000 normalized — same as detection; svg viewBox is 0 0 1000 1000 so coords map 1:1
+                      const x = sym.bbox_x!;
+                      const y = sym.bbox_y!;
+                      const w = sym.bbox_w!;
+                      const h = sym.bbox_h!;
+                      // marker/highlighter style: selected = solid fill + pulse, unselected = dashed outline
+                      const color = sym.status === 'REJECTED' ? '#ef4444' : isSelected ? '#f59e0b' : '#10b981';
+                      const label = (sym.symbol_name ?? sym.asset_type).slice(0, 18);
+                      const labelW = Math.min(120, Math.max(w, 80));
+                      const labelY = y > 22 ? y - 18 : y + h + 2;
+                      const curBbox = dragBbox?.id === sym.id ? dragBbox : null;
+                      const rx = curBbox ? curBbox.x : x;
+                      const ry = curBbox ? curBbox.y : y;
+                      return (
+                        <g
+                          key={sym.id}
+                          data-bbox="true"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSelectedId(sym.id);
+                            // scroll card into view
+                            cardRefs.current[sym.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                          }}
+                          onMouseDown={e => {
+                            e.stopPropagation();
+                            if (isSelected && viewport) {
+                              setDragBbox({ id: sym.id, x: rx, y: ry, w, h, startX: e.clientX, startY: e.clientY, origX: rx, origY: ry });
+                            } else {
+                              setSelectedId(sym.id);
+                            }
+                          }}
+                          style={{ pointerEvents: 'all', cursor: isSelected ? 'move' : 'pointer' }}
+                        >
+                          {/* hit area — larger than symbol for easier clicking */}
+                          <rect x={rx - 5} y={ry - 5} width={w + 10} height={h + 10} fill="transparent" />
+                          {/* highlight — like a marker/stabilo */}
+                          <rect
+                            x={rx} y={ry} width={w} height={h}
+                            fill={isSelected ? '#fbbf24' : '#fbbf24'}
+                            fillOpacity={isSelected ? 0.6 : 0.4}
+                            stroke={color}
+                            strokeWidth={isSelected ? 3 : 1.5}
+                            strokeDasharray={isSelected ? undefined : '6 3'}
+                            rx={2}
+                            className={isSelected ? 'animate-pulse' : ''}
+                            style={{ filter: isSelected ? 'drop-shadow(0 0 4px rgba(251, 191, 36, 0.8))' : undefined }}
+                          />
+                          {/* label pill */}
+                          <rect x={rx} y={labelY} width={labelW} height={14} rx={3} fill={color} opacity={isSelected ? 1 : 0.9} />
+                          <text x={rx + 3} y={labelY + 10} fill="white" fontSize={8} fontFamily="ui-monospace, monospace" fontWeight={isSelected ? 700 : 500}>
+                            {label}
+                          </text>
+                        </g>
+                      );
+                    })}
+                </svg>
+              )}
+            </div>
           </div>
         </div>
 
@@ -361,7 +507,14 @@ export default function LegendReviewPage() {
               symbols.map(sym => (
                 <div
                   key={sym.id}
-                  onClick={() => setSelectedId(sym.id === selectedId ? null : sym.id)}
+                  ref={el => { cardRefs.current[sym.id] = el; }}
+                  onClick={() => {
+                    const next = sym.id === selectedId ? null : sym.id;
+                    setSelectedId(next);
+                    if (next && sym.pid_page && sym.pid_page !== currentPage) {
+                      setCurrentPage(sym.pid_page);
+                    }
+                  }}
                   className={`cursor-pointer rounded-lg px-3 py-2.5 border text-xs transition-colors ${
                     sym.id === selectedId
                       ? 'ring-2 ring-blue-400 dark:ring-blue-500'
@@ -492,6 +645,57 @@ export default function LegendReviewPage() {
                   onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
                   rows={2}
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Bounding Box</span>
+                <div className="grid grid-cols-4 gap-1">
+                  <div>
+                    <span className="text-xs text-zinc-500">X</span>
+                    <input
+                      value={editForm.bbox_x ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, bbox_x: parseInt(e.target.value) || null }))}
+                      type="number"
+                      className="mt-0.5 w-16 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1 py-0.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Y</span>
+                    <input
+                      value={editForm.bbox_y ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, bbox_y: parseInt(e.target.value) || null }))}
+                      type="number"
+                      className="mt-0.5 w-16 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1 py-0.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">W</span>
+                    <input
+                      value={editForm.bbox_w ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, bbox_w: parseInt(e.target.value) || null }))}
+                      type="number"
+                      className="mt-0.5 w-16 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1 py-0.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">H</span>
+                    <input
+                      value={editForm.bbox_h ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, bbox_h: parseInt(e.target.value) || null }))}
+                      type="number"
+                      className="mt-0.5 w-16 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1 py-0.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">P&ID Page</span>
+                <input
+                  value={editForm.pid_page ?? ''}
+                  onChange={e => setEditForm(f => ({ ...f, pid_page: parseInt(e.target.value) || null }))}
+                  type="number"
+                  min={1}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </label>
             </div>

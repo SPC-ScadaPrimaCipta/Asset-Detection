@@ -18,11 +18,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id: legendId } = await params;
   const id = uuidv4();
-  const { asset_type, symbol_name, tag_pattern, description, aliases, status } = parsed.data;
+  const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
 
   await db.query(
-    'INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-    [id, legendId, asset_type, symbol_name, tag_pattern, description, aliases, status]
+    'INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+    [id, legendId, asset_type, symbol_name, tag_pattern, description, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, aliases, status]
   );
 
   // Audit entry

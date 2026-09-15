@@ -5,6 +5,23 @@ import { getFile } from '@/lib/storage';
 import { getGeminiModel, getDeepSeekClient } from '@/lib/gemini';
 import { env } from '@/lib/env';
 
+// Retry with exponential backoff for transient AI overloads (mirrors lib/ai-agent.ts pattern)
+// Check: /503|429|overloaded|high demand|rate/i, max 3 attempts, delays 2000ms*attempt
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (e: unknown) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const transient = /503|429|overloaded|high demand|rate/i.test(msg);
+      if (!transient || i === retries - 1) throw e;
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 /**
  * POST /api/legends/[id]/reparse
  * Re-runs AI legend parse on the stored PDF and upserts symbols.
@@ -28,34 +45,54 @@ export async function POST(
       return NextResponse.json({ error: 'Legend PDF not found in storage. Re-upload to re-parse.' }, { status: 404 });
     }
 
-    const draft = await parseLegendPdf(buf, leg.rows[0].name);
+    const draft = await withRetry(() => parseLegendPdf(buf, leg.rows[0].name));
+    console.log('[legends/reparse] AI parsed symbols:', draft.length);
 
     // Delete existing DRAFT symbols, then re-insert
     await db.query("DELETE FROM legend_symbols WHERE legend_id=$1 AND status='DRAFT'", [id]);
 
     let inserted = 0;
     for (const s of draft) {
+      console.log('[legends/reparse] Parsing symbol:', JSON.stringify(s).slice(0, 100));
       const parsed = {
         asset_type: ((s.assetType ?? s.asset_type ?? 'Unknown') as string).slice(0, 120),
         symbol_name: ((s.symbolName ?? s.symbol_name ?? null) as string | null),
         tag_pattern: ((s.tagPattern ?? s.tag_pattern ?? null) as string | null),
         description: ((s.description ?? null) as string | null),
+        bbox_x: (s as any)?.bboxX ?? (s as any)?.bbox_x ?? null,
+        bbox_y: (s as any)?.bboxY ?? (s as any)?.bbox_y ?? null,
+        bbox_w: (s as any)?.bboxW ?? (s as any)?.bbox_w ?? null,
+        bbox_h: (s as any)?.bboxH ?? (s as any)?.bbox_h ?? null,
+        pid_page: (s as any)?.page ?? (s as any)?.pid_page ?? null,
         aliases: (Array.isArray(s.aliases) ? s.aliases : []) as string[],
       };
       await db.query(
         `INSERT INTO legend_symbols
-           (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT')`,
-        [uuidv4(), id, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.aliases]
+           (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT')`,
+        [uuidv4(), id, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.bbox_x, parsed.bbox_y, parsed.bbox_w, parsed.bbox_h, parsed.pid_page, parsed.aliases]
       );
       inserted++;
+    }
+
+    if (inserted === 0) {
+      console.warn('[legends/reparse] No symbols inserted for legend:', id);
     }
 
     return NextResponse.json({ inserted, total: draft.length });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('[legends/reparse]', msg);
-    return NextResponse.json({ error: 'Re-parse failed', detail: msg.slice(0, 300) }, { status: 500 });
+    const isTransient = /503|429|overloaded|high demand|rate/i.test(msg);
+    console.error('[legends/reparse]', isTransient ? 'transient AI overload' : msg.slice(0, 300));
+    return NextResponse.json(
+      {
+        error: isTransient
+          ? 'Model AI sedang sibuk. Silakan coba lagi beberapa detik.'
+          : 'Re-parse failed',
+        detail: isTransient ? 'Gemini overloaded — retry shortly' : 'See server logs',
+      },
+      { status: isTransient ? 503 : 500 }
+    );
   }
 }
 
@@ -70,6 +107,12 @@ For each symbol, extract:
 3. Tag Pattern (if visible, like "P-###", "V-###", else null)
 4. Description (brief description or null)
 5. Aliases (alternative names or abbreviations)
+6. Bounding Box (bbox) — normalized 0–1000 coordinate space tightly enclosing ONLY the symbol graphic itself:
+   - bboxX: left x
+   - bboxY: top y
+   - bboxW: width
+   - bboxH: height
+7. Page — 1-based page number where this symbol appears in the legend document.
 
 CRITICAL RULES:
 - Extract ALL symbols you can find in the legend
@@ -85,7 +128,12 @@ Return ONLY this JSON:
       "symbolName": "string or null",
       "tagPattern": "string or null",
       "description": "string or null",
-      "aliases": ["string"]
+      "aliases": ["string"],
+      "bboxX": 0,
+      "bboxY": 0,
+      "bboxW": 0,
+      "bboxH": 0,
+      "page": 1
     }
   ]
 }`;

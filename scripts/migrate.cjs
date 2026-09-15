@@ -75,6 +75,23 @@ async function migrate() {
     `);
     console.log('  002: legend status/updated_at OK');
 
+    // Migration 003: legend_symbols bbox + pid_page for highlight overlay
+    for (const col of ['bbox_x', 'bbox_y', 'bbox_w', 'bbox_h', 'pid_page']) {
+      await p.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name='legend_symbols' AND column_name='${col}'
+          ) THEN
+            ALTER TABLE legend_symbols ADD COLUMN ${col} INTEGER;
+            RAISE NOTICE 'Added legend_symbols.${col}';
+          END IF;
+        END $$
+      `);
+    }
+    console.log('  003: legend_symbols bbox/pid_page OK');
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');

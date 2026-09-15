@@ -320,6 +320,7 @@ function PidViewer({
   page,
   totalPages,
   onPageChange,
+  onBboxUpdate,
 }: {
   documentId: string;
   detections: Detection[];
@@ -328,20 +329,22 @@ function PidViewer({
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
+  onBboxUpdate?: (id: string, patch: Partial<Detection>) => Promise<void>;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  // Natural image dimensions — used to map bbox coords (in px space) to display space
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgLoading, setImgLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [dragBbox, setDragBbox] = useState<{ id: string; x: number; y: number; w: number; h: number; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const centeredRef = useRef<string | null>(null);
 
   const imgSrc = documentId ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
-  // Reset image state on page or document change
   useEffect(() => {
     setImgNatural(null);
     setImgLoading(!!documentId);
@@ -353,6 +356,26 @@ function PidViewer({
        && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
   );
 
+  // Auto-center + zoom to selected bbox. Transform is scale(s) then translate(pan),
+  // so screen pos = s * containerPos + pan. Solve pan = center - s * bboxContainerPos.
+  useEffect(() => {
+    if (!selectedId || !imgNatural || !viewerRef.current) return;
+    const d = detections.find(x => x.id === selectedId);
+    if (!d || d.bbox_x === null || d.bbox_y === null || d.bbox_w === null || d.bbox_h === null) return;
+    const el = viewerRef.current;
+    const vw = el.clientWidth || 800;
+    const vh = el.clientHeight || 400;
+    const renderedW = Math.min(imgNatural.w, vw);
+    const ratio = renderedW / imgNatural.w || 1;
+    const renderedH = imgNatural.h * ratio;
+    const s = 1.5;
+    setZoom(s);
+    const bx = (vw - renderedW) / 2 + (d.bbox_x + d.bbox_w / 2) * ratio;
+    const by = (vh - renderedH) / 2 + (d.bbox_y + d.bbox_h / 2) * ratio;
+    setPan({ x: vw / 2 - s * bx, y: vh / 2 - s * by });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, imgNatural]);
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -360,19 +383,42 @@ function PidViewer({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-bbox]')) return; // let bbox clicks bubble
+    if ((e.target as HTMLElement).closest('[data-bbox]')) return;
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (dragBbox && imgNatural && viewerRef.current) {
+      const vw = viewerRef.current.clientWidth;
+      const renderedW = Math.min(imgNatural.w, vw - 32);
+      const ratio = renderedW / imgNatural.w || 1;
+      const dx = e.clientX - dragBbox.startX;
+      const dy = e.clientY - dragBbox.startY;
+      const ndx = dx / zoom / ratio;
+      const ndy = dy / zoom / ratio;
+      const nx = Math.max(0, Math.min(imgNatural.w - dragBbox.w, dragBbox.origX + ndx));
+      const ny = Math.max(0, Math.min(imgNatural.h - dragBbox.h, dragBbox.origY + ndy));
+      setDragBbox(prev => prev ? { ...prev, x: nx, y: ny } : prev);
+      return;
+    }
     if (!dragging) return;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
-  const handleMouseUp = () => setDragging(false);
+  const handleMouseUp = async () => {
+    setDragging(false);
+    if (dragBbox && onBboxUpdate) {
+      const { id, x, y, origX, origY } = dragBbox;
+      setDragBbox(null);
+      if (x !== origX || y !== origY) {
+        await onBboxUpdate(id, { bbox_x: Math.round(x), bbox_y: Math.round(y) } as Partial<Detection>);
+      }
+      return;
+    }
+    setDragBbox(null);
+  };
 
-  // Reset pan/zoom when page changes
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -476,20 +522,29 @@ function PidViewer({
                       <g
                         key={d.id}
                         data-bbox="true"
-                        onClick={() => onSelect(d.id)}
-                        style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                        onClick={(e) => { e.stopPropagation(); onSelect(d.id); }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          if (selected) {
+                            setDragBbox({ id: d.id, x, y, w, h, startX: e.clientX, startY: e.clientY, origX: x, origY: y });
+                          } else {
+                            onSelect(d.id);
+                          }
+                        }}
+                        style={{ pointerEvents: 'all', cursor: selected ? 'move' : 'pointer' }}
                       >
                         {/* Invisible hit area */}
                         <rect x={x} y={y} width={w} height={h} fill="transparent" />
                         {/* Border */}
                         <rect
                           x={x} y={y} width={w} height={h}
-                          fill="none"
+                          fill={selected ? `${color}33` : "none"}
                           stroke={color}
                           strokeWidth={selected ? 3 : 2}
                           strokeDasharray={selected ? undefined : '8 4'}
                           rx={3}
                           opacity={selected ? 1 : 0.8}
+                          className={selected ? 'animate-pulse' : ''}
                         />
                         {/* Label pill */}
                         <rect
@@ -572,6 +627,15 @@ function AssetDetail({
   const [editTag, setEditTag] = useState(detection.asset_tag ?? '');
   const [editType, setEditType] = useState(detection.asset_type);
   const [editDesc, setEditDesc] = useState(detection.description ?? '');
+  const [editService, setEditService] = useState(detection.service ?? '');
+  const [editLocation, setEditLocation] = useState(detection.location ?? '');
+  const [editUnit, setEditUnit] = useState(detection.unit ?? '');
+  const [editArea, setEditArea] = useState(detection.area ?? '');
+  const [editClass, setEditClass] = useState(detection.equipment_class ?? '');
+  const [editX, setEditX] = useState(detection.bbox_x ?? 0);
+  const [editY, setEditY] = useState(detection.bbox_y ?? 0);
+  const [editW, setEditW] = useState(detection.bbox_w ?? 0);
+  const [editH, setEditH] = useState(detection.bbox_h ?? 0);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -580,6 +644,15 @@ function AssetDetail({
       asset_tag: editTag || null,
       asset_type: editType,
       description: editDesc || null,
+      service: editService || null,
+      location: editLocation || null,
+      unit: editUnit || null,
+      area: editArea || null,
+      equipment_class: editClass || null,
+      bbox_x: editX,
+      bbox_y: editY,
+      bbox_w: editW,
+      bbox_h: editH,
     } as Partial<Detection>);
     setSaving(false);
     setEditing(false);
@@ -646,31 +719,53 @@ function AssetDetail({
           </dl>
         ) : (
           <div className="space-y-3">
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Tag</span>
-              <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
-                value={editTag}
-                onChange={e => setEditTag(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Type</span>
-              <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
-                value={editType}
-                onChange={e => setEditType(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Description</span>
-              <textarea
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none"
-                rows={3}
-                value={editDesc}
-                onChange={e => setEditDesc(e.target.value)}
-              />
-            </label>
+            {[
+              ['Asset Tag', editTag, (v: string) => setEditTag(v), 'text'],
+              ['Asset Type', editType, (v: string) => setEditType(v), 'text'],
+              ['Description', editDesc, (v: string) => setEditDesc(v), 'textarea'],
+              ['Equipment Class', editClass, (v: string) => setEditClass(v), 'text'],
+              ['Service', editService, (v: string) => setEditService(v), 'text'],
+              ['Location', editLocation, (v: string) => setEditLocation(v), 'text'],
+              ['Unit', editUnit, (v: string) => setEditUnit(v), 'text'],
+              ['Area', editArea, (v: string) => setEditArea(v), 'text'],
+            ].map(([label, val, setter, kind]) => (
+              <label key={String(label)} className="block">
+                <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{String(label)}</span>
+                {kind === 'textarea' ? (
+                  <textarea
+                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none"
+                    rows={2}
+                    value={val as string}
+                    onChange={e => (setter as (v: string) => void)(e.target.value)}
+                  />
+                ) : (
+                  <input
+                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
+                    value={val as string}
+                    onChange={e => (setter as (v: string) => void)(e.target.value)}
+                  />
+                )}
+              </label>
+            ))}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                ['X', editX, setEditX],
+                ['Y', editY, setEditY],
+                ['W', editW, setEditW],
+                ['H', editH, setEditH],
+              ].map(([label, val, setter]) => (
+                <label key={String(label)} className="block">
+                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{String(label)}</span>
+                  <input
+                    type="number"
+                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-sm font-mono"
+                    value={val as number}
+                    onChange={e => (setter as (v: number) => void)(parseInt(e.target.value, 10) || 0)}
+                  />
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-400">Tip: drag the highlighted box in the viewer to move it, or edit numbers here.</p>
           </div>
         )}
       </div>
@@ -1102,11 +1197,25 @@ function DetectionWorkspace() {
               selectedId={selectedId}
               onSelect={id => {
                 const d = detections.find(x => x.id === id);
-                if (d) setSelectedDetection(d);
+                if (d) {
+                  setSelectedDetection(d);
+                  if (d.pid_page && d.pid_page !== currentPage) {
+                    setCurrentPage(d.pid_page);
+                  }
+                }
               }}
               page={currentPage || 1}
               totalPages={maxPage}
               onPageChange={setCurrentPage}
+              onBboxUpdate={async (id, patch) => {
+                await fetch(`/api/detections/${id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(patch),
+                });
+                await loadDetections();
+                setSelectedDetection(prev => prev?.id === id ? { ...prev, ...patch } : prev);
+              }}
             />
           </div>
 

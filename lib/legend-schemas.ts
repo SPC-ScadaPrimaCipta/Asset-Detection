@@ -8,6 +8,11 @@ export const LegendSymbolSchema = z.object({
   description: z.string().max(2000).nullable().optional().default(null),
   aliases: z.array(z.string().max(80)).max(30).optional().default([]),
   status: z.enum(["ACTIVE", "DRAFT", "REJECTED"]).optional().default("ACTIVE"),
+  bbox_x: z.number().int().nullable().optional().default(null),
+  bbox_y: z.number().int().nullable().optional().default(null),
+  bbox_w: z.number().int().nullable().optional().default(null),
+  bbox_h: z.number().int().nullable().optional().default(null),
+  pid_page: z.number().int().nullable().optional().default(null),
 });
 
 export const LegendSchema = z.object({

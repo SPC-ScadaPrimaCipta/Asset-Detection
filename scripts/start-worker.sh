@@ -10,10 +10,7 @@ echo "Worker will process /api/detection/jobs queue."
 echo "Press Ctrl+C to stop."
 echo ""
 
-# Import env vars
-if [ -f .env.local ]; then
-  export $(cat .env.local | xargs)
-fi
+# Env vars loaded by workers/preload.ts (.env.local); no shell export needed.
 
 # Run worker (connects to Redis, listens for jobs)
 npm run worker
