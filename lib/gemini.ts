@@ -6,7 +6,7 @@ export type AIProvider = "gemini" | "deepseek";
 
 export function getGeminiModel() {
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY!);
-  return genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  return genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
 }
 
 export function getDeepSeekClient() {
