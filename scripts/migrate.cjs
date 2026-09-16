@@ -75,6 +75,13 @@ async function migrate() {
     `);
     console.log('  002: legend status/updated_at OK');
 
+    // Migration 003: bbox + pid_page on legend_symbols
+    for (const col of ['bbox_x','bbox_y','bbox_w','bbox_h']) {
+      await p.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='legend_symbols' AND column_name='${col}') THEN ALTER TABLE legend_symbols ADD COLUMN ${col} REAL; END IF; END $$`);
+    }
+    await p.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='legend_symbols' AND column_name='pid_page') THEN ALTER TABLE legend_symbols ADD COLUMN pid_page INTEGER DEFAULT 1; END IF; END $$`);
+    console.log('  003: legend_symbols bbox OK');
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');
