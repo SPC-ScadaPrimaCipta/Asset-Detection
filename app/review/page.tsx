@@ -59,17 +59,101 @@ function parseEvidence(ev: string[] | string | null): string[] {
   }
 }
 
+// ─── Style Constants ─────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '13px',
+  fontFamily: 'inherit',
+  outline: 'none',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--primary)',
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  fontSize: '13px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 12px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+};
+
+const tdBase: React.CSSProperties = { padding: '8px 12px' };
+
+const toolButtonStyle: React.CSSProperties = {
+  padding: '4px 8px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--foreground-muted)',
+  fontSize: '12px',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const tableActionBtn: React.CSSProperties = {
+  padding: '4px 8px',
+  borderRadius: 'var(--radius-sm)',
+  color: 'white',
+  fontSize: '12px',
+  fontWeight: '600',
+  border: 'none',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const badgeBase: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: '500',
+  padding: '2px 8px',
+  borderRadius: '999px',
+  display: 'inline-flex',
+  alignItems: 'center',
+};
+
+const successBadge: React.CSSProperties = { ...badgeBase, background: 'var(--success-soft)', color: 'var(--success)' };
+const warningBadge: React.CSSProperties = { ...badgeBase, background: 'var(--warning-soft)', color: 'var(--warning)' };
+const dangerBadge: React.CSSProperties = { ...badgeBase, background: 'var(--danger-soft)', color: 'var(--danger)' };
+const neutralBadge: React.CSSProperties = { ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' };
+
 function confBadge(c: number | null) {
-  if (c === null) return <span className="text-xs text-zinc-400">—</span>;
+  if (c === null) return <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>—</span>;
   const pct = Math.round(c * 100);
-  const cls =
+  const style =
     c >= 0.95
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+      ? successBadge
       : c >= 0.8
-      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400'
-      : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
+      ? warningBadge
+      : dangerBadge;
   return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>
+    <span style={style}>
       {pct}%
     </span>
   );
@@ -82,14 +166,14 @@ function statusBadge(reviewStatus: string) {
       : reviewStatus === 'REJECTED'
       ? 'Rejected'
       : 'Pending';
-  const cls =
+  const style =
     reviewStatus === 'APPROVED'
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+      ? successBadge
       : reviewStatus === 'REJECTED'
-      ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
-      : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300';
+      ? dangerBadge
+      : neutralBadge;
   return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>
+    <span style={style}>
       {label}
     </span>
   );
@@ -162,16 +246,22 @@ function DetailPanel({
     detection.review_status === 'APPROVED' ||
     detection.review_status === 'REJECTED';
 
+  const actionBtn: React.CSSProperties = {
+    flex: 1, padding: '6px 8px', borderRadius: 'var(--radius-sm)',
+    color: 'white', fontSize: '12px', fontWeight: '600',
+    border: 'none', cursor: 'pointer', transition: 'all 150ms ease-out',
+  };
+
   return (
-    <div className="flex flex-col h-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+    <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-        <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm truncate pr-2">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
+        <span style={{ fontWeight: '600', color: 'var(--foreground)', fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px' }}>
           {detection.asset_tag ?? detection.asset_type}
         </span>
         <button
           onClick={onClose}
-          className="flex-shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xl leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-200 dark:hover:bg-zinc-700"
+          style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', border: 'none', background: 'none', color: 'var(--foreground-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer' }}
           aria-label="Close detail panel"
         >
           ×
@@ -179,10 +269,10 @@ function DetailPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
         {!editing ? (
           <>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px 16px', margin: 0 }}>
               {(
                 [
                   ['Asset Tag', detection.asset_tag ?? '—'],
@@ -198,30 +288,30 @@ function DetailPanel({
                   ['Review Status', detection.review_status],
                 ] as [string, string][]
               ).map(([k, v]) => (
-                <div key={k} className="col-span-1">
-                  <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <div key={k}>
+                  <dt style={fieldLabelStyle}>
                     {k}
                   </dt>
-                  <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200 break-words">{v}</dd>
+                  <dd style={{ margin: '2px 0 0', color: 'var(--foreground)', overflowWrap: 'break-word' }}>{v}</dd>
                 </div>
               ))}
 
               {/* Description full width */}
-              <div className="col-span-2">
-                <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt style={fieldLabelStyle}>
                   Description
                 </dt>
-                <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200">
+                <dd style={{ margin: '2px 0 0', color: 'var(--foreground)' }}>
                   {detection.description ?? '—'}
                 </dd>
               </div>
 
               {/* BBox */}
-              <div className="col-span-2">
-                <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt style={fieldLabelStyle}>
                   Bounding Box
                 </dt>
-                <dd className="mt-0.5 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                <dd style={{ margin: '2px 0 0', fontFamily: 'var(--font-geist-mono, monospace)', fontSize: '12px', color: 'var(--foreground-muted)' }}>
                   x={detection.bbox_x ?? '—'} y={detection.bbox_y ?? '—'} w=
                   {detection.bbox_w ?? '—'} h={detection.bbox_h ?? '—'}
                 </dd>
@@ -231,16 +321,16 @@ function DetailPanel({
             {/* Evidence */}
             {ev.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1.5">
+                <p style={{ ...fieldLabelStyle, margin: '0 0 6px' }}>
                   Evidence
                 </p>
-                <ul className="space-y-1.5">
+                <ul style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: 0, padding: 0, listStyle: 'none' }}>
                   {ev.map((e, i) => (
                     <li
                       key={i}
-                      className="text-xs text-zinc-600 dark:text-zinc-400 flex gap-1.5 leading-relaxed"
+                      style={{ fontSize: '12px', color: 'var(--foreground-muted)', display: 'flex', gap: '6px', lineHeight: 1.6 }}
                     >
-                      <span className="text-blue-500 mt-0.5 flex-shrink-0">•</span>
+                      <span style={{ color: 'var(--info)', marginTop: '2px', flexShrink: 0 }}>•</span>
                       <span>{e}</span>
                     </li>
                   ))}
@@ -249,35 +339,35 @@ function DetailPanel({
             )}
           </>
         ) : (
-          <div className="space-y-3">
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>
                 Asset Tag
               </span>
               <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={{ ...selectStyle, marginTop: '4px', width: '100%' }}
                 value={editTag}
                 onChange={(e) => setEditTag(e.target.value)}
                 placeholder="e.g. V-101"
               />
             </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>
                 Asset Type
               </span>
               <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={{ ...selectStyle, marginTop: '4px', width: '100%' }}
                 value={editType}
                 onChange={(e) => setEditType(e.target.value)}
                 placeholder="e.g. Valve"
               />
             </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>
                 Description
               </span>
               <textarea
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={{ ...selectStyle, marginTop: '4px', width: '100%', resize: 'none' }}
                 rows={3}
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
@@ -289,9 +379,9 @@ function DetailPanel({
       </div>
 
       {/* Actions */}
-      <div className="border-t border-zinc-100 dark:border-zinc-800 px-4 py-3 flex gap-2 flex-wrap">
+      <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {isReviewed ? (
-          <span className="text-xs text-zinc-400 italic self-center">
+          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)', fontStyle: 'italic', alignSelf: 'center' }}>
             Reviewed — {detection.review_status.toLowerCase()}
           </span>
         ) : !editing ? (
@@ -299,21 +389,21 @@ function DetailPanel({
             <button
               onClick={handleConfirm}
               disabled={confirming || rejecting}
-              className="flex-1 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+              style={{ ...actionBtn, background: 'var(--success)', opacity: confirming || rejecting ? 0.5 : 1 }}
             >
               {confirming ? 'Confirming…' : 'Confirm'}
             </button>
             <button
               onClick={() => setEditing(true)}
               disabled={confirming || rejecting}
-              className="flex-1 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+              style={{ ...actionBtn, background: 'var(--info)', opacity: confirming || rejecting ? 0.5 : 1 }}
             >
               Edit
             </button>
             <button
               onClick={handleReject}
               disabled={confirming || rejecting}
-              className="flex-1 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+              style={{ ...actionBtn, background: 'var(--danger)', opacity: confirming || rejecting ? 0.5 : 1 }}
             >
               {rejecting ? 'Rejecting…' : 'Reject'}
             </button>
@@ -323,13 +413,13 @@ function DetailPanel({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex-1 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+              style={{ ...actionBtn, background: 'var(--info)', opacity: saving ? 0.5 : 1 }}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
               onClick={() => setEditing(false)}
-              className="py-1.5 px-4 rounded-md border border-zinc-300 dark:border-zinc-600 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              style={{ padding: '6px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--foreground-muted)', background: 'var(--surface)', cursor: 'pointer' }}
             >
               Cancel
             </button>
@@ -344,10 +434,10 @@ function DetailPanel({
 
 function EmptyDetail() {
   return (
-    <div className="h-full rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
-      <div className="text-center text-zinc-400 px-4">
+    <div style={{ height: '100%', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', color: 'var(--foreground-subtle)', padding: '0 16px' }}>
         <svg
-          className="w-10 h-10 mx-auto mb-3"
+          style={{ width: 40, height: 40, margin: '0 auto 12px' }}
           fill="none"
           stroke="currentColor"
           strokeWidth={1.5}
@@ -360,8 +450,8 @@ function EmptyDetail() {
             d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
           />
         </svg>
-        <p className="text-sm font-medium">No detection selected</p>
-        <p className="text-xs mt-1">Click a row to view details</p>
+        <p style={{ fontSize: '14px', fontWeight: '500' }}>No detection selected</p>
+        <p style={{ fontSize: '12px', marginTop: '4px' }}>Click a row to view details</p>
       </div>
     </div>
   );
@@ -644,38 +734,38 @@ export default function ReviewPage() {
   const checkedCount = checkedIds.size;
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
+    <div style={{ minHeight: '100vh', background: 'var(--background)', display: 'flex', flexDirection: 'column' }}>
       {/* ── Page Header ── */}
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 px-6 py-4">
-        <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
+      <header style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '16px 24px' }}>
+        <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+            <h1 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--foreground)', margin: '0 0 4px' }}>
               Human Review
             </h1>
-            <p className="text-xs text-zinc-500 mt-0.5">Review AI-detected assets</p>
+            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>Review AI-detected assets</p>
           </div>
           <a
             href="/detection"
-            className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 underline"
+            style={{ fontSize: '12px', color: 'var(--foreground-muted)', textDecoration: 'underline', cursor: 'pointer' }}
           >
             ← Detection
           </a>
         </div>
       </header>
 
-      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-6 py-5 flex flex-col gap-4">
+      <main style={{ flex: 1, maxWidth: '1440px', margin: '0 auto', width: '100%', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {/* ── Filter bar ── */}
-        <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3">
-          <div className="flex flex-wrap gap-3 items-end">
+        <div style={{ ...cardStyle, padding: '12px 16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
             {/* Project */}
-            <label className="flex flex-col gap-1 min-w-40">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 160 }}>
+              <span style={fieldLabelStyle}>
                 Project
               </span>
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={selectStyle}
               >
                 <option value="">Select project…</option>
                 {projects.map((p) => (
@@ -687,15 +777,15 @@ export default function ReviewPage() {
             </label>
 
             {/* Job */}
-            <label className="flex flex-col gap-1 min-w-56">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 224 }}>
+              <span style={fieldLabelStyle}>
                 Detection Job
               </span>
               <select
                 value={jobId}
                 onChange={(e) => setJobId(e.target.value)}
                 disabled={!projectId || jobs.length === 0}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={{ ...selectStyle, opacity: !projectId || jobs.length === 0 ? 0.5 : 1 }}
               >
                 <option value="">
                   {!projectId
@@ -715,21 +805,23 @@ export default function ReviewPage() {
             </label>
 
             {/* Status filter */}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={fieldLabelStyle}>
                 Status
               </span>
-              <div className="flex rounded border border-zinc-300 dark:border-zinc-600 overflow-hidden">
+              <div style={{ display: 'flex', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                 {STATUS_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => handleStatusFilter(opt.value)}
-                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-zinc-300 dark:border-zinc-600 last:border-r-0
-                      ${
-                        statusFilter === opt.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                      }`}
+                    style={{
+                      flex: 1, padding: '6px 12px', fontSize: '12px', fontWeight: '500', transition: 'all 150ms ease-out',
+                      borderRight: '1px solid var(--border)',
+                      background: statusFilter === opt.value ? 'var(--primary)' : 'var(--surface)',
+                      color: statusFilter === opt.value ? 'var(--surface)' : 'var(--foreground-muted)',
+                      border: statusFilter === opt.value ? 'none' : undefined,
+                      cursor: 'pointer',
+                    }}
                   >
                     {opt.label}
                   </button>
@@ -738,14 +830,14 @@ export default function ReviewPage() {
             </label>
 
             {/* Confidence filter */}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={fieldLabelStyle}>
                 Confidence
               </span>
               <select
                 value={confFilter}
                 onChange={(e) => handleConfFilter(e.target.value as ConfFilter)}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={selectStyle}
               >
                 {CONF_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -756,8 +848,8 @@ export default function ReviewPage() {
             </label>
 
             {/* Search */}
-            <label className="flex flex-col gap-1 min-w-44">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 176 }}>
+              <span style={fieldLabelStyle}>
                 Search
               </span>
               <input
@@ -765,13 +857,13 @@ export default function ReviewPage() {
                 placeholder="Tag or type…"
                 value={searchQ}
                 onChange={(e) => handleSearch(e.target.value)}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                style={selectStyle}
               />
             </label>
 
             {/* Results count */}
             {detections.length > 0 && (
-              <span className="ml-auto self-end text-xs text-zinc-400 pb-1.5">
+              <span style={{ marginLeft: 'auto', alignSelf: 'flex-end', fontSize: '12px', color: 'var(--foreground-subtle)', paddingBottom: '6px' }}>
                 {filtered.length} result{filtered.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -780,19 +872,19 @@ export default function ReviewPage() {
 
         {/* ── Stats bar ── */}
         {detections.length > 0 && (
-          <div className="grid grid-cols-4 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
             {[
-              { label: 'Total', value: statsTotal, color: 'text-zinc-700 dark:text-zinc-300' },
-              { label: 'Pending', value: statsPending, color: 'text-yellow-600 dark:text-yellow-400' },
-              { label: 'Confirmed', value: statsConfirmed, color: 'text-emerald-600 dark:text-emerald-400' },
-              { label: 'Rejected', value: statsRejected, color: 'text-red-600 dark:text-red-400' },
+              { label: 'Total', value: statsTotal, color: 'var(--foreground)' },
+              { label: 'Pending', value: statsPending, color: 'var(--warning)' },
+              { label: 'Confirmed', value: statsConfirmed, color: 'var(--success)' },
+              { label: 'Rejected', value: statsRejected, color: 'var(--danger)' },
             ].map((s) => (
               <div
                 key={s.label}
-                className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-center"
+                style={{ ...cardStyle, padding: '12px', textAlign: 'center' }}
               >
-                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-zinc-500 mt-0.5">{s.label}</p>
+                <p style={{ fontSize: 20, fontWeight: '700', color: s.color, margin: 0 }}>{s.value}</p>
+                <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: '4px 0 0' }}>{s.label}</p>
               </div>
             ))}
           </div>
@@ -800,35 +892,34 @@ export default function ReviewPage() {
 
         {/* ── Split view ── */}
         <div
-          className="flex gap-4 flex-1"
-          style={{ minHeight: 520 }}
+          style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 520 }}
         >
           {/* ── Left: Table ── */}
-          <div className="flex-1 min-w-0 flex flex-col rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', ...cardStyle, overflow: 'hidden' }}>
             {/* Bulk action bar */}
             {checkedCount > 0 && (
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800">
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', background: 'var(--info-soft)', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--info)' }}>
                   {checkedCount} selected
                 </span>
                 <button
                   onClick={handleBulkConfirm}
                   disabled={bulkLoading}
-                  className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+                  style={{ ...tableActionBtn, background: 'var(--success)', opacity: bulkLoading ? 0.5 : 1 }}
                 >
                   {bulkLoading ? 'Working…' : 'Confirm All'}
                 </button>
                 <button
                   onClick={handleBulkReject}
                   disabled={bulkLoading}
-                  className="px-3 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+                  style={{ ...tableActionBtn, background: 'var(--danger)', opacity: bulkLoading ? 0.5 : 1 }}
                 >
                   {bulkLoading ? 'Working…' : 'Reject All'}
                 </button>
                 <button
                   onClick={() => setCheckedIds(new Set())}
                   disabled={bulkLoading}
-                  className="ml-auto text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 disabled:opacity-50"
+                  style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--foreground-muted)', background: 'none', border: 'none', cursor: 'pointer', opacity: bulkLoading ? 0.5 : 1 }}
                 >
                   Clear
                 </button>
@@ -837,44 +928,33 @@ export default function ReviewPage() {
 
             {/* Loading / error / empty states */}
             {loading && (
-              <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--foreground-muted)', fontSize: '14px' }}>
                 <svg
-                  className="animate-spin h-5 w-5 mr-2"
+                  style={{ width: 20, height: 20, marginRight: 8, animation: 'spin 1s linear infinite' }}
                   fill="none"
                   viewBox="0 0 24 24"
                   aria-hidden="true"
                 >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                  />
+                  <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                 </svg>
                 Loading detections…
               </div>
             )}
 
             {!loading && loadError && (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded px-4 py-2">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ fontSize: '14px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 16px' }}>
                   {loadError}
                 </p>
               </div>
             )}
 
             {!loading && !loadError && !jobId && (
-              <div className="flex-1 flex items-center justify-center text-center text-zinc-400 p-8">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--foreground-subtle)', padding: 32 }}>
                 <div>
                   <svg
-                    className="w-12 h-12 mx-auto mb-3"
+                    style={{ width: 48, height: 48, margin: '0 auto 12px' }}
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1.5}
@@ -887,20 +967,20 @@ export default function ReviewPage() {
                       d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
                     />
                   </svg>
-                  <p className="text-sm font-medium">Select a project and job to begin</p>
-                  <p className="text-xs mt-1">Detections will appear here for review</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500' }}>Select a project and job to begin</p>
+                  <p style={{ fontSize: '12px', marginTop: '4px' }}>Detections will appear here for review</p>
                 </div>
               </div>
             )}
 
             {!loading && !loadError && jobId && detections.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--foreground-subtle)', fontSize: '14px' }}>
                 No detections found for this job.
               </div>
             )}
 
             {!loading && !loadError && filtered.length === 0 && detections.length > 0 && (
-              <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--foreground-subtle)', fontSize: '14px' }}>
                 No detections match the current filters.
               </div>
             )}
@@ -908,43 +988,27 @@ export default function ReviewPage() {
             {/* Table */}
             {!loading && !loadError && filtered.length > 0 && (
               <>
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: 'var(--surface-muted)', position: 'sticky', top: 0, zIndex: 10 }}>
                       <tr>
-                        <th className="px-3 py-2.5 w-8">
+                        <th style={{ ...thStyle, width: 32 }}>
                           <input
                             type="checkbox"
                             checked={allPageChecked}
-                            ref={(el) => {
-                              if (el) el.indeterminate = somePageChecked;
-                            }}
+                            ref={(el) => { if (el) el.indeterminate = somePageChecked; }}
                             onChange={togglePageAll}
                             aria-label="Select all on this page"
-                            className="rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500"
+                            style={{ cursor: 'pointer' }}
                           />
                         </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          No
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          Asset Tag
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          Asset Type
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          P&amp;ID Page
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          Confidence
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          Status
-                        </th>
-                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-500">
-                          Action
-                        </th>
+                        <th style={thStyle}>No</th>
+                        <th style={thStyle}>Asset Tag</th>
+                        <th style={thStyle}>Asset Type</th>
+                        <th style={thStyle}>P&amp;ID Page</th>
+                        <th style={thStyle}>Confidence</th>
+                        <th style={thStyle}>Status</th>
+                        <th style={thStyle}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -956,65 +1020,52 @@ export default function ReviewPage() {
                           <tr
                             key={d.id}
                             onClick={() => handleRowClick(d)}
-                            className={`border-t border-zinc-100 dark:border-zinc-800 cursor-pointer transition-colors
-                              ${
-                                isSelected
-                                  ? 'bg-blue-50 dark:bg-blue-900/20'
-                                  : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                              }`}
+                            style={{
+                              borderTop: '1px solid var(--border)',
+                              cursor: 'pointer',
+                              background: isSelected ? 'var(--primary-soft)' : 'transparent',
+                              transition: 'background 150ms ease-out',
+                            }}
+                            onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
+                            onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                           >
-                            <td
-                              className="px-3 py-2 w-8"
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <td style={{ ...tdBase, width: 32 }} onClick={e => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleCheck(d.id)}
                                 aria-label={`Select detection ${d.asset_tag ?? d.asset_type}`}
-                                className="rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500"
+                                style={{ cursor: 'pointer' }}
                               />
                             </td>
-                            <td className="px-3 py-2 text-zinc-400">{rowNum}</td>
-                            <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200 font-mono">
-                              {d.asset_tag ?? (
-                                <span className="text-zinc-400 italic">—</span>
-                              )}
+                            <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>{rowNum}</td>
+                            <td style={{ ...tdBase, fontWeight: '500', color: 'var(--foreground)', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                              {d.asset_tag ?? <span style={{ color: 'var(--foreground-muted)', fontStyle: 'italic' }}>—</span>}
                             </td>
-                            <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">
-                              {d.asset_type}
-                            </td>
-                            <td className="px-3 py-2 text-zinc-500">
-                              {d.pid_page ?? '—'}
-                            </td>
-                            <td className="px-3 py-2">{confBadge(d.confidence)}</td>
-                            <td className="px-3 py-2">{statusBadge(d.review_status)}</td>
-                            <td
-                              className="px-3 py-2"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {d.review_status !== 'APPROVED' &&
-                              d.review_status !== 'REJECTED' ? (
-                                <div className="flex gap-1">
+                            <td style={{ ...tdBase, color: 'var(--foreground)' }}>{d.asset_type}</td>
+                            <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>{d.pid_page ?? '—'}</td>
+                            <td style={tdBase}>{confBadge(d.confidence)}</td>
+                            <td style={tdBase}>{statusBadge(d.review_status)}</td>
+                            <td style={tdBase} onClick={e => e.stopPropagation()}>
+                              {d.review_status !== 'APPROVED' && d.review_status !== 'REJECTED' ? (
+                                <div style={{ display: 'flex', gap: '4px' }}>
                                   <button
                                     onClick={() => handleConfirm(d.id)}
-                                    className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+                                    style={{ ...tableActionBtn, background: 'var(--success)' }}
                                     title="Confirm"
                                   >
                                     ✓
                                   </button>
                                   <button
                                     onClick={() => handleReject(d.id)}
-                                    className="px-2 py-0.5 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors"
+                                    style={{ ...tableActionBtn, background: 'var(--danger)' }}
                                     title="Reject"
                                   >
                                     ✕
                                   </button>
                                 </div>
                               ) : (
-                                <span className="text-zinc-300 dark:text-zinc-600 text-xs">
-                                  —
-                                </span>
+                                <span style={{ color: 'var(--border-strong)', fontSize: '12px' }}>—</span>
                               )}
                             </td>
                           </tr>
@@ -1026,25 +1077,23 @@ export default function ReviewPage() {
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                  <div className="flex items-center gap-2 px-4 py-2.5 border-t border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500">
+                  <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--foreground-muted)' }}>
                     <button
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                       disabled={page === 1}
-                      className="px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                      style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1 }}
                     >
                       ←
                     </button>
-                    <span>
-                      Page {page} / {totalPages}
-                    </span>
+                    <span>Page {page} / {totalPages}</span>
                     <button
                       onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                       disabled={page === totalPages}
-                      className="px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                      style={{ ...toolButtonStyle, opacity: page === totalPages ? 0.4 : 1 }}
                     >
                       →
                     </button>
-                    <span className="ml-auto text-zinc-400">
+                    <span style={{ marginLeft: 'auto', color: 'var(--foreground-subtle)' }}>
                       {filtered.length} total
                     </span>
                   </div>
@@ -1054,7 +1103,7 @@ export default function ReviewPage() {
           </div>
 
           {/* ── Right: Detail Panel ── */}
-          <div className="w-96 flex-shrink-0">
+          <div style={{ width: 384, flexShrink: 0 }}>
             {selectedDetection ? (
               <DetailPanel
                 key={selectedDetection.id}
