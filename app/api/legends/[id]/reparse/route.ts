@@ -2,18 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
 import { getFile } from '@/lib/storage';
-import { getGeminiModel } from '@/lib/gemini';
-import { getPdfPageCountFromBuffer, renderPageToPng } from '@/lib/pdf-render';
+import { getGeminiModel, getDeepSeekClient } from '@/lib/gemini';
 import { env } from '@/lib/env';
 
-const RENDER_SCALE = 2.0;
+// Retry with exponential backoff for transient AI overloads (mirrors lib/ai-agent.ts pattern)
+// Check: /503|429|overloaded|high demand|rate/i, max 3 attempts, delays 2000ms*attempt
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (e: unknown) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const transient = /503|429|overloaded|high demand|rate/i.test(msg);
+      if (!transient || i === retries - 1) throw e;
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  throw last;
+}
 
 /**
  * POST /api/legends/[id]/reparse
- *
- * Renders each PDF page to PNG, sends to Gemini Vision with a prompt
- * that asks for normalized bounding boxes (0–1000 range, ymin/xmin/ymax/xmax).
- * Stores normalized values so the viewer can convert to canvas coords at any zoom.
+ * Re-runs AI legend parse on the stored PDF and upserts symbols.
+ * Useful when original parse failed (e.g., DB schema missing columns).
  */
 export async function POST(
   _req: NextRequest,
@@ -24,164 +36,141 @@ export async function POST(
     const leg = await db.query('SELECT * FROM legends WHERE id=$1', [id]);
     if (leg.rows.length === 0) return NextResponse.json({ error: 'Legend not found' }, { status: 404 });
 
+    // PDF stored as legend-{id}.pdf
     const storedFilename = `legend-${id}.pdf`;
     let buf: Buffer;
     try {
       buf = await getFile(storedFilename) as unknown as Buffer;
     } catch {
-      return NextResponse.json(
-        { error: 'Legend PDF not found in storage. Re-upload to re-parse.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Legend PDF not found in storage. Re-upload to re-parse.' }, { status: 404 });
     }
 
-    const pageCount = await getPdfPageCountFromBuffer(buf);
+    const draft = await withRetry(() => parseLegendPdf(buf, leg.rows[0].name));
+    console.log('[legends/reparse] AI parsed symbols:', draft.length);
+
+    // Delete existing DRAFT symbols, then re-insert
     await db.query("DELETE FROM legend_symbols WHERE legend_id=$1 AND status='DRAFT'", [id]);
 
-    let totalInserted = 0;
-
-    for (let page = 1; page <= pageCount; page++) {
-      let pngBase64: string;
-      try {
-        const png = await renderPageToPng(buf, page, RENDER_SCALE);
-        pngBase64 = png.toString('base64');
-      } catch (e: unknown) {
-        console.warn(`[reparse] page ${page} render failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
-        continue;
-      }
-
-      let symbols: ParsedSymbol[] = [];
-      try {
-        symbols = await parseLegendPage(pngBase64, page);
-      } catch (e: unknown) {
-        console.warn(`[reparse] page ${page} AI failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 300));
-        continue;
-      }
-
-      for (const s of symbols) {
-        await db.query(
-          `INSERT INTO legend_symbols
-             (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status,
-              bbox_x, bbox_y, bbox_w, bbox_h, pid_page)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12)`,
-          [
-            uuidv4(), id,
-            s.asset_type.slice(0, 120),
-            s.symbol_name,
-            s.tag_pattern,
-            s.description,
-            s.aliases,
-            s.bbox_xmin, s.bbox_ymin,
-            s.bbox_xmax != null && s.bbox_xmin != null ? s.bbox_xmax - s.bbox_xmin : null,
-            s.bbox_ymax != null && s.bbox_ymin != null ? s.bbox_ymax - s.bbox_ymin : null,
-            page,
-          ]
-        );
-        totalInserted++;
-      }
+    let inserted = 0;
+    for (const s of draft) {
+      console.log('[legends/reparse] Parsing symbol:', JSON.stringify(s).slice(0, 100));
+      const parsed = {
+        asset_type: ((s.assetType ?? s.asset_type ?? 'Unknown') as string).slice(0, 120),
+        symbol_name: ((s.symbolName ?? s.symbol_name ?? null) as string | null),
+        tag_pattern: ((s.tagPattern ?? s.tag_pattern ?? null) as string | null),
+        description: ((s.description ?? null) as string | null),
+        bbox_x: (s as any)?.bboxX ?? (s as any)?.bbox_x ?? null,
+        bbox_y: (s as any)?.bboxY ?? (s as any)?.bbox_y ?? null,
+        bbox_w: (s as any)?.bboxW ?? (s as any)?.bbox_w ?? null,
+        bbox_h: (s as any)?.bboxH ?? (s as any)?.bbox_h ?? null,
+        pid_page: (s as any)?.page ?? (s as any)?.pid_page ?? null,
+        aliases: (Array.isArray(s.aliases) ? s.aliases : []) as string[],
+      };
+      await db.query(
+        `INSERT INTO legend_symbols
+           (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT')`,
+        [uuidv4(), id, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.bbox_x, parsed.bbox_y, parsed.bbox_w, parsed.bbox_h, parsed.pid_page, parsed.aliases]
+      );
+      inserted++;
     }
 
-    return NextResponse.json({ inserted: totalInserted, pages: pageCount });
+    if (inserted === 0) {
+      console.warn('[legends/reparse] No symbols inserted for legend:', id);
+    }
+
+    return NextResponse.json({ inserted, total: draft.length });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('[legends/reparse]', msg);
-    return NextResponse.json({ error: 'Re-parse failed', detail: msg.slice(0, 300) }, { status: 500 });
+    const isTransient = /503|429|overloaded|high demand|rate/i.test(msg);
+    console.error('[legends/reparse]', isTransient ? 'transient AI overload' : msg.slice(0, 300));
+    return NextResponse.json(
+      {
+        error: isTransient
+          ? 'Model AI sedang sibuk. Silakan coba lagi beberapa detik.'
+          : 'Re-parse failed',
+        detail: isTransient ? 'Gemini overloaded — retry shortly' : 'See server logs',
+      },
+      { status: isTransient ? 503 : 500 }
+    );
   }
 }
 
-interface ParsedSymbol {
-  asset_type: string;
-  symbol_name: string | null;
-  tag_pattern: string | null;
-  description: string | null;
-  aliases: string[];
-  // Normalized 0-1000 bounding box (ymin, xmin, ymax, xmax)
-  bbox_ymin: number | null;
-  bbox_xmin: number | null;
-  bbox_ymax: number | null;
-  bbox_xmax: number | null;
-}
+async function parseLegendPdf(buf: Buffer, name: string): Promise<Record<string, unknown>[]> {
+  const b64 = buf.toString('base64');
 
-async function parseLegendPage(pngBase64: string, page: number): Promise<ParsedSymbol[]> {
-  if (env.AI_PROVIDER === 'deepseek') {
-    console.warn('[reparse] DeepSeek does not support image — skipping bbox detection');
-    return [];
-  }
+  const prompt = `You are an expert P&ID legend analyzer. Extract ALL symbol definitions from this P&ID legend document.
 
-  const model = getGeminiModel();
+For each symbol, extract:
+1. Asset Type (canonical class: Pump, Valve, Vessel, Tank, Compressor, HX, Filter, Motor, Fan, Instrument, PSV, etc.)
+2. Symbol Name (descriptive name visible in legend)
+3. Tag Pattern (if visible, like "P-###", "V-###", else null)
+4. Description (brief description or null)
+5. Aliases (alternative names or abbreviations)
+6. Bounding Box (bbox) — normalized 0–1000 coordinate space tightly enclosing ONLY the symbol graphic itself:
+   - bboxX: left x
+   - bboxY: top y
+   - bboxW: width
+   - bboxH: height
+7. Page — 1-based page number where this symbol appears in the legend document.
 
-  // Gemini natively understands normalized 0-1000 bbox format [ymin, xmin, ymax, xmax]
-  // This is the format Gemini Vision was trained on — much more accurate than pixel coords
-  const prompt = `You are analyzing page ${page} of a P&ID (Piping and Instrumentation Diagram) legend.
+CRITICAL RULES:
+- Extract ALL symbols you can find in the legend
+- Return null for values not visible
+- Do NOT fabricate symbols or descriptions
+- Return ONLY valid JSON, no markdown
 
-Task: Detect and locate EVERY industrial equipment symbol shown in this legend page.
-
-For each symbol, provide:
-1. name: the symbol name exactly as shown in the legend
-2. assetType: canonical equipment class (Pump, Valve, Vessel, Instrument, Filter, etc.)
-3. tagPattern: tag format if visible (e.g. "P-###"), else null
-4. bbox: bounding box of the SYMBOL GRAPHIC (not the text label) as [ymin, xmin, ymax, xmax]
-   where coordinates are NORMALIZED 0-1000:
-   - 0,0 = top-left corner of the image
-   - 1000,1000 = bottom-right corner of the image
-
-IMPORTANT:
-- Detect ALL symbols visible — do not skip any
-- bbox must enclose only the graphic drawing, NOT surrounding text
-- Be precise with bbox — tight around the symbol shape
-- Return null for tagPattern if not shown
-- Return ONLY valid JSON, no explanation
-
-JSON format:
+Return ONLY this JSON:
 {
   "symbols": [
     {
-      "name": "Gate Valve",
-      "assetType": "Valve",
-      "tagPattern": null,
-      "bbox": [120, 45, 145, 75]
+      "assetType": "string",
+      "symbolName": "string or null",
+      "tagPattern": "string or null",
+      "description": "string or null",
+      "aliases": ["string"],
+      "bboxX": 0,
+      "bboxY": 0,
+      "bboxW": 0,
+      "bboxH": 0,
+      "page": 1
     }
   ]
 }`;
 
+  if (env.AI_PROVIDER === 'deepseek' && env.DEEPSEEK_API_KEY) {
+    const client = getDeepSeekClient();
+    const c = await client.chat.completions.create({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: `Parse legend: ${name}` },
+      ],
+      response_format: { type: 'json_object' },
+    });
+    const j = JSON.parse(c.choices[0].message.content ?? '{}') as Record<string, unknown>;
+    return Array.isArray(j.symbols) ? (j.symbols as Record<string, unknown>[]) : [];
+  }
+
+  const model = getGeminiModel();
   const r = await model.generateContent([
     { text: prompt },
-    { inlineData: { mimeType: 'image/png', data: pngBase64 } },
+    { inlineData: { mimeType: 'application/pdf', data: b64 } },
   ]);
 
   const text = r.response.text();
-  console.log(`[reparse] page ${page} response length: ${text.length}`);
-
-  let j: { symbols?: unknown[] };
+  let j: Record<string, unknown>;
   const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (m) {
-    j = JSON.parse(m[1]) as typeof j;
+    j = JSON.parse(m[1]) as Record<string, unknown>;
   } else {
     const start = text.indexOf('{');
-    const end   = text.lastIndexOf('}');
+    const end = text.lastIndexOf('}');
     if (start === -1 || end === -1) throw new Error('No JSON in Gemini response');
-    j = JSON.parse(text.slice(start, end + 1)) as typeof j;
+    j = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
   }
 
-  const raw = Array.isArray(j.symbols) ? j.symbols : [];
-
-  return raw.map((s): ParsedSymbol => {
-    const sym  = s as Record<string, unknown>;
-    const bbox = sym.bbox as number[] | null | undefined;
-
-    // bbox format: [ymin, xmin, ymax, xmax] normalized 0-1000
-    const bbox_ymin = Array.isArray(bbox) && bbox[0] != null ? Number(bbox[0]) : null;
-    const bbox_xmin = Array.isArray(bbox) && bbox[1] != null ? Number(bbox[1]) : null;
-    const bbox_ymax = Array.isArray(bbox) && bbox[2] != null ? Number(bbox[2]) : null;
-    const bbox_xmax = Array.isArray(bbox) && bbox[3] != null ? Number(bbox[3]) : null;
-
-    return {
-      asset_type:  String(sym.assetType ?? sym.asset_type ?? 'Unknown').slice(0, 120),
-      symbol_name: ((sym.name ?? sym.symbolName ?? sym.symbol_name ?? null) as string | null),
-      tag_pattern: ((sym.tagPattern ?? sym.tag_pattern ?? null) as string | null),
-      description: null,
-      aliases:     [],
-      bbox_ymin, bbox_xmin, bbox_ymax, bbox_xmax,
-    };
-  });
+  if (Array.isArray(j.symbols)) return j.symbols as Record<string, unknown>[];
+  if (Array.isArray(j)) return j as Record<string, unknown>[];
+  return [];
 }

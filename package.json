@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register workers/detection-worker.ts",
+    "worker": "ts-node --transpile-only --project tsconfig.worker.json -r tsconfig-paths/register -r ./workers/preload.ts workers/detection-worker.ts",
     "migrate": "node scripts/migrate.cjs"
   },
   "dependencies": {

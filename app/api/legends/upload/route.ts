@@ -33,18 +33,23 @@ export async function POST(request: NextRequest) {
     // Try AI parse (non-blocking failure)
     let draft: Record<string, unknown>[] = [];
     try {
-      draft = await parseLegendPdf(buf, file.name);
+      draft = await withRetry(() => parseLegendPdf(buf, file.name));
       for (const s of draft) {
         const parsed = {
           asset_type: (s.assetType ?? s.asset_type ?? "Unknown") as string,
           symbol_name: (s.symbolName ?? s.symbol_name ?? null) as string | null,
           tag_pattern: (s.tagPattern ?? s.tag_pattern ?? null) as string | null,
           description: (s.description ?? null) as string | null,
+          bbox_x: (s as any)?.bboxX ?? (s as any)?.bbox_x ?? null,
+          bbox_y: (s as any)?.bboxY ?? (s as any)?.bbox_y ?? null,
+          bbox_w: (s as any)?.bboxW ?? (s as any)?.bbox_w ?? null,
+          bbox_h: (s as any)?.bboxH ?? (s as any)?.bbox_h ?? null,
+          pid_page: (s as any)?.page ?? (s as any)?.pid_page ?? null,
           aliases: (Array.isArray(s.aliases) ? s.aliases : []) as string[],
         };
         await db.query(
-          "INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT')",
-          [uuidv4(), legendId, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.aliases]
+          `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'DRAFT')`,
+          [uuidv4(), legendId, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.bbox_x, parsed.bbox_y, parsed.bbox_w, parsed.bbox_h, parsed.pid_page, parsed.aliases]
         );
       }
     } catch (e: unknown) {
@@ -60,11 +65,26 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (e: unknown) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const transient = /503|429|overloaded|high demand|rate/i.test(msg);
+      if (!transient || i === retries - 1) throw e;
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 async function parseLegendPdf(buf: Buffer, filename: string): Promise<Record<string, unknown>[]> {
   // Send full PDF — Gemini accepts application/pdf up to ~20MB
   const b64 = buf.toString("base64");
 
-  // Stronger prompt from origin/main refactor
+  // Stronger prompt — also requests bbox + page per symbol
   const prompt = `You are an expert P&ID legend analyzer. Extract ALL symbol definitions from this P&ID legend document.
 
 For each symbol, extract:
@@ -73,13 +93,21 @@ For each symbol, extract:
 3. Tag Pattern (if visible, like "P-###", "V-###", "E-##", else null)
 4. Description (brief description of symbol purpose/meaning, or null)
 5. Aliases (alternative names or abbreviations for the symbol)
+6. Bounding Box (bbox) — normalized 0–1000 coordinate space tightly enclosing ONLY the symbol graphic itself:
+   - bboxX: left x (0 = page left edge, 1000 = page right edge)
+   - bboxY: top y (0 = page top edge, 1000 = page bottom edge)
+   - bboxW: width
+   - bboxH: height
+   Ignore title blocks, revision tables, and general notes — bbox must cover the symbol ONLY.
+7. Page — 1-based page number where this symbol appears in the legend document.
 
 CRITICAL RULES:
 - Examine the entire legend carefully for all symbols shown
 - Extract canonical asset types ONLY (do NOT invent)
 - Return null for values not visible in the legend
 - Do NOT fabricate symbols, tags, or descriptions
-- Each symbol should have at least asset_type and symbol_name
+- Each symbol should have at least asset_type, symbol_name, bbox (x, y, w, h), and page
+- Bounding boxes must tightly enclose the symbol graphic — ignore surrounding text
 - Return structured JSON only, no markdown or explanations
 
 Return ONLY valid JSON in this exact format:
@@ -90,7 +118,12 @@ Return ONLY valid JSON in this exact format:
       "symbolName": "string or null",
       "tagPattern": "string or null",
       "description": "string or null",
-      "aliases": ["string"]
+      "aliases": ["string"],
+      "bboxX": 0,
+      "bboxY": 0,
+      "bboxW": 0,
+      "bboxH": 0,
+      "page": 1
     }
   ]
 }`;

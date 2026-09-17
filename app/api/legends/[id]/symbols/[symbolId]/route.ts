@@ -31,9 +31,7 @@ export async function PUT(
     const parsed = LegendSymbolSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, { status: 400 });
 
-    const { asset_type, symbol_name, tag_pattern, description, aliases, status,
-            bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
-
+    const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
     const oldRow = (
       await db.query('SELECT * FROM legend_symbols WHERE id = $1 AND legend_id = $2', [symbolId, id])
     ).rows[0];
@@ -44,8 +42,7 @@ export async function PUT(
        SET asset_type=$1, symbol_name=$2, tag_pattern=$3, description=$4, aliases=$5, status=$6,
            bbox_x=$7, bbox_y=$8, bbox_w=$9, bbox_h=$10, pid_page=$11, updated_at=NOW()
        WHERE id=$12 AND legend_id=$13`,
-      [asset_type, symbol_name, tag_pattern, description, aliases, status,
-       bbox_x, bbox_y, bbox_w, bbox_h, pid_page, symbolId, id]
+      [asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, symbolId, id]
     );
 
     await db.query(
@@ -53,8 +50,7 @@ export async function PUT(
       [symbolId, id, 'UPDATE', JSON.stringify(oldRow), JSON.stringify(parsed.data)]
     );
 
-    const updated = (await db.query('SELECT * FROM legend_symbols WHERE id=$1', [symbolId])).rows[0];
-    return NextResponse.json(updated);
+    return NextResponse.json({ id: symbolId, legend_id: id, ...parsed.data });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[symbols/[symbolId] PUT]', msg);

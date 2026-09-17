@@ -25,6 +25,11 @@ CREATE TABLE legend_symbols (
     description TEXT,
     aliases TEXT[] DEFAULT '{}',
     status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DRAFT','REJECTED')),
+    bbox_x INTEGER,
+    bbox_y INTEGER,
+    bbox_w INTEGER,
+    bbox_h INTEGER,
+    pid_page INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -160,3 +165,13 @@ CREATE INDEX idx_detections_job ON detections(job_id);
 CREATE INDEX idx_detections_document ON detections(document_id);
 CREATE INDEX idx_assets_project ON assets(project_id);
 CREATE INDEX idx_assets_document ON assets(document_id);
+
+-- Legend symbol bounding box (normalized 0-1000) + page location
+-- Extracted by AI during legend PDF parse; used in legend review viewer.
+-- CREATE TABLE above already includes these columns for fresh installs;
+-- the ALTERs below keep existing DBs in sync (idempotent).
+ALTER TABLE legend_symbols ADD COLUMN IF NOT EXISTS bbox_x INTEGER;
+ALTER TABLE legend_symbols ADD COLUMN IF NOT EXISTS bbox_y INTEGER;
+ALTER TABLE legend_symbols ADD COLUMN IF NOT EXISTS bbox_w INTEGER;
+ALTER TABLE legend_symbols ADD COLUMN IF NOT EXISTS bbox_h INTEGER;
+ALTER TABLE legend_symbols ADD COLUMN IF NOT EXISTS pid_page INTEGER;
