@@ -53,15 +53,14 @@ For EACH equipment symbol found, provide:
    - 0.80–0.94: symbol recognizable, tag partially obscured or not present
    - 0.60–0.79: symbol shape ambiguous
    - below 0.60: uncertain — include only with strong evidence
-4. bbox — bounding box in 0–1000 normalized coordinate space:
-   - (0,0) = top-left, (1000,1000) = bottom-right
-   - x, y = top-left corner of symbol
-   - width, height = size of symbol (tight fit around symbol graphic)
+4. bbox — NORMALIZED 0–1000 coordinate space (NOT pixel coordinates):
+   - (0,0) = top-left corner of the image, (1000,1000) = bottom-right corner
+   - x, y = top-left corner of the symbol bounding box
+   - width, height = size of the bounding box (tight fit)
+   - Example: symbol at image center ≈ { x:450, y:450, width:80, height:80 }
+   - IMPORTANT: values must be between 0–1000. Never use raw pixel values.
 5. evidence — 1–3 specific observations justifying this detection
 6. legendSymbol — exact legend name this symbol matches, or null
-
-OPTIONAL (only if explicitly visible, never guess):
-- description, equipmentClass, service, location, unit, area
 
 ━━━ STRICT RULES ━━━
 

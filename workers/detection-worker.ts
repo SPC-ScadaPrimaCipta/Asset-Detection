@@ -143,31 +143,10 @@ export const worker = new Worker(
             legendId: effectiveLegendId ?? "",
             legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
             ocrText: ocrPages[page - 1] ?? "",
+            pngWidth: pngDimensions?.width,
+            pngHeight: pngDimensions?.height,
           });
           detections = result.detections;
-
-          // Normalize AI bbox to 0-1000 if not already, or if we have dimensions and want consistency.
-          if (pngDimensions) {
-              detections = detections.map(d => {
-                  const normalized = {
-                      x: Math.round((Number(d.bbox.x) || 0) / pngDimensions!.width * 1000),
-                      y: Math.round((Number(d.bbox.y) || 0) / pngDimensions!.height * 1000),
-                      width: Math.round((Number(d.bbox.width) || 0) / pngDimensions!.width * 1000),
-                      height: Math.round((Number(d.bbox.height) || 0) / pngDimensions!.height * 1000),
-                  };
-                  log(`page ${page} bbox normalize`, {
-                      assetTag: d.assetTag,
-                      confidence: d.confidence,
-                      raw: d.bbox,
-                      pngDims: pngDimensions,
-                      normalized,
-                  });
-                  return {
-                      ...d,
-                      bbox: normalized
-                  };
-              });
-          }
 
           log(`page ${page}/${pageCount} detections=${detections.length}`, {
             page,

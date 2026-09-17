@@ -6,20 +6,8 @@ import { PageDetectionSchema } from '@/lib/ai-schemas';
 
 export interface DetectionJobInput {
   page: number;
-  /**
-   * Primary (highest accuracy): per-page PNG image rendered by mupdf at ~216dpi.
-   * Gemini Vision processes this as image/png — one page, full focus, accurate bounding boxes.
-   */
   pageImageBase64?: string;
-  /**
-   * Fallback A: Gemini Files API URI (uploaded once per job).
-   * Used when pageImageBase64 is unavailable (render failed).
-   */
   fileUri?: string;
-  /**
-   * Fallback B: full PDF base64.
-   * Used when both pageImageBase64 and fileUri are unavailable.
-   */
   pdfBase64?: string;
   legendId: string;
   legendSymbols: {
@@ -29,7 +17,9 @@ export interface DetectionJobInput {
     description?: string | null;
     aliases?: string[];
   }[];
-  ocrText?: string; // for DeepSeek fallback
+  ocrText?: string;
+  pngWidth?: number;
+  pngHeight?: number;
 }
 
 const MAX_RETRIES = 3;
@@ -81,16 +71,22 @@ async function runWithGemini(input: DetectionJobInput, prompt: string) {
 
   if (input.pageImageBase64) {
     mediaPart = { inlineData: { mimeType: 'image/png', data: input.pageImageBase64 } };
-    contextText = `Analyze page ${input.page} of this P&ID document (rendered as high-resolution PNG at ~288dpi).
-Detect ALL equipment symbols and assets. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    const dimInfo = (input.pngWidth && input.pngHeight)
+      ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
+      : 'Image rendered at ~216dpi.';
+    contextText = `This is page ${input.page} of a P&ID document, rendered as a PNG image.
+${dimInfo}
+BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right. DO NOT use pixel coordinates.
+Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.fileUri) {
     mediaPart = { fileData: { mimeType: 'application/pdf', fileUri: input.fileUri } };
-    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
+    contextText = `This is a multi-page P&ID PDF. Analyze ONLY page ${input.page}. Ignore all other pages.
+BBOX: normalized 0-1000 space, (0,0)=top-left of page ${input.page}.
 Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.pdfBase64) {
     mediaPart = { inlineData: { mimeType: 'application/pdf', data: input.pdfBase64 } };
-    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze ONLY page ${input.page} of this P&ID PDF. Ignore all other pages.
+BBOX: normalized 0-1000 space. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else {
     throw new Error('At least one of pageImageBase64, fileUri, or pdfBase64 must be provided');
   }
