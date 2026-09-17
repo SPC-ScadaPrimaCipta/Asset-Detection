@@ -17,6 +17,88 @@ const DEFAULT_GEMINI_MODELS = [
   'gemini-1.5-flash',
 ];
 
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  padding: '20px',
+};
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '12px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  marginBottom: '8px',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+};
+
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--foreground)',
+  fontSize: '13px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  border: '1px solid var(--primary)',
+};
+
+const buttonDisabledStyle: React.CSSProperties = {
+  ...primaryButtonStyle,
+  opacity: 0.5,
+  cursor: 'not-allowed',
+};
+
+const alertStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border)',
+  fontSize: '13px',
+  marginBottom: '16px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+};
+
+const alertErrorStyle: React.CSSProperties = {
+  ...alertStyle,
+  background: 'var(--danger-soft)',
+  borderColor: 'var(--danger)',
+  color: 'var(--danger)',
+};
+
+const alertSuccessStyle: React.CSSProperties = {
+  ...alertStyle,
+  background: 'var(--success-soft)',
+  borderColor: 'var(--success)',
+  color: 'var(--success)',
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,7 +110,7 @@ export default function SettingsPage() {
     DEFAULT_GEMINI_MODELS.map(m => ({ id: m, name: m }))
   );
   const [scanning, setScanning] = useState(false);
-  const [dsQuota, setDsQuota] = useState<{ balance: string, currency: string } | null>(null);
+  const [dsQuota, setDsQuota] = useState<{ balance: string; currency: string; granted?: string; toppedUp?: string } | null>(null);
   const [dsModels, setDsModels] = useState<{ id: string; name: string }[]>([]);
 
   const [formData, setFormData] = useState<Settings>({
@@ -48,7 +130,6 @@ export default function SettingsPage() {
           ai_provider: data.ai_provider,
           gemini_model: data.gemini_model,
           deepseek_model: data.deepseek_model || 'deepseek-chat',
-          // API keys intentionally NOT returned - user must re-enter to scan
         }));
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Load failed');
@@ -84,8 +165,7 @@ export default function SettingsPage() {
 
       if (provider === 'gemini') {
         setAvailableModels(data.models);
-        setSuccess(`Successfully scanned ${data.models.length} Gemini models!`);
-        // if current model isn't in list, select first available
+        setSuccess(`Successfully scanned ${data.models.length} Gemini models.`);
         if (data.models.length > 0 && !data.models.find((m: any) => m.id === formData.gemini_model)) {
           setFormData(prev => ({ ...prev, gemini_model: data.models[0].id }));
         }
@@ -95,10 +175,10 @@ export default function SettingsPage() {
           setFormData(prev => ({ ...prev, deepseek_model: data.models[0].id }));
         }
         if (data.quota) {
-           setDsQuota(data.quota);
-           setSuccess(`Successfully scanned DeepSeek models. Balance: ${data.quota.balance} ${data.quota.currency}`);
+          setDsQuota(data.quota);
+          setSuccess(`DeepSeek: Balance ${data.quota.balance} ${data.quota.currency}, ${data.models.length} models available.`);
         } else {
-           setSuccess(`Successfully scanned ${data.models.length} DeepSeek models!`);
+          setSuccess(`Successfully scanned ${data.models.length} DeepSeek models.`);
         }
       }
     } catch (err: unknown) {
@@ -139,7 +219,7 @@ export default function SettingsPage() {
 
       const updated = await res.json() as Settings;
       setSettings(updated);
-      setSuccess('Settings saved successfully');
+      setSuccess('Settings saved.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -149,226 +229,198 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-zinc-400">
-        Loading settings…
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px' }}>
+        <p style={{ color: 'var(--foreground-muted)' }}>Loading settings…</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Settings</h1>
-        <p className="text-sm text-zinc-500 mt-1">Manage AI providers and API keys</p>
+    <div style={{ maxWidth: '800px' }}>
+      <div style={{ marginBottom: '32px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '8px' }}>Settings</h1>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)' }}>Manage AI provider and API keys</p>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400 flex items-center justify-between">
+        <div style={alertErrorStyle}>
           <span>{error}</span>
-          <button
-            onClick={() => setError('')}
-            className="text-red-400 hover:text-red-600"
-          >
-            ✕
-          </button>
+          <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px' }}>×</button>
         </div>
       )}
 
       {success && (
-        <div className="mb-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400 flex items-center justify-between">
+        <div style={alertSuccessStyle}>
           <span>{success}</span>
-          <button
-            onClick={() => setSuccess('')}
-            className="text-emerald-400 hover:text-emerald-600"
-          >
-            ✕
-          </button>
+          <button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px' }}>×</button>
         </div>
       )}
 
-      <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-        {/* AI Provider Selection */}
-        <div>
-          <label className="block mb-3">
-            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">AI Provider</span>
-            <p className="text-xs text-zinc-500 mt-0.5">Select which AI service to use for detection</p>
-          </label>
-          <div className="grid grid-cols-2 gap-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        {/* Provider Selection */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '16px' }}>AI Provider</h2>
+          <div style={{ display: 'flex', gap: '12px' }}>
             {(['gemini', 'deepseek'] as const).map(provider => (
               <button
                 key={provider}
                 onClick={() => setFormData(f => ({ ...f, ai_provider: provider }))}
-                className={`px-4 py-3 rounded-lg border-2 transition-colors text-sm font-medium ${
-                  formData.ai_provider === provider
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
-                    : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
-                }`}
+                style={{
+                  ...buttonStyle,
+                  flex: 1,
+                  background: formData.ai_provider === provider ? 'var(--primary-soft)' : 'var(--surface)',
+                  color: formData.ai_provider === provider ? 'var(--primary)' : 'var(--foreground)',
+                  fontWeight: formData.ai_provider === provider ? '600' : '500',
+                }}
               >
-                {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                {provider === 'gemini' ? 'Google Gemini' : 'DeepSeek'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Gemini Settings */}
-        <div className="space-y-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Google Gemini</h3>
+        {/* Gemini Configuration */}
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>Google Gemini</h2>
             <button
               onClick={() => handleScan('gemini')}
               disabled={scanning || !formData.gemini_api_key}
-              className="px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+              style={scanning || !formData.gemini_api_key ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
             >
-              {scanning ? 'Scanning...' : 'Scan Models & Quota'}
+              {scanning ? 'Scanning…' : 'Scan Models'}
             </button>
           </div>
 
-          <div>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Gemini Model</span>
-              <select
-                value={formData.gemini_model}
-                onChange={e => setFormData(f => ({ ...f, gemini_model: e.target.value }))}
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {availableModels.map(model => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">API Key</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={labelStyle}>API Key</label>
               <input
                 type="password"
+                placeholder="Enter Gemini API key"
+                style={inputStyle}
                 value={formData.gemini_api_key || ''}
                 onChange={e => setFormData(f => ({ ...f, gemini_api_key: e.target.value }))}
-                placeholder="sk-..."
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-zinc-400 mt-1">Your Gemini API key is stored securely server-side</p>
-            </label>
-          </div>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', marginTop: '6px' }}>Stored securely server-side only</p>
+            </div>
 
-          {/* Gemini Quota Info Placeholder */}
-           <div className="text-xs text-zinc-400 italic">
-             Note: Gemini quota must be checked via Google Cloud Console.
-           </div>
+            <div>
+              <label style={labelStyle}>Model</label>
+              <select
+                style={selectStyle}
+                value={formData.gemini_model}
+                onChange={e => setFormData(f => ({ ...f, gemini_model: e.target.value }))}
+              >
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', fontStyle: 'italic' }}>
+              Note: Monitor quota via Google Cloud Console
+            </p>
+          </div>
         </div>
 
-        {/* DeepSeek Settings */}
-        <div className="space-y-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">DeepSeek</h3>
+        {/* DeepSeek Configuration */}
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>DeepSeek</h2>
             <button
               onClick={() => handleScan('deepseek')}
               disabled={scanning || !formData.deepseek_api_key}
-              className="px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+              style={scanning || !formData.deepseek_api_key ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
             >
-              {scanning ? 'Scanning...' : 'Check Balance & Models'}
+              {scanning ? 'Scanning…' : 'Check Balance'}
             </button>
           </div>
 
-          <div>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Model</span>
-              <select
-                value={formData.deepseek_model || ''}
-                onChange={e => setFormData(f => ({ ...f, deepseek_model: e.target.value }))}
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {dsModels.map(model => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">API Key</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={labelStyle}>API Key</label>
               <input
                 type="password"
+                placeholder="Enter DeepSeek API key"
+                style={inputStyle}
                 value={formData.deepseek_api_key || ''}
                 onChange={e => setFormData(f => ({ ...f, deepseek_api_key: e.target.value }))}
-                placeholder="sk-..."
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-zinc-400 mt-1">Your DeepSeek API key is stored securely server-side</p>
-            </label>
-          </div>
-
-          {dsQuota && (
-            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-blue-700 dark:text-blue-400">Account Balance</p>
-                <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">
-                  {dsQuota.balance} {dsQuota.currency}
-                </p>
-              </div>
-
-              {dsQuota.granted && dsQuota.toppedUp && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-blue-700 dark:text-blue-400">Free Quota</span>
-                    <span className="font-medium text-blue-900 dark:text-blue-100">{dsQuota.granted}</span>
-                  </div>
-                  <div className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-full h-2">
-                    <div
-                      className="bg-emerald-500 h-2 rounded-full transition-all"
-                      style={{
-                        width: `${Math.min(100, (parseFloat(dsQuota.granted) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs mt-2">
-                    <span className="text-blue-700 dark:text-blue-400">Top-up Balance</span>
-                    <span className="font-medium text-blue-900 dark:text-blue-100">{dsQuota.toppedUp}</span>
-                  </div>
-                  <div className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full transition-all"
-                      style={{
-                        width: `${Math.min(100, (parseFloat(dsQuota.toppedUp) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', marginTop: '6px' }}>Stored securely server-side only</p>
             </div>
-          )}
 
-          {dsModels.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Available Models ({dsModels.length})</p>
-              <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                {dsModels.map(model => (
-                  <div key={model.id} className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-700 dark:text-zinc-300 truncate">
-                    {model.name}
-                  </div>
+              <label style={labelStyle}>Model</label>
+              <select
+                style={selectStyle}
+                value={formData.deepseek_model || 'deepseek-chat'}
+                onChange={e => setFormData(f => ({ ...f, deepseek_model: e.target.value }))}
+              >
+                <option value="deepseek-chat">deepseek-chat</option>
+                {dsModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
-              </div>
+              </select>
             </div>
-          )}
+
+            {dsQuota && (
+              <div style={{ ...cardStyle, background: 'var(--info-soft)', borderColor: 'var(--info)', padding: '16px', marginTop: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--info)' }}>Account Balance</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--info)' }}>{dsQuota.balance} {dsQuota.currency}</span>
+                </div>
+
+                {dsQuota.granted && dsQuota.toppedUp && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
+                        <span style={{ color: 'var(--success)' }}>Free Quota</span>
+                        <span style={{ fontWeight: '600', color: 'var(--success)' }}>{dsQuota.granted}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', background: 'var(--background)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            background: 'var(--success)',
+                            borderRadius: '2px',
+                            width: `${Math.min(100, (parseFloat(dsQuota.granted) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
+                        <span style={{ color: 'var(--accent)' }}>Top-up Balance</span>
+                        <span style={{ fontWeight: '600', color: 'var(--accent)' }}>{dsQuota.toppedUp}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', background: 'var(--background)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            background: 'var(--accent)',
+                            borderRadius: '2px',
+                            width: `${Math.min(100, (parseFloat(dsQuota.toppedUp) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Save Button */}
-        <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-2">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving…' : 'Save Settings'}
-          </button>
-        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={saving ? buttonDisabledStyle : { ...primaryButtonStyle, width: '100%' }}
+        >
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
       </div>
     </div>
   );

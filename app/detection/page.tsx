@@ -30,24 +30,96 @@ interface Detection {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '12px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--foreground)',
+  fontSize: '13px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  border: '1px solid var(--primary)',
+};
+
+const badgeBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 8px',
+  borderRadius: '9999px',
+  fontSize: '12px',
+  fontWeight: '500',
+  lineHeight: '1.5',
+};
+
+const toolButtonStyle: React.CSSProperties = {
+  padding: '6px 8px',
+  fontSize: '12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--foreground-muted)',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const legendItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  fontSize: '12px',
+  color: 'var(--foreground-muted)',
+};
+
 function confBadge(c: number | null) {
-  if (c === null) return <span className="text-xs text-zinc-400">—</span>;
+  if (c === null) return <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>—</span>;
   const pct = Math.round(c * 100);
-  const cls = c >= 0.95
-    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-    : c >= 0.80
-    ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400'
-    : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
-  return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{pct}%</span>;
+  const style: React.CSSProperties = c >= 0.90
+    ? { background: 'var(--success-soft)', color: 'var(--success)' }
+    : c >= 0.70
+    ? { background: 'var(--warning-soft)', color: 'var(--warning)' }
+    : { background: 'var(--danger-soft)', color: 'var(--danger)' };
+  return <span style={{ ...badgeBase, ...style }}>{pct}%</span>;
 }
 
 function statusBadge(ds: string, rs: string) {
   const label = ds === 'MANUAL' ? 'Manual' : rs === 'APPROVED' ? 'Confirmed' : rs === 'REJECTED' ? 'Rejected' : ds === 'DETECTED' ? 'Detected' : ds;
-  const cls =
-    rs === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-    : rs === 'REJECTED' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
-    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300';
-  return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+  const style: React.CSSProperties =
+    rs === 'APPROVED' ? { background: 'var(--success-soft)', color: 'var(--success)' }
+    : rs === 'REJECTED' ? { background: 'var(--danger-soft)', color: 'var(--danger)' }
+    : { background: 'var(--surface-muted)', color: 'var(--foreground-muted)' };
+  return <span style={{ ...badgeBase, ...style }}>{label}</span>;
 }
 
 function parseEvidence(ev: string[] | string | null): string[] {
@@ -103,21 +175,6 @@ function ManualAddModal({
 
   if (!open) return null;
 
-  const numField = (val: string, set: (v: string) => void, label: string, hint: string) => (
-    <label className="block">
-      <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{label}</span>
-      <span className="text-xs text-zinc-400 ml-1 normal-case">{hint}</span>
-      <input
-        type="number"
-        min={0}
-        max={1000}
-        value={val}
-        onChange={e => set(e.target.value)}
-        className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-    </label>
-  );
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assetType.trim()) {
@@ -165,28 +222,28 @@ function ManualAddModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', paddingTop: '80px' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white dark:bg-zinc-900 rounded-lg p-6 max-w-md w-full mx-auto mt-20 shadow-xl">
+      <div style={{ ...cardStyle, padding: '24px', maxWidth: '420px', width: '100%', margin: '0 auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Add Asset Manually</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Add Asset Manually</h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xl leading-none"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--foreground-muted)', lineHeight: 1 }}
             aria-label="Close"
           >
-            &times;
+            ×
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {/* Asset Type (required) */}
-          <label className="block">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-              Asset Type <span className="text-red-500">*</span>
+          <label style={{ display: 'block' }}>
+            <span style={{ ...fieldLabelStyle, marginBottom: '4px' }}>
+              Asset Type <span style={{ color: 'var(--danger)' }}>*</span>
             </span>
             <input
               type="text"
@@ -194,79 +251,94 @@ function ManualAddModal({
               value={assetType}
               onChange={e => setAssetType(e.target.value)}
               placeholder="e.g. PUMP, VALVE, COMPRESSOR"
-              className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={selectStyle}
             />
           </label>
 
           {/* Asset Tag */}
-          <label className="block">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Tag</span>
+          <label style={{ display: 'block' }}>
+            <span style={fieldLabelStyle}>Asset Tag</span>
             <input
               type="text"
               value={assetTag}
               onChange={e => setAssetTag(e.target.value)}
               placeholder="e.g. P-101A"
-              className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={selectStyle}
             />
           </label>
 
           {/* Description */}
-          <label className="block">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Description</span>
+          <label style={{ display: 'block' }}>
+            <span style={fieldLabelStyle}>Description</span>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Optional description…"
               rows={3}
-              className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              style={{ ...selectStyle, resize: 'none' }}
             />
           </label>
 
           {/* P&ID Page */}
-          <label className="block">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">P&amp;ID Page</span>
+          <label style={{ display: 'block' }}>
+            <span style={fieldLabelStyle}>P&amp;ID Page</span>
             <input
               type="number"
               min={1}
               value={pidPage}
               onChange={e => setPidPage(e.target.value)}
               placeholder="Page number"
-              className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={selectStyle}
             />
           </label>
 
           {/* Bounding Box */}
           <div>
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider block mb-1">
+            <span style={{ ...fieldLabelStyle, display: 'block', marginBottom: '4px' }}>
               Bounding Box
-              <span className="text-zinc-400 normal-case font-normal ml-1">— 0–1000 normalized coordinate space</span>
+              <span style={{ color: 'var(--foreground-subtle)', textTransform: 'none', fontWeight: 'normal', marginLeft: '4px' }}>— 0–1000 normalized coordinate space</span>
             </span>
-            <div className="grid grid-cols-2 gap-3">
-              {numField(bboxX, setBboxX, 'X', '(left edge)')}
-              {numField(bboxY, setBboxY, 'Y', '(top edge)')}
-              {numField(bboxW, setBboxW, 'Width', '')}
-              {numField(bboxH, setBboxH, 'Height', '')}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {[
+                { val: bboxX, set: setBboxX, label: 'X', hint: '(left edge)' },
+                { val: bboxY, set: setBboxY, label: 'Y', hint: '(top edge)' },
+                { val: bboxW, set: setBboxW, label: 'Width', hint: '' },
+                { val: bboxH, set: setBboxH, label: 'Height', hint: '' },
+              ].map(({ val, set, label, hint }) => (
+                <label key={label} style={{ display: 'block' }}>
+                  <span style={{ ...fieldLabelStyle }}>{label}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--foreground-subtle)', marginLeft: '4px' }}>{hint}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    style={{ ...selectStyle, marginTop: '4px' }}
+                  />
+                </label>
+              ))}
             </div>
           </div>
 
           {/* Error */}
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2">{error}</p>
+            <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>{error}</p>
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-1">
+          <div style={{ display: 'flex', gap: '12px', paddingTop: '4px' }}>
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-md border border-zinc-300 dark:border-zinc-600 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: '13px', fontWeight: '500', cursor: 'pointer', transition: 'all 150ms ease-out' }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+              style={{ flex: 1, ...primaryButtonStyle, opacity: submitting ? 0.5 : 1 }}
             >
               {submitting ? 'Saving…' : 'Save Asset'}
             </button>
@@ -304,36 +376,43 @@ function JobProgress({ jobId, onComplete }: { jobId: string; onComplete: () => v
   if (!job) return null;
 
   const statusColor =
-    job.status === 'COMPLETED' ? 'bg-emerald-500'
-    : job.status === 'FAILED' ? 'bg-red-500'
-    : job.status === 'CANCELLED' ? 'bg-zinc-400'
-    : 'bg-blue-500';
+    job.status === 'COMPLETED' ? 'var(--success)'
+    : job.status === 'FAILED' ? 'var(--danger)'
+    : job.status === 'CANCELLED' ? 'var(--foreground-muted)'
+    : 'var(--info)';
+
+  const statusBg =
+    job.status === 'COMPLETED' ? 'var(--success-soft)'
+    : job.status === 'FAILED' ? 'var(--danger-soft)'
+    : job.status === 'CANCELLED' ? 'rgba(0, 43, 78, 0.04)'
+    : 'var(--info-soft)';
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+    <div style={{ ...cardStyle, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--foreground)' }}>
           Detection Job
         </span>
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${statusColor}`}>
+        <span style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'white', background: statusColor }}>
           {job.status}
         </span>
       </div>
 
       {/* Progress bar */}
-      <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
+      <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'var(--border)', overflow: 'hidden' }}>
         <div
-          className={`h-2 rounded-full transition-all duration-500 ${statusColor}`}
-          style={{ width: `${job.progress_pct ?? 0}%` }}
+          style={{ height: '6px', borderRadius: '3px', background: statusColor, width: `${job.progress_pct ?? 0}%`, transition: 'width 500ms ease-out' }}
         />
       </div>
-      <p className="text-xs text-zinc-500">{job.progress_pct ?? 0}% complete</p>
+      <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>{job.progress_pct ?? 0}% complete</p>
 
       {job.status === 'PROCESSING' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 animate-pulse">Analyzing P&ID with AI…</p>
+        <p style={{ fontSize: '12px', color: 'var(--info)', margin: 0, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+          Analyzing P&ID with AI…
+        </p>
       )}
       {job.status === 'FAILED' && job.error_detail && (
-        <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 rounded p-2 font-mono">
+        <p style={{ fontSize: '12px', color: 'var(--danger)', background: statusBg, borderRadius: 'var(--radius-sm)', padding: '8px', margin: 0, fontFamily: 'monospace' }}>
           {job.error_detail.slice(0, 300)}
         </p>
       )}
@@ -344,7 +423,7 @@ function JobProgress({ jobId, onComplete }: { jobId: string; onComplete: () => v
           onClick={async () => {
             await fetch(`/api/detection/jobs/${jobId}/cancel`, { method: 'POST' });
           }}
-          className="text-xs text-red-600 hover:text-red-700 underline"
+          style={{ fontSize: '12px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, textAlign: 'left' }}
         >
           Cancel job
         </button>
@@ -440,62 +519,60 @@ function PidViewer({
   const viewerContent = (
     <>
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex-wrap">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexWrap: 'wrap' }}>
         {/* Page nav */}
         {totalPages > 1 && (
-          <div className="flex items-center gap-1">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}
-              className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-700">◀</button>
-            <span className="text-xs text-zinc-500 px-2 font-medium">Page {page} / {totalPages}</span>
+              style={{ ...toolButtonStyle, opacity: page <= 1 ? 0.4 : 1 }}>◀</button>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)', padding: '0 8px', fontWeight: '500' }}>Page {page} / {totalPages}</span>
             <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages}
-              className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-700">▶</button>
+              style={{ ...toolButtonStyle, opacity: page >= totalPages ? 0.4 : 1 }}>▶</button>
           </div>
         )}
 
-        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 hidden sm:block" />
+        <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
 
         {/* Zoom */}
-        <div className="flex items-center gap-1">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button onClick={() => setZoom(z => Math.max(0.2, +(z - 0.2).toFixed(1)))}
-            className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-bold">−</button>
-          <span className="text-xs text-zinc-500 w-12 text-center font-mono">{Math.round(zoom * 100)}%</span>
+            style={{ ...toolButtonStyle, fontWeight: '600' }}>−</button>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-muted)', width: 48, textAlign: 'center', fontFamily: 'var(--font-geist-mono, monospace)' }}>{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom(z => Math.min(6, +(z + 0.2).toFixed(1)))}
-            className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-bold">+</button>
+            style={{ ...toolButtonStyle, fontWeight: '600' }}>+</button>
         </div>
 
         {/* Rotate button */}
         <button
           onClick={rotate}
           title="Rotate 90°"
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          style={{ ...toolButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }}
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           Rotate{rotation > 0 ? ` (${rotation}°)` : ''}
         </button>
 
         {/* Reset */}
-        <button onClick={resetView}
-          title="Reset view"
-          className="px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
+        <button onClick={resetView} title="Reset view" style={toolButtonStyle}>
           Reset
         </button>
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-zinc-400">{visible.length} bbox</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>{visible.length} bbox</span>
           {/* Fullscreen toggle */}
           <button
             onClick={() => setFullscreen(f => !f)}
             title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+            style={{ ...toolButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             {fullscreen ? (
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             ) : (
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
               </svg>
             )}
@@ -506,8 +583,7 @@ function PidViewer({
 
       {/* Viewer area */}
       <div
-        className="relative bg-zinc-100 dark:bg-zinc-800 overflow-hidden select-none flex-1"
-        style={{ minHeight: fullscreen ? 'calc(100vh - 80px)' : 600 }}
+        style={{ position: 'relative', background: 'var(--surface-muted)', overflow: 'hidden', userSelect: 'none', flex: 1, minHeight: fullscreen ? 'calc(100vh - 80px)' : 600, cursor: dragging ? 'grabbing' : 'grab' }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -517,8 +593,7 @@ function PidViewer({
       >
         {/* Transformed container — zoom + pan, centered */}
         <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+          style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           {/* Inner wrapper takes zoom+pan transform */}
           <div style={{
@@ -530,7 +605,6 @@ function PidViewer({
           }}>
             {imgSrc && (
               <div
-                className="relative shadow-lg"
                 style={{
                   transform: imgTransform,
                   transformOrigin: 'center center',
@@ -576,10 +650,10 @@ function PidViewer({
                       const h = (d.bbox_h ?? 50) / 1000 * imgNatural.h;
                       const selected = d.id === selectedId;
                       const color = d.review_status === 'APPROVED'
-                        ? '#10b981'
-                        : (d.confidence ?? 0) >= 0.95 ? '#3b82f6'
-                        : (d.confidence ?? 0) >= 0.80 ? '#f59e0b'
-                        : '#ef4444';
+                        ? getComputedStyle(document.documentElement).getPropertyValue('--success').trim()
+                        : (d.confidence ?? 0) >= 0.95 ? getComputedStyle(document.documentElement).getPropertyValue('--info').trim()
+                        : (d.confidence ?? 0) >= 0.80 ? getComputedStyle(document.documentElement).getPropertyValue('--warning').trim()
+                        : getComputedStyle(document.documentElement).getPropertyValue('--danger').trim();
                       const labelW = Math.max(w, 80);
                       const labelY = y > 22 ? y - 22 : y + h + 4;
                       return (
@@ -606,7 +680,7 @@ function PidViewer({
             {/* Loading */}
             {imgLoading && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ textAlign: 'center', color: 'var(--foreground-muted)' }}>
                   <svg style={{ width: 32, height: 32, margin: '0 auto 8px', animation: 'spin 1s linear infinite' }} fill="none" viewBox="0 0 24 24">
                     <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
@@ -619,7 +693,7 @@ function PidViewer({
             {/* Error / empty */}
             {(imgError || !imgSrc) && !imgLoading && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', color: '#475569' }}>
+                <div style={{ textAlign: 'center', color: 'var(--foreground-subtle)' }}>
                   <svg style={{ width: 56, height: 56, margin: '0 auto 8px' }} fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -633,12 +707,12 @@ function PidViewer({
       </div>
 
       {/* Legend bar */}
-      <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800 flex gap-4 flex-wrap text-xs text-zinc-500 bg-white dark:bg-zinc-900">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-blue-500 rounded"/>&ge;95% High</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-yellow-500 rounded"/>&ge;80% Medium</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-red-500 rounded"/>Review</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-emerald-500 rounded"/>Confirmed</span>
-        <span className="ml-auto text-zinc-400 text-xs">Scroll to zoom · Drag to pan · Click bbox to select</span>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', padding: '8px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
+        <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--info)', borderRadius: 1 }} />≥90% High</span>
+        <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--warning)', borderRadius: 1 }} />≥70% Medium</span>
+        <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--danger)', borderRadius: 1 }} />Review</span>
+        <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--success)', borderRadius: 1 }} />Confirmed</span>
+        <span style={{ marginLeft: 'auto', color: 'var(--foreground-subtle)' }}>Scroll to zoom · Drag to pan · Click bbox to select</span>
       </div>
     </>
   );
@@ -646,8 +720,8 @@ function PidViewer({
   // Fullscreen overlay
   if (fullscreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col">
-        <div className="flex flex-col flex-1 min-h-0">
+      <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--background)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           {viewerContent}
         </div>
       </div>
@@ -655,7 +729,7 @@ function PidViewer({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden flex flex-col" style={{ minHeight: 480 }}>
+    <div style={{ ...cardStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 480 }}>
       {viewerContent}
     </div>
   );
@@ -696,20 +770,36 @@ function AssetDetail({
   const ev = parseEvidence(detection.evidence);
   const pct = detection.confidence !== null ? Math.round(detection.confidence * 100) : null;
 
+  const successBtn: React.CSSProperties = {
+    flex: 1, padding: '6px 8px', borderRadius: 'var(--radius-sm)',
+    background: 'var(--success)', color: 'white', fontSize: '12px', fontWeight: '600',
+    border: 'none', cursor: 'pointer', transition: 'all 150ms ease-out',
+  };
+  const infoBtn: React.CSSProperties = {
+    flex: 1, padding: '6px 8px', borderRadius: 'var(--radius-sm)',
+    background: 'var(--info)', color: 'white', fontSize: '12px', fontWeight: '600',
+    border: 'none', cursor: 'pointer', transition: 'all 150ms ease-out',
+  };
+  const dangerBtn: React.CSSProperties = {
+    flex: 1, padding: '6px 8px', borderRadius: 'var(--radius-sm)',
+    background: 'var(--danger)', color: 'white', fontSize: '12px', fontWeight: '600',
+    border: 'none', cursor: 'pointer', transition: 'all 150ms ease-out',
+  };
+
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex flex-col h-full overflow-hidden">
+    <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-        <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+        <span style={{ fontWeight: '600', color: 'var(--foreground)', fontSize: '14px' }}>
           {detection.asset_tag ?? detection.asset_type}
         </span>
-        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none">&times;</button>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--foreground-muted)', lineHeight: 1 }}>&times;</button>
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
         {!editing ? (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px 16px', margin: 0 }}>
             {[
               ['Asset Tag', detection.asset_tag ?? '—'],
               ['Asset Type', detection.asset_type],
@@ -724,28 +814,28 @@ function AssetDetail({
               ['Detection Status', detection.detection_status],
               ['Review Status', detection.review_status],
             ].map(([k, v]) => (
-              <div key={k} className="col-span-1">
-                <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{k}</dt>
-                <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200">{v}</dd>
+              <div key={k}>
+                <dt style={{ fontSize: '11px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k}</dt>
+                <dd style={{ margin: '2px 0 0', color: 'var(--foreground)' }}>{v}</dd>
               </div>
             ))}
 
             {/* BBox */}
-            <div className="col-span-2">
-              <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Bounding Box</dt>
-              <dd className="mt-0.5 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+            <div style={{ gridColumn: '1 / -1' }}>
+              <dt style={{ fontSize: '11px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Bounding Box</dt>
+              <dd style={{ margin: '2px 0 0', fontFamily: 'var(--font-geist-mono, monospace)', fontSize: '12px', color: 'var(--foreground-muted)' }}>
                 x={detection.bbox_x} y={detection.bbox_y} w={detection.bbox_w} h={detection.bbox_h}
               </dd>
             </div>
 
             {/* Evidence */}
             {ev.length > 0 && (
-              <div className="col-span-2">
-                <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Evidence</dt>
-                <ul className="space-y-1">
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt style={{ fontSize: '11px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>Evidence</dt>
+                <ul style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: 0, padding: 0, listStyle: 'none' }}>
                   {ev.map((e, i) => (
-                    <li key={i} className="text-xs text-zinc-600 dark:text-zinc-400 flex gap-1.5">
-                      <span className="text-blue-500 mt-0.5">•</span>{e}
+                    <li key={i} style={{ fontSize: '12px', color: 'var(--foreground-muted)', display: 'flex', gap: '6px' }}>
+                      <span style={{ color: 'var(--info)', marginTop: '2px' }}>•</span>{e}
                     </li>
                   ))}
                 </ul>
@@ -753,77 +843,45 @@ function AssetDetail({
             )}
           </dl>
         ) : (
-          <div className="space-y-3">
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Tag</span>
-              <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
-                value={editTag}
-                onChange={e => setEditTag(e.target.value)}
-              />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>Asset Tag</span>
+              <input style={{ ...selectStyle, marginTop: '4px' }} value={editTag} onChange={e => setEditTag(e.target.value)} />
             </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Type</span>
-              <input
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
-                value={editType}
-                onChange={e => setEditType(e.target.value)}
-              />
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>Asset Type</span>
+              <input style={{ ...selectStyle, marginTop: '4px' }} value={editType} onChange={e => setEditType(e.target.value)} />
             </label>
-            <label className="block">
-              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Description</span>
-              <textarea
-                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none"
-                rows={3}
-                value={editDesc}
-                onChange={e => setEditDesc(e.target.value)}
-              />
+            <label style={{ display: 'block' }}>
+              <span style={fieldLabelStyle}>Description</span>
+              <textarea style={{ ...selectStyle, marginTop: '4px', resize: 'none' }} rows={3} value={editDesc} onChange={e => setEditDesc(e.target.value)} />
             </label>
           </div>
         )}
       </div>
 
       {/* Actions */}
-      <div className="border-t border-zinc-100 dark:border-zinc-800 px-4 py-3 flex gap-2">
+      <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', gap: '8px' }}>
         {detection.review_status !== 'APPROVED' && detection.review_status !== 'REJECTED' && (
           <>
-            <button
-              onClick={() => onConfirm(detection.id)}
-              className="flex-1 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
-            >
-              Confirm
-            </button>
+            <button onClick={() => onConfirm(detection.id)} style={successBtn}>Confirm</button>
             {!editing ? (
-              <button
-                onClick={() => setEditing(true)}
-                className="flex-1 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
-              >
-                Edit
-              </button>
+              <button onClick={() => setEditing(true)} style={infoBtn}>Edit</button>
             ) : (
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex-1 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50"
-              >
+              <button onClick={handleSave} disabled={saving} style={{ ...infoBtn, opacity: saving ? 0.5 : 1 }}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
             )}
-            <button
-              onClick={() => onReject(detection.id)}
-              className="flex-1 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
-            >
-              Reject
-            </button>
+            <button onClick={() => onReject(detection.id)} style={dangerBtn}>Reject</button>
           </>
         )}
         {editing && (
-          <button onClick={() => setEditing(false)} className="py-1.5 px-3 rounded-md border border-zinc-300 text-xs text-zinc-600">
+          <button onClick={() => setEditing(false)} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--foreground-muted)', background: 'var(--surface)', cursor: 'pointer' }}>
             Cancel
           </button>
         )}
         {(detection.review_status === 'APPROVED' || detection.review_status === 'REJECTED') && (
-          <span className="text-xs text-zinc-400 italic">Reviewed — {detection.review_status.toLowerCase()}</span>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)', fontStyle: 'italic' }}>Reviewed — {detection.review_status.toLowerCase()}</span>
         )}
       </div>
     </div>
@@ -895,26 +953,41 @@ function DetectionsTable({
   };
 
   const SortHeader = ({ col, label }: { col: 'tag' | 'type' | 'page' | 'conf' | 'status'; label: string }) => (
-    <th onClick={() => toggleSort(col)} className="text-left px-3 py-2 font-semibold text-zinc-500 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700">
+    <th
+      onClick={() => toggleSort(col)}
+      style={{
+        textAlign: 'left',
+        padding: '8px 12px',
+        fontWeight: '600',
+        color: 'var(--foreground-muted)',
+        cursor: 'pointer',
+        background: 'var(--surface-muted)',
+        transition: 'background 150ms ease-out',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.06)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
+    >
       {label} {sortBy === col && (sortAsc ? '↑' : '↓')}
     </th>
   );
 
+  const cellBase: React.CSSProperties = { padding: '8px 12px' };
+
   return (
-    <div className="flex flex-col h-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+    <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Filters */}
-      <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap gap-2">
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         <input
           type="text"
           placeholder="Search tag / type…"
           value={q}
           onChange={e => { setQ(e.target.value); setPage(1); }}
-          className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+          style={{ ...selectStyle, width: 176, fontSize: '12px', padding: '6px 10px' }}
         />
         <select
           value={status}
           onChange={e => { setStatus(e.target.value); setPage(1); }}
-          className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs"
+          style={{ ...selectStyle, fontSize: '12px', padding: '6px 10px' }}
         >
           {STATUS_OPTS.map(s => (
             <option key={s} value={s}>{s || 'All Status'}</option>
@@ -923,21 +996,21 @@ function DetectionsTable({
         <select
           value={conf}
           onChange={e => { setConf(e.target.value); setPage(1); }}
-          className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs"
+          style={{ ...selectStyle, fontSize: '12px', padding: '6px 10px' }}
         >
           {CONF_OPTS.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <span className="ml-auto text-xs text-zinc-400 self-center">{sorted.length} result{sorted.length !== 1 ? 's' : ''}</span>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--foreground-subtle)', alignSelf: 'center' }}>{sorted.length} result{sorted.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto">
-        <table className="w-full text-xs">
-          <thead className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+          <thead style={{ background: 'var(--surface-muted)', position: 'sticky', top: 0, zIndex: 10 }}>
             <tr>
-              <th className="text-left px-3 py-2 font-semibold text-zinc-500">No</th>
+              <th style={{ textAlign: 'left', ...cellBase, fontWeight: '600', color: 'var(--foreground-muted)' }}>No</th>
               <SortHeader col="tag" label="Asset Tag" />
               <SortHeader col="type" label="Asset Type" />
               <SortHeader col="page" label="Page" />
@@ -947,25 +1020,29 @@ function DetectionsTable({
           </thead>
           <tbody>
             {slice.length === 0 ? (
-              <tr><td colSpan={6} className="py-12 text-center text-zinc-400">No detections found.</td></tr>
+              <tr><td colSpan={6} style={{ padding: '48px 12px', textAlign: 'center', color: 'var(--foreground-subtle)' }}>No detections found.</td></tr>
             ) : (
               slice.map((d, i) => (
                 <tr
                   key={d.id}
                   onClick={() => onSelect(d)}
-                  className={`border-t border-zinc-100 dark:border-zinc-800 cursor-pointer transition-colors
-                    ${d.id === selectedId
-                      ? 'bg-blue-50 dark:bg-blue-900/20'
-                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}
+                  style={{
+                    borderTop: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    background: d.id === selectedId ? 'var(--primary-soft)' : 'transparent',
+                    transition: 'background 150ms ease-out',
+                  }}
+                  onMouseEnter={e => { if (d.id !== selectedId) e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
+                  onMouseLeave={e => { if (d.id !== selectedId) e.currentTarget.style.background = 'transparent'; }}
                 >
-                  <td className="px-3 py-2 text-zinc-400">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                  <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200 font-mono">
-                    {d.asset_tag ?? <span className="text-zinc-400 italic">—</span>}
+                  <td style={{ ...cellBase, color: 'var(--foreground-subtle)' }}>{(page - 1) * PAGE_SIZE + i + 1}</td>
+                  <td style={{ ...cellBase, fontWeight: '500', color: 'var(--foreground)', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                    {d.asset_tag ?? <span style={{ color: 'var(--foreground-subtle)', fontStyle: 'italic' }}>—</span>}
                   </td>
-                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">{d.asset_type}</td>
-                  <td className="px-3 py-2 text-zinc-500">{d.pid_page ?? '—'}</td>
-                  <td className="px-3 py-2">{confBadge(d.confidence)}</td>
-                  <td className="px-3 py-2">{statusBadge(d.detection_status, d.review_status)}</td>
+                  <td style={{ ...cellBase, color: 'var(--foreground)' }}>{d.asset_type}</td>
+                  <td style={{ ...cellBase, color: 'var(--foreground-muted)' }}>{d.pid_page ?? '—'}</td>
+                  <td style={cellBase}>{confBadge(d.confidence)}</td>
+                  <td style={cellBase}>{statusBadge(d.detection_status, d.review_status)}</td>
                 </tr>
               ))
             )}
@@ -975,10 +1052,10 @@ function DetectionsTable({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-2 text-xs text-zinc-500">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 rounded border border-zinc-200 disabled:opacity-40">←</button>
+        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--foreground-muted)' }}>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1 }}>←</button>
           <span>Page {page} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 rounded border border-zinc-200 disabled:opacity-40">→</button>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...toolButtonStyle, opacity: page === totalPages ? 0.4 : 1 }}>→</button>
         </div>
       )}
     </div>
@@ -1100,7 +1177,7 @@ function DetectionWorkspace() {
   const selectedId = selectedDetection?.id ?? null;
 
   return (
-    <div className="flex flex-col min-h-full gap-4 pb-6">
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', gap: '24px', paddingBottom: '24px' }}>
       {/* Manual Add Modal */}
       <ManualAddModal
         open={showManualAdd}
@@ -1113,44 +1190,44 @@ function DetectionWorkspace() {
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Automatic Asset Detection</h1>
-        <p className="text-xs text-zinc-500 mt-0.5">Select document and legend, then run detection.</p>
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Automatic Asset Detection</h1>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>Select document and legend, then run detection.</p>
       </div>
 
       {/* Controls */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          <label className="flex flex-col gap-1 min-w-40">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Project</span>
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end', padding: '20px' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '160px' }}>
+            <span style={fieldLabelStyle}>Project</span>
             <select
               value={projectId}
               onChange={e => { setProjectId(e.target.value); setDocumentId(''); setCurrentJobId(null); setDetections([]); }}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
+              style={selectStyle}
             >
               <option value="">Select project…</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 min-w-56">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Document</span>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '224px' }}>
+            <span style={fieldLabelStyle}>Document</span>
             <select
               value={documentId}
               onChange={e => { setDocumentId(e.target.value); setCurrentJobId(null); setDetections([]); }}
               disabled={!projectId}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm disabled:opacity-50"
+              style={selectStyle}
             >
               <option value="">Select document…</option>
               {documents.map(d => <option key={d.id} value={d.id}>{d.filename} ({d.page_count}p)</option>)}
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 min-w-48">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Legend</span>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '192px' }}>
+            <span style={fieldLabelStyle}>Legend</span>
             <select
               value={legendId}
               onChange={e => setLegendId(e.target.value)}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
+              style={selectStyle}
             >
               <option value="">No legend (auto-detect)</option>
               {legends.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -1160,7 +1237,7 @@ function DetectionWorkspace() {
           <button
             onClick={handleRunDetection}
             disabled={running || !documentId}
-            className="px-5 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 dark:disabled:bg-zinc-700 text-white text-sm font-semibold transition-colors"
+            style={running || !documentId ? { ...primaryButtonStyle, opacity: 0.5, cursor: 'not-allowed' } : primaryButtonStyle}
           >
             {running ? 'Starting…' : 'Run Detection'}
           </button>
@@ -1169,7 +1246,7 @@ function DetectionWorkspace() {
           <button
             onClick={() => setShowManualAdd(true)}
             disabled={!documentId}
-            className="px-4 py-2 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-700 dark:text-zinc-300 text-sm font-medium transition-colors"
+            style={!documentId ? { ...buttonStyle, opacity: 0.4, cursor: 'not-allowed' } : buttonStyle}
           >
             + Add Asset Manually
           </button>
@@ -1178,17 +1255,17 @@ function DetectionWorkspace() {
 
       {/* Stats bar */}
       {detections.length > 0 && (
-        <div className="grid grid-cols-5 gap-3">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
           {[
-            { label: 'Detected', value: total, color: 'text-zinc-700 dark:text-zinc-300' },
-            { label: 'Confirmed', value: confirmed, color: 'text-emerald-600' },
-            { label: 'Pending Review', value: pending, color: 'text-yellow-600' },
-            { label: 'Rejected', value: rejected, color: 'text-red-600' },
-            { label: 'Avg Confidence', value: avgConf !== null ? `${avgConf}%` : '—', color: 'text-blue-600' },
+            { label: 'Detected', value: total, color: 'var(--foreground)' },
+            { label: 'Confirmed', value: confirmed, color: 'var(--success)' },
+            { label: 'Pending Review', value: pending, color: 'var(--warning)' },
+            { label: 'Rejected', value: rejected, color: 'var(--danger)' },
+            { label: 'Avg Confidence', value: avgConf !== null ? `${avgConf}%` : '—', color: 'var(--info)' },
           ].map(s => (
-            <div key={s.label} className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-center">
-              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-zinc-500 mt-0.5">{s.label}</p>
+            <div key={s.label} style={{ ...cardStyle, padding: '12px', textAlign: 'center' }}>
+              <p style={{ fontSize: '20px', fontWeight: '600', color: s.color, margin: 0 }}>{s.value}</p>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: '4px 0 0' }}>{s.label}</p>
             </div>
           ))}
         </div>
@@ -1196,16 +1273,16 @@ function DetectionWorkspace() {
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
       {detections.length > 0 || currentJobId ? (
-        <div className="flex gap-3 flex-1 min-h-0" style={{ minHeight: 700 }}>
+        <div style={{ display: 'flex', gap: '12px', flex: 1, minHeight: 700 }}>
           {/* Left: Viewer — takes most of the width (~75%) */}
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Job progress inline above viewer — compact, doesn't push viewer down */}
             {currentJobId && (
-              <div className="flex-shrink-0">
+              <div style={{ flexShrink: 0 }}>
                 <JobProgress jobId={currentJobId} onComplete={handleJobComplete} />
               </div>
             )}
-            <div className="flex-1 min-h-0" style={{ minHeight: 640 }}>
+            <div style={{ flex: 1, minHeight: 640 }}>
               <PidViewer
                 documentId={documentId}
                 detections={pageDetections}
@@ -1222,9 +1299,9 @@ function DetectionWorkspace() {
           </div>
 
           {/* Right panel: Detail on top (when selected) + Table below */}
-          <div className="w-72 xl:w-80 flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+          <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
             {selectedDetection && (
-              <div className="flex-shrink-0">
+              <div style={{ flexShrink: 0 }}>
                 <AssetDetail
                   detection={selectedDetection}
                   onClose={() => setSelectedDetection(null)}
@@ -1234,7 +1311,7 @@ function DetectionWorkspace() {
                 />
               </div>
             )}
-            <div className="flex-1 min-h-0" style={{ minHeight: 300 }}>
+            <div style={{ flex: 1, minHeight: 300 }}>
               <DetectionsTable
                 detections={detections}
                 selectedId={selectedId}
@@ -1245,13 +1322,13 @@ function DetectionWorkspace() {
         </div>
       ) : (
         !currentJobId && (
-          <div className="flex-1 flex items-center justify-center rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400">
-            <div className="text-center">
-              <svg className="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--foreground-muted)' }}>
+            <div style={{ textAlign: 'center' }}>
+              <svg style={{ width: 48, height: 48, margin: '0 auto 12px' }} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z" />
               </svg>
-              <p className="text-sm font-medium">Select a document and run detection</p>
-              <p className="text-xs mt-1">AI will analyze your P&ID and detect assets</p>
+              <p style={{ fontSize: '14px', fontWeight: '500' }}>Select a document and run detection</p>
+              <p style={{ fontSize: '12px', marginTop: '4px' }}>AI will analyze your P&ID and detect assets</p>
             </div>
           </div>
         )

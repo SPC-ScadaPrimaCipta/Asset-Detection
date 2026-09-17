@@ -9,6 +9,44 @@ interface Project {
   created_at: string;
 }
 
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  outline: 'none',
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--primary)',
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  fontSize: '13px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const tableHeaderStyle: React.CSSProperties = {
+  fontSize: '12px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,62 +85,76 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div style={{ maxWidth: '1440px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Projects</h1>
-          <p className="mt-1 text-sm text-zinc-500">Each project contains documents and detection jobs.</p>
-        </div>
+      <div>
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '8px' }}>Projects</h1>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>
+          Each project contains documents and detection jobs.
+        </p>
       </div>
 
       {/* Create form */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5">
-        <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">New Project</h2>
-        <form onSubmit={handleCreate} className="flex gap-3">
-          <input
-            type="text"
-            placeholder="Project name"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            className="flex-1 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            maxLength={120}
-          />
-          <button
-            type="submit"
-            disabled={creating || !newName.trim()}
-            className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
-          >
-            {creating ? 'Creating…' : 'Create'}
-          </button>
-        </form>
-        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <div style={cardStyle}>
+        <div style={{ padding: '20px' }}>
+          <h2 style={{ ...tableHeaderStyle, margin: 0, marginBottom: '16px' }}>New Project</h2>
+          <form onSubmit={handleCreate} style={{ display: 'flex', gap: '12px' }}>
+            <input
+              type="text"
+              placeholder="Project name"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              style={inputStyle}
+              maxLength={120}
+            />
+            <button
+              type="submit"
+              disabled={creating || !newName.trim()}
+              style={creating || !newName.trim() ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </form>
+          {error && <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--danger)' }}>{error}</p>}
+        </div>
       </div>
 
       {/* Project list */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+      <div style={{ ...cardStyle, overflow: 'hidden' }}>
+        <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+          <thead style={{ background: 'var(--surface-muted)', borderBottom: '1px solid var(--border)' }}>
             <tr>
-              <th className="text-left px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Project Name</th>
-              <th className="text-left px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Created</th>
-              <th className="text-right px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Actions</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', ...tableHeaderStyle }}>Project Name</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', ...tableHeaderStyle }}>Created</th>
+              <th style={{ textAlign: 'right', padding: '12px 16px', ...tableHeaderStyle }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-zinc-400">Loading…</td></tr>
+              <tr><td colSpan={3} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--foreground-muted)' }}>Loading…</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={3} className="px-4 py-12 text-center text-zinc-400">No projects yet. Create one above.</td></tr>
+              <tr><td colSpan={3} style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--foreground-muted)' }}>No projects yet. Create one above.</td></tr>
             ) : (
               projects.map(p => (
-                <tr key={p.id} className="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{p.name}</td>
-                  <td className="px-4 py-3 text-zinc-500">{new Date(p.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
+                <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '12px 16px', fontWeight: '500', color: 'var(--foreground)' }}>{p.name}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--foreground-muted)' }}>{new Date(p.created_at).toLocaleDateString()}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                     <Link
                       href={`/detection?project_id=${p.id}`}
-                      className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 font-medium"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '12px',
+                        padding: '6px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--primary-soft)',
+                        color: 'var(--primary)',
+                        fontWeight: '500',
+                        textDecoration: 'none',
+                        transition: 'all 150ms ease-out',
+                      }}
                     >
                       Open Detection
                     </Link>

@@ -22,13 +22,76 @@ interface LegendSymbol {
   aliases: string[] | string | null;
 }
 
+// ─── Style constants ──────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  fontSize: '14px',
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontFamily: 'inherit',
+  outline: 'none',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--primary)',
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  fontSize: '14px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--surface)',
+  color: 'var(--foreground-muted)',
+  fontSize: '14px',
+  fontWeight: '500',
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 12px',
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  whiteSpace: 'nowrap',
+};
+
+const tdBase: React.CSSProperties = { padding: '10px 12px' };
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function Spinner({ size = 4 }: { size?: number }) {
+function Spinner({ size = 16 }: { size?: number } = {}) {
   return (
-    <svg className={`animate-spin h-${size} w-${size}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    <svg style={{ width: size, height: size, color: 'var(--foreground-muted)', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
     </svg>
   );
 }
@@ -113,74 +176,69 @@ function EditRow({
     }
   };
 
-  const inputCls =
-    'w-full text-xs px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-400';
-
   return (
-    <>
-      <tr className="bg-blue-50/50 dark:bg-blue-900/10">
-        <td className="px-3 py-2">
-          <input
-            value={form.asset_type}
-            onChange={e => setForm({ ...form, asset_type: e.target.value })}
-            placeholder="Asset Type *"
-            className={inputCls}
-          />
-        </td>
-        <td className="px-3 py-2">
-          <input
-            value={form.symbol_name}
-            onChange={e => setForm({ ...form, symbol_name: e.target.value })}
-            placeholder="Symbol Name"
-            className={inputCls}
-          />
-        </td>
-        <td className="px-3 py-2">
-          <input
-            value={form.tag_pattern}
-            onChange={e => setForm({ ...form, tag_pattern: e.target.value })}
-            placeholder="P-###"
-            className={inputCls}
-          />
-        </td>
-        <td className="px-3 py-2">
-          <input
-            value={form.description}
-            onChange={e => setForm({ ...form, description: e.target.value })}
-            placeholder="Description"
-            className={inputCls}
-          />
-        </td>
-        <td className="px-3 py-2">
-          <input
-            value={form.aliases}
-            onChange={e => setForm({ ...form, aliases: e.target.value })}
-            placeholder="alias1, alias2"
-            className={inputCls}
-          />
-        </td>
-        <td className="px-3 py-2">
-          <div className="flex items-center justify-end gap-1.5">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-40 transition-colors"
-            >
-              {saving && <Spinner size={3} />}
-              Save
-            </button>
-            <button
-              onClick={onCancel}
-              disabled={saving}
-              className="text-xs font-medium px-2.5 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-          {error && <p className="text-xs text-red-500 mt-1 text-right">{error}</p>}
-        </td>
-      </tr>
-    </>
+    <tr style={{ background: 'var(--accent-soft)' }}>
+      <td style={tdBase}>
+        <input
+          value={form.asset_type}
+          onChange={e => setForm({ ...form, asset_type: e.target.value })}
+          placeholder="Asset Type *"
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px' }}
+        />
+      </td>
+      <td style={tdBase}>
+        <input
+          value={form.symbol_name}
+          onChange={e => setForm({ ...form, symbol_name: e.target.value })}
+          placeholder="Symbol Name"
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px' }}
+        />
+      </td>
+      <td style={tdBase}>
+        <input
+          value={form.tag_pattern}
+          onChange={e => setForm({ ...form, tag_pattern: e.target.value })}
+          placeholder="P-###"
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px' }}
+        />
+      </td>
+      <td style={tdBase}>
+        <input
+          value={form.description}
+          onChange={e => setForm({ ...form, description: e.target.value })}
+          placeholder="Description"
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px' }}
+        />
+      </td>
+      <td style={tdBase}>
+        <input
+          value={form.aliases}
+          onChange={e => setForm({ ...form, aliases: e.target.value })}
+          placeholder="alias1, alias2"
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px' }}
+        />
+      </td>
+      <td style={{ ...tdBase, textAlign: 'right' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={primaryButtonStyle}
+          >
+            {saving && <Spinner size={12} />}
+            Save
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            style={secondaryButtonStyle}
+          >
+            Cancel
+          </button>
+        </div>
+        {error && <p style={{ fontSize: '11px', color: 'var(--danger)', margin: '4px 0 0', textAlign: 'right' }}>{error}</p>}
+      </td>
+    </tr>
   );
 }
 
@@ -230,16 +288,13 @@ function AddSymbolForm({
     }
   };
 
-  const inputCls =
-    'w-full text-sm px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 disabled:opacity-50';
-
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 text-sm text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+        style={{ ...secondaryButtonStyle, width: '100%', justifyContent: 'center' }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
         Add Symbol
@@ -250,80 +305,77 @@ function AddSymbolForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 p-4 space-y-3"
+      style={{ ...cardStyle, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}
     >
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Add Symbol</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Add Symbol</h3>
         <button
           type="button"
           onClick={() => { setOpen(false); setForm(blankSymbol()); setError(''); }}
-          className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+          style={{ background: 'transparent', border: 'none', color: 'var(--foreground-muted)', cursor: 'pointer' }}
         >
           ✕ Cancel
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            Asset Type <span className="text-red-500">*</span>
-          </label>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={fieldLabelStyle}>Asset Type *</label>
           <input
             value={form.asset_type}
             onChange={e => setForm({ ...form, asset_type: e.target.value })}
             placeholder="e.g. Control Valve"
             required
             disabled={saving}
-            className={inputCls}
+            style={inputStyle}
           />
         </div>
-        <div className="space-y-1">
-          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Symbol Name</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={fieldLabelStyle}>Symbol Name</label>
           <input
             value={form.symbol_name}
             onChange={e => setForm({ ...form, symbol_name: e.target.value })}
             placeholder="e.g. CV-GLOBE"
             disabled={saving}
-            className={inputCls}
+            style={inputStyle}
           />
         </div>
-        <div className="space-y-1">
-          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Tag Pattern</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={fieldLabelStyle}>Tag Pattern</label>
           <input
             value={form.tag_pattern}
             onChange={e => setForm({ ...form, tag_pattern: e.target.value })}
             placeholder="e.g. P-###"
             disabled={saving}
-            className={inputCls}
+            style={inputStyle}
           />
         </div>
-        <div className="space-y-1">
-          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Aliases</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={fieldLabelStyle}>Aliases (comma-separated)</label>
           <input
             value={form.aliases}
             onChange={e => setForm({ ...form, aliases: e.target.value })}
             placeholder="alias1, alias2"
             disabled={saving}
-            className={inputCls}
+            style={inputStyle}
           />
-          <p className="text-xs text-zinc-400">Comma-separated</p>
         </div>
       </div>
 
-      <div className="space-y-1">
-        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Description</label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={fieldLabelStyle}>Description</label>
         <textarea
           value={form.description}
           onChange={e => setForm({ ...form, description: e.target.value })}
           placeholder="Optional description…"
           rows={2}
           disabled={saving}
-          className={`${inputCls} resize-none`}
+          style={{ ...inputStyle, resize: 'none' }}
         />
       </div>
 
       {error && (
-        <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2">
+        <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>
           {error}
         </p>
       )}
@@ -331,7 +383,7 @@ function AddSymbolForm({
       <button
         type="submit"
         disabled={saving || !form.asset_type.trim()}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        style={{ ...primaryButtonStyle, width: 'fit-content' }}
       >
         {saving && <Spinner />}
         {saving ? 'Adding…' : 'Add Symbol'}
@@ -360,11 +412,6 @@ export default function LegendDetailPage() {
   // Symbol row state
   const [editingSymbolId, setEditingSymbolId] = useState<string | null>(null);
   const [deletingSymbolId, setDeletingSymbolId] = useState<string | null>(null);
-
-  const fetchSymbols = useCallback(async () => {
-    const res = await fetch(`/api/legends/${legendId}/symbols`);
-    if (res.ok) setSymbols(await res.json());
-  }, [legendId]);
 
   useEffect(() => {
     Promise.all([
@@ -424,104 +471,99 @@ export default function LegendDetailPage() {
     }
   };
 
-  const inputCls =
-    'w-full text-sm px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 disabled:opacity-50';
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-zinc-400">
-        <Spinner size={6} />
-        <span className="ml-2 text-sm">Loading…</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '96px 0', color: 'var(--foreground-muted)' }}>
+        <Spinner size={24} />
+        <span style={{ marginLeft: '12px', fontSize: '14px' }}>Loading…</span>
       </div>
     );
   }
 
   if (!legend) {
     return (
-      <div className="py-16 text-center">
-        <p className="text-sm text-zinc-500">Legend not found.</p>
-        <Link href="/legends" className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-2 inline-block">← Back to legends</Link>
+      <div style={{ padding: '64px 0', textAlign: 'center' }}>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)' }}>Legend not found.</p>
+        <Link href="/legends" style={{ fontSize: '14px', color: 'var(--accent)', textDecoration: 'none', marginTop: '12px', display: 'inline-block' }}>← Back to legends</Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Link
             href="/legends"
-            className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '14px', color: 'var(--foreground-muted)', textDecoration: 'none' }}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
             Legends
           </Link>
-          <span className="text-zinc-300 dark:text-zinc-600">/</span>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{legend.name}</h1>
+          <span style={{ color: 'var(--foreground-subtle)' }}>/</span>
+          <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>{legend.name}</h1>
         </div>
       </div>
 
       {/* Legend info card */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6">
-        <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Legend Info</h2>
-        <form onSubmit={handleSaveInfo} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Name <span className="text-red-500">*</span>
-              </label>
+      <div style={{ ...cardStyle, padding: '24px' }}>
+        <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 16px' }}>Legend Info</h2>
+        <form onSubmit={handleSaveInfo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={fieldLabelStyle}>Name *</label>
               <input
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
                 required
                 disabled={savingInfo}
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
           </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Description</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Description</label>
             <textarea
               value={editDescription}
               onChange={e => setEditDescription(e.target.value)}
               rows={2}
               disabled={savingInfo}
-              className={`${inputCls} resize-none`}
+              style={{ ...inputStyle, resize: 'none' }}
             />
           </div>
 
           {infoError && (
-            <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2">{infoError}</p>
+            <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>{infoError}</p>
           )}
 
-          <div className="flex items-center gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
               type="submit"
               disabled={savingInfo || !editName.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              style={{ ...primaryButtonStyle, opacity: (savingInfo || !editName.trim()) ? 0.4 : 1, cursor: (savingInfo || !editName.trim()) ? 'not-allowed' : 'pointer' }}
             >
               {savingInfo && <Spinner />}
               {savingInfo ? 'Saving…' : 'Save Changes'}
             </button>
             {infoSaved && (
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">✓ Saved</span>
+              <span style={{ fontSize: '13px', color: 'var(--success)', fontWeight: '500' }}>✓ Saved</span>
             )}
           </div>
         </form>
       </div>
 
       {/* Symbols section */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Symbols</h2>
-          <span className="text-xs text-zinc-400">{symbols.length} symbol{symbols.length !== 1 ? 's' : ''}</span>
+      <div style={{ ...cardStyle, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Symbols</h2>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>{symbols.length} symbol{symbols.length !== 1 ? 's' : ''}</span>
         </div>
 
         {/* Add symbol form */}
-        <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
+        <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
           <AddSymbolForm
             legendId={legendId}
             onAdded={sym => setSymbols(prev => [...prev, sym])}
@@ -530,27 +572,27 @@ export default function LegendDetailPage() {
 
         {/* Symbols table */}
         {symbols.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <svg className="w-9 h-9 text-zinc-300 dark:text-zinc-600 mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
+            <svg style={{ width: 36, height: 36, margin: '0 auto 12px' }} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
             </svg>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">No symbols yet. Add one below.</p>
+            <p style={{ fontSize: '14px', margin: 0 }}>No symbols yet. Add one above.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+              <thead style={{ background: 'var(--surface-muted)', borderBottom: '1px solid var(--border)' }}>
                 <tr>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Asset Type</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Symbol Name</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Tag Pattern</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Description</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Aliases</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Actions</th>
+                  <th style={thStyle}>Asset Type</th>
+                  <th style={thStyle}>Symbol Name</th>
+                  <th style={thStyle}>Tag Pattern</th>
+                  <th style={thStyle}>Description</th>
+                  <th style={thStyle}>Aliases</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <tbody style={{ borderBottom: '1px solid var(--border)' }}>
                 {symbols.map(symbol =>
                   editingSymbolId === symbol.id ? (
                     <EditRow
@@ -564,52 +606,38 @@ export default function LegendDetailPage() {
                       onCancel={() => setEditingSymbolId(null)}
                     />
                   ) : (
-                    <tr key={symbol.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                      <td className="px-3 py-2.5">
-                        <span className="font-medium text-zinc-800 dark:text-zinc-200">{symbol.asset_type}</span>
+                    <tr key={symbol.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 150ms ease-out' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                      <td style={tdBase}><span style={{ fontWeight: '500', color: 'var(--foreground)' }}>{symbol.asset_type}</span></td>
+                      <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>{symbol.symbol_name ?? '—'}</td>
+                      <td style={tdBase}>
+                        {symbol.tag_pattern ? <code style={{ fontSize: '12px', background: 'var(--surface-muted)', padding: '2px 4px', borderRadius: 'var(--radius-sm)', color: 'var(--foreground)' }}>{symbol.tag_pattern}</code> : '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-400">
-                        {symbol.symbol_name ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {symbol.tag_pattern ? (
-                          <code className="text-xs bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5 rounded font-mono">
-                            {symbol.tag_pattern}
-                          </code>
-                        ) : (
-                          <span className="text-zinc-300 dark:text-zinc-600">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-zinc-500 dark:text-zinc-400 max-w-xs">
-                        <span className="line-clamp-1">
-                          {symbol.description ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap gap-1">
+                      <td style={{ ...tdBase, color: 'var(--foreground-muted)', maxWidth: 320 }}><span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{symbol.description ?? '—'}</span></td>
+                      <td style={tdBase}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                           {parseAliases(symbol.aliases).length > 0 ? (
                             parseAliases(symbol.aliases).map((a, i) => (
-                              <span key={i} className="inline-flex text-xs bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 px-1.5 py-0.5 rounded">
+                              <span key={i} style={{ fontSize: '11px', background: 'var(--surface-muted)', padding: '2px 6px', borderRadius: 'var(--radius-sm)', color: 'var(--foreground-muted)' }}>
                                 {a}
                               </span>
                             ))
-                          ) : (
-                            <span className="text-zinc-300 dark:text-zinc-600">—</span>
-                          )}
+                          ) : '—'}
                         </div>
                       </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td style={{ ...tdBase, textAlign: 'right' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                           <button
                             onClick={() => setEditingSymbolId(symbol.id)}
-                            className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2.5 py-1 rounded border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                            style={{ fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
                           >
                             Edit
                           </button>
                           <button
                             onClick={() => handleDeleteSymbol(symbol)}
                             disabled={deletingSymbolId === symbol.id}
-                            className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 px-2.5 py-1 rounded border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger-soft)', background: 'var(--danger-soft)', color: 'var(--danger)', cursor: 'pointer', opacity: deletingSymbolId === symbol.id ? 0.4 : 1 }}
                           >
                             {deletingSymbolId === symbol.id ? '…' : 'Delete'}
                           </button>

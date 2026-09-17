@@ -1,145 +1,90 @@
 @import "tailwindcss";
 
-/* ── HMI Color System ──────────────────────────────────────────────────────────
- * Based on ISA-101 Human Machine Interface principles:
- * - Dark, low-saturation background reduces eye fatigue on long sessions
- * - Functional color coding: green=safe/confirmed, yellow=caution/review,
- *   red=alarm/rejected, blue=information/action
- * - High contrast ratios (WCAG AA minimum)
- * - Saturated accent colors reserved for status/alerts only
+/* ── Design System: Minimalist Nature Palette ───────────────────────────────
+ * Based on Vona Nature reference with engineering precision.
+ * Warm neutral backgrounds, dark green primary, thin borders, high readability.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* ── Base surfaces ── */
-  --hmi-bg:          #0f172a;   /* deep navy — primary background */
-  --hmi-surface:     #1e293b;   /* slate — card/panel surface */
-  --hmi-surface-2:   #263348;   /* slightly lighter surface */
-  --hmi-border:      #334155;   /* border between elements */
-  --hmi-border-soft: #1e293b;   /* subtle divider */
+  /* ── Primary palette ── */
+  --background: #F7F8F1;
+  --surface: #FBFCF7;
+  --surface-muted: #F0F2E9;
 
-  /* ── Text ── */
-  --hmi-text-primary:   #f1f5f9;   /* near-white — primary labels */
-  --hmi-text-secondary: #94a3b8;   /* slate-400 — secondary info */
-  --hmi-text-muted:     #475569;   /* slate-600 — placeholder/disabled */
+  --foreground: #1F2A22;
+  --foreground-muted: #657066;
+  --foreground-subtle: #899189;
 
-  /* ── Functional status colors (ISA-101 aligned) ── */
-  --hmi-green:        #22c55e;   /* confirmed / operational / safe */
-  --hmi-green-dim:    #15803d26; /* green background tint */
-  --hmi-yellow:       #eab308;   /* caution / pending review */
-  --hmi-yellow-dim:   #a16207261;/* yellow background tint */
-  --hmi-red:          #ef4444;   /* alarm / rejected / fault */
-  --hmi-red-dim:      #b91c1c26; /* red background tint */
-  --hmi-blue:         #3b82f6;   /* information / action / in-progress */
-  --hmi-blue-dim:     #1d4ed826; /* blue background tint */
-  --hmi-cyan:         #06b6d4;   /* neutral detected */
-  --hmi-cyan-dim:     #0e748226; /* cyan background tint */
+  --primary: #002B4E;
+  --primary-hover: #001E38;
+  --primary-soft: #EAF3FA;
 
-  /* ── Accent ── */
-  --hmi-accent:       #38bdf8;   /* sky-400 — primary interactive */
-  --hmi-accent-hover: #0ea5e9;   /* sky-500 */
+  --accent: #0078B8;
+  --accent-hover: #005F94;
+  --accent-soft: #E8F6FC;
 
-  /* CSS custom property bridge for Tailwind */
-  --background: var(--hmi-bg);
-  --foreground: var(--hmi-text-primary);
-}
+  --border: #DDE2D8;
+  --border-strong: #C9D0C5;
 
-/* Light mode override — keep HMI feel but lighter */
-@media (prefers-color-scheme: light) {
-  :root {
-    --hmi-bg:          #f1f5f9;
-    --hmi-surface:     #ffffff;
-    --hmi-surface-2:   #f8fafc;
-    --hmi-border:      #e2e8f0;
-    --hmi-border-soft: #f1f5f9;
-    --hmi-text-primary:   #0f172a;
-    --hmi-text-secondary: #475569;
-    --hmi-text-muted:     #94a3b8;
-    --background: var(--hmi-bg);
-    --foreground: var(--hmi-text-primary);
-  }
+  --success: #8BBE3F;
+  --success-soft: #F0F8E8;
+
+  --warning: #A68145;
+  --warning-soft: #F4EBDD;
+
+  --danger: #A65A55;
+  --danger-soft: #F5E5E3;
+
+  --info: #617D91;
+  --info-soft: #E7EDF1;
+
+  /* ── Sizing ── */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 64px;
+
+  /* ── Radius ── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+html,
 body {
+  height: 100%;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
 }
 
-/* ── HMI utility classes ─────────────────────────────────────────────────── */
-
-/* Status badge base */
-.hmi-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.625rem;
-  border-radius: 9999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+body {
+  font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.hmi-badge-green  { background: #15803d33; color: #4ade80; border: 1px solid #16a34a55; }
-.hmi-badge-yellow { background: #92400e33; color: #fde047; border: 1px solid #ca8a0455; }
-.hmi-badge-red    { background: #7f1d1d33; color: #f87171; border: 1px solid #dc262655; }
-.hmi-badge-blue   { background: #1e3a8a33; color: #60a5fa; border: 1px solid #2563eb55; }
-.hmi-badge-cyan   { background: #164e6333; color: #22d3ee; border: 1px solid #0891b255; }
-.hmi-badge-gray   { background: #1e293b;   color: #94a3b8; border: 1px solid #33415533; }
-
-/* HMI card */
-.hmi-card {
-  background: var(--hmi-surface);
-  border: 1px solid var(--hmi-border);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.03);
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-/* Scanline subtle texture for industrial feel (optional — remove if too heavy) */
-.hmi-scanline::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.03) 2px,
-    rgba(0,0,0,0.03) 4px
-  );
-  pointer-events: none;
-  border-radius: inherit;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* Pulse dot for live status */
-.hmi-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--hmi-green);
-  box-shadow: 0 0 0 0 rgba(34,197,94,0.6);
-  animation: hmi-pulse-ring 1.8s infinite;
-}
-.hmi-pulse-blue {
-  background: var(--hmi-blue);
-  box-shadow: 0 0 0 0 rgba(59,130,246,0.6);
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
 }
 
-@keyframes hmi-pulse-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-  70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
-  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground-muted);
 }
-
-/* Scrollbar styling — thin, themed */
-::-webkit-scrollbar       { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
