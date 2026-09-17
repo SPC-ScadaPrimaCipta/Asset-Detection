@@ -1212,7 +1212,10 @@ function DetectionWorkspace() {
                 selectedId={selectedId}
                 onSelect={id => {
                   const d = detections.find(x => x.id === id);
-                  if (d) setSelectedDetection(d);
+                  if (d) {
+                    setSelectedDetection(d);
+                    if (d.pid_page) setCurrentPage(d.pid_page);
+                  }
                 }}
                 page={currentPage || 1}
                 totalPages={maxPage}
@@ -1238,7 +1241,10 @@ function DetectionWorkspace() {
               <DetectionsTable
                 detections={detections}
                 selectedId={selectedId}
-                onSelect={setSelectedDetection}
+                onSelect={d => {
+                  setSelectedDetection(d);
+                  if (d.pid_page) setCurrentPage(d.pid_page);
+                }}
               />
             </div>
           </div>
