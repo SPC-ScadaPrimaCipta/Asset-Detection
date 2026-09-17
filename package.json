@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker": "tsx workers/detection-worker.ts",
+    "worker": "tsx --env-file=.env.local workers/detection-worker.ts",
     "worker:legacy": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register workers/detection-worker.ts",
     "migrate": "node scripts/migrate.cjs",
     "test": "jest",

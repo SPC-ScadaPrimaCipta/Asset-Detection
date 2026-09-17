@@ -24,10 +24,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const { name, description, status } = await request.json();
+    const body = await request.json();
+    const existing = await db.query('SELECT * FROM legends WHERE id=$1', [id]);
+    if (existing.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const cur = existing.rows[0];
+    const name = body.name ?? cur.name;
+    const description = body.description !== undefined ? body.description : cur.description;
+    const status = body.status ?? cur.status;
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
     await db.query(
-      'UPDATE legends SET name=$1, description=$2, status=COALESCE($3, status), updated_at=NOW() WHERE id=$4',
+      'UPDATE legends SET name=$1, description=$2, status=$3, updated_at=NOW() WHERE id=$4',
       [name, description ?? null, status ?? null, id]
     );
     return NextResponse.json({ id, name, description, status });

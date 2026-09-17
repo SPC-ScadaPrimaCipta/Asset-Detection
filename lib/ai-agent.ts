@@ -1,25 +1,13 @@
 import OpenAI from 'openai';
 import type { Part } from '@google/generative-ai';
-import { env } from '@/lib/env';
+import { getAiConfig } from '@/lib/ai-config';
 import { buildDetectionPrompt } from '@/lib/ai-prompt';
 import { PageDetectionSchema } from '@/lib/ai-schemas';
 
 export interface DetectionJobInput {
   page: number;
-  /**
-   * Primary (highest accuracy): per-page PNG image rendered by mupdf at ~216dpi.
-   * Gemini Vision processes this as image/png — one page, full focus, accurate bounding boxes.
-   */
   pageImageBase64?: string;
-  /**
-   * Fallback A: Gemini Files API URI (uploaded once per job).
-   * Used when pageImageBase64 is unavailable (render failed).
-   */
   fileUri?: string;
-  /**
-   * Fallback B: full PDF base64.
-   * Used when both pageImageBase64 and fileUri are unavailable.
-   */
   pdfBase64?: string;
   legendId: string;
   legendSymbols: {
@@ -29,7 +17,7 @@ export interface DetectionJobInput {
     description?: string | null;
     aliases?: string[];
   }[];
-  ocrText?: string; // for DeepSeek fallback
+  ocrText?: string;
 }
 
 const MAX_RETRIES = 3;
@@ -52,126 +40,88 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
 }
 
 export async function runDetectionAgent(input: DetectionJobInput) {
+  const cfg = await getAiConfig();
   const prompt = buildDetectionPrompt(input.legendSymbols as Parameters<typeof buildDetectionPrompt>[0]);
-  if (env.AI_PROVIDER === 'deepseek' && env.DEEPSEEK_API_KEY) {
-    return withRetry(() => runWithDeepSeek(input, prompt));
+  if (cfg.provider === 'deepseek' && cfg.deepseekKey) {
+    return withRetry(() => runWithDeepSeek(input, prompt, cfg.deepseekKey!));
   }
-  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY required for image analysis');
-  return withRetry(() => runWithGemini(input, prompt));
+  if (!cfg.geminiKey) throw new Error('GEMINI_API_KEY not configured — set in Settings page or .env.local');
+  return withRetry(() => runWithGemini(input, prompt, cfg.geminiModel));
 }
 
-async function runWithGemini(input: DetectionJobInput, prompt: string) {
+async function runWithGemini(input: DetectionJobInput, prompt: string, preferredModel: string) {
   const { getGeminiClient } = await import('@/lib/gemini');
-  const client = getGeminiClient();
+  const client = await getGeminiClient();
 
-  // Fallback chain — try models in order until one succeeds (quota/404 → next model)
   const FALLBACK_MODELS = [
-    process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    preferredModel,
     'gemini-3.6-flash',
     'gemini-3.1-pro',
     'gemini-3.8-flash',
     'gemini-3.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-  ].filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
+  ].filter((m, i, arr) => arr.indexOf(m) === i);
 
-  // Build media part once — same for all models
   let mediaPart: Part;
   let contextText: string;
 
   if (input.pageImageBase64) {
     mediaPart = { inlineData: { mimeType: 'image/png', data: input.pageImageBase64 } };
-    contextText = `Analyze page ${input.page} of this P&ID document (rendered as high-resolution PNG at ~288dpi).
-Detect ALL equipment symbols and assets. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze page ${input.page} of this P&ID document (rendered as high-resolution PNG at ~288dpi).\nDetect ALL equipment symbols and assets. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.fileUri) {
     mediaPart = { fileData: { mimeType: 'application/pdf', fileUri: input.fileUri } };
-    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.\nReturn ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.pdfBase64) {
     mediaPart = { inlineData: { mimeType: 'application/pdf', data: input.pdfBase64 } };
-    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.\nReturn ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else {
     throw new Error('At least one of pageImageBase64, fileUri, or pdfBase64 must be provided');
   }
 
   let lastError: unknown;
-
   for (const modelName of FALLBACK_MODELS) {
     try {
       console.log(`[gemini] trying model=${modelName} page=${input.page}`);
       const model = client.getGenerativeModel({
         model: modelName,
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 8192,
-          responseMimeType: 'application/json',
-        },
+        generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: 'application/json' },
       });
-
-      const result = await model.generateContent([
-        { text: prompt },
-        { text: contextText },
-        mediaPart,
-      ]);
-
+      const result = await model.generateContent([{ text: prompt }, { text: contextText }, mediaPart]);
       const raw = result.response.text();
       const json = extractJson(raw) as Record<string, unknown>;
-      const parsed = PageDetectionSchema.safeParse(
-        json.page !== undefined ? json : { ...json, page: input.page }
-      );
-      if (!parsed.success) {
-        throw new Error(
-          `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`
-        );
-      }
+      const parsed = PageDetectionSchema.safeParse(json.page !== undefined ? json : { ...json, page: input.page });
+      if (!parsed.success) throw new Error(`Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`);
       parsed.data.page = input.page;
       console.log(`[gemini] success model=${modelName} detections=${parsed.data.detections.length}`);
       return parsed.data;
-
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Only fallback on quota (429) or model not found (404) errors
       const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404/i.test(msg);
       console.warn(`[gemini] model=${modelName} failed: ${msg.slice(0, 200)}`);
-      if (shouldFallback) {
-        lastError = e;
-        continue; // try next model
-      }
-      throw e; // non-quota error — propagate immediately
+      if (shouldFallback) { lastError = e; continue; }
+      throw e;
     }
   }
-
   throw lastError ?? new Error('All Gemini models exhausted');
 }
 
-async function runWithDeepSeek(input: DetectionJobInput, prompt: string) {
-  const client = new OpenAI({
-    apiKey: env.DEEPSEEK_API_KEY!,
-    baseURL: 'https://api.deepseek.com/v1',
-  });
-  const ocr = input.ocrText
-    ? `\n\nOCR text from page ${input.page}:\n${input.ocrText.slice(0, 8000)}`
-    : '';
+async function runWithDeepSeek(input: DetectionJobInput, prompt: string, apiKey: string) {
+  const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' });
+  const { deepseekModel } = await getAiConfig();
+  const ocr = input.ocrText ? `\n\nOCR text from page ${input.page}:\n${input.ocrText.slice(0, 8000)}` : '';
   const completion = await client.chat.completions.create({
-    model: 'deepseek-chat',
+    model: deepseekModel,
     messages: [
       { role: 'system', content: prompt },
-      {
-        role: 'user',
-        content: `Analyze page ${input.page} of this P&ID. Image not supported — use OCR text proxy.${ocr}\nReturn JSON: { "page": ${input.page}, "detections": [...] }`,
-      },
+      { role: 'user', content: `Analyze page ${input.page} of this P&ID. Image not supported — use OCR text proxy.${ocr}\nReturn JSON: { "page": ${input.page}, "detections": [...] }` },
     ],
     response_format: { type: 'json_object' },
   });
   const text = completion.choices[0].message.content || '{}';
   const json = JSON.parse(text) as Record<string, unknown>;
-  const parsed = PageDetectionSchema.safeParse(
-    json.page !== undefined ? json : { ...json, page: input.page }
-  );
-  if (!parsed.success) {
-    throw new Error(`Schema validation failed: ${JSON.stringify(parsed.error.flatten())}`);
-  }
+  const parsed = PageDetectionSchema.safeParse(json.page !== undefined ? json : { ...json, page: input.page });
+  if (!parsed.success) throw new Error(`Schema validation failed: ${JSON.stringify(parsed.error.flatten())}`);
   parsed.data.page = input.page;
   return parsed.data;
 }
@@ -179,11 +129,7 @@ async function runWithDeepSeek(input: DetectionJobInput, prompt: string) {
 function extractJson(text: string): unknown {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const s = m ? m[1] : text.trim();
-  try {
-    return JSON.parse(s);
-  } catch {
-    /* try raw extraction */
-  }
+  try { return JSON.parse(s); } catch {}
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
   if (start !== -1 && end !== -1) return JSON.parse(s.slice(start, end + 1));

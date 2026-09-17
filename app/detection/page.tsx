@@ -492,11 +492,13 @@ function PidViewer({
        && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
   );
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.15 : 0.15;
-    setZoom(prev => Math.max(0.2, Math.min(6, prev + delta)));
-  };
+  // wheel must be non-passive to allow preventDefault (React onWheel is passive in Chrome)
+  useEffect(() => {
+    const el = viewerRef.current; if (!el) return;
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); const d = e.deltaY > 0 ? -0.15 : 0.15; setZoom(p => Math.max(0.2, Math.min(6, p + d))); };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
@@ -584,7 +586,6 @@ function PidViewer({
       {/* Viewer area */}
       <div
         style={{ position: 'relative', background: 'var(--surface-muted)', overflow: 'hidden', userSelect: 'none', flex: 1, minHeight: fullscreen ? 'calc(100vh - 80px)' : 600, cursor: dragging ? 'grabbing' : 'grab' }}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -1340,7 +1341,7 @@ function DetectionWorkspace() {
 // Need Suspense for useSearchParams
 export default function DetectionPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--foreground-muted)' }}>Loading...</div>}>
       <DetectionWorkspace />
     </Suspense>
   );

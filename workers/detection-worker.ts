@@ -6,8 +6,10 @@ import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
 import { associateTagsToSymbols } from "@/lib/spatial";
 import { renderPageToPng, extractPdfTextByPage } from "@/lib/pdf-render";
+import { getAiConfig } from "@/lib/ai-config";
+import { env } from "@/lib/env";
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const REDIS_URL = env.REDIS_URL;
 
 const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
 export const detectionQueue = new Queue("detection", { connection });
@@ -25,9 +27,9 @@ export const worker = new Worker(
       "UPDATE detection_jobs SET status='PROCESSING', started_at=NOW(), progress_pct=5 WHERE id=$1",
       [jobId]
     );
+    const aiCfg = await getAiConfig();
     const agentRunId = uuidv4();
-    const modelName =
-      process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : (process.env.GEMINI_MODEL || "gemini-3.5-flash");
+    const modelName = aiCfg.provider === "deepseek" ? aiCfg.deepseekModel : aiCfg.geminiModel;
     const promptVersion = "v1";
     // Hoisted — referenced in both try and catch for cleanup
     let geminiFileUri: string | undefined;
@@ -85,7 +87,7 @@ export const worker = new Worker(
 
       // Pre-upload PDF to Gemini Files API as fallback if mupdf render fails per-page
       let geminiFileUriFallback: string | undefined;
-      if (process.env.AI_PROVIDER !== "deepseek" && process.env.GEMINI_API_KEY) {
+      if (aiCfg.provider !== "deepseek" && aiCfg.geminiKey) {
         try {
           const { uploadPdfToGemini } = await import("@/lib/gemini");
           const uploaded = await uploadPdfToGemini(buf, doc.filename);
