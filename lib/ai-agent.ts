@@ -100,7 +100,7 @@ BBOX: normalized 0-1000 space. Return ONLY valid JSON: { "page": ${input.page}, 
         model: modelName,
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
           responseMimeType: 'application/json',
         },
       });
@@ -174,15 +174,62 @@ async function runWithDeepSeek(input: DetectionJobInput, prompt: string) {
 }
 
 function extractJson(text: string): unknown {
+  // Strip markdown fences
   const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const s = m ? m[1] : text.trim();
-  try {
-    return JSON.parse(s);
-  } catch {
-    /* try raw extraction */
-  }
+  const s = (m ? m[1] : text).trim();
+
+  // Try clean parse first
+  try { return JSON.parse(s); } catch { /* continue */ }
+
+  // Try extracting outermost {...}
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
-  if (start !== -1 && end !== -1) return JSON.parse(s.slice(start, end + 1));
-  throw new Error(`No JSON found in response: ${s.slice(0, 600)}`);
+  if (start !== -1 && end !== -1) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { /* continue */ }
+  }
+
+  // Truncated JSON recovery — extract complete detection objects from partial array
+  // Pattern: response was cut off mid-JSON, partial detections still usable
+  if (start !== -1) {
+    const partial = s.slice(start);
+    // Extract page number
+    const pageMatch = partial.match(/"page"\s*:\s*(\d+)/);
+    const page = pageMatch ? parseInt(pageMatch[1]) : 1;
+
+    // Extract all complete detection objects using brace matching
+    const detections: unknown[] = [];
+    const detectionsStart = partial.indexOf('"detections"');
+    if (detectionsStart !== -1) {
+      const arrStart = partial.indexOf('[', detectionsStart);
+      if (arrStart !== -1) {
+        let depth = 0;
+        let objStart = -1;
+        let i = arrStart + 1;
+        while (i < partial.length) {
+          const c = partial[i];
+          if (c === '{') {
+            if (depth === 0) objStart = i;
+            depth++;
+          } else if (c === '}') {
+            depth--;
+            if (depth === 0 && objStart !== -1) {
+              try {
+                const obj = JSON.parse(partial.slice(objStart, i + 1));
+                detections.push(obj);
+              } catch { /* skip malformed object */ }
+              objStart = -1;
+            }
+          }
+          i++;
+        }
+      }
+    }
+
+    if (detections.length > 0) {
+      console.warn(`[extractJson] Recovered ${detections.length} detections from truncated JSON`);
+      return { page, detections };
+    }
+  }
+
+  throw new Error(`No valid JSON found in response: ${s.slice(0, 300)}`);
 }

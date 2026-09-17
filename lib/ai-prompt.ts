@@ -7,99 +7,31 @@ export function buildDetectionPrompt(legendSymbols: Array<{
 }>) {
   const hasLegend = legendSymbols.length > 0;
 
+  // Compact legend: "Name [tag_pattern]" — saves tokens vs bullet list
   const legendContext = hasLegend
     ? legendSymbols
         .map((s) => {
-          const displayName = s.symbol_name || s.asset_type;
-          const parts: string[] = [`• ${displayName}`];
-          if (s.symbol_name && s.asset_type !== s.symbol_name) parts.push(`(type: ${s.asset_type})`);
-          if (s.tag_pattern) parts.push(`[tag pattern: ${s.tag_pattern}]`);
-          if (s.aliases?.length) parts.push(`aliases: ${s.aliases.join(", ")}`);
-          if (s.description) parts.push(`— ${s.description}`);
-          return parts.join(" ");
+          const name = s.symbol_name || s.asset_type;
+          return s.tag_pattern ? `${name} [${s.tag_pattern}]` : name;
         })
-        .join("\n")
+        .join(', ')
     : null;
 
-  return `You are an expert P&ID (Piping and Instrumentation Diagram) analyst with 20+ years of industrial engineering experience. Your task is to identify and precisely locate ALL physical equipment and asset symbols in the provided P&ID image.
-
-IMAGE: High-resolution PNG of one P&ID page, rendered at ~288 dpi. All symbols and text are clearly visible.
+  return `You are a P&ID asset detection AI. Detect ALL equipment symbols in the provided P&ID image.
 
 ${hasLegend
-  ? `SELECTED LEGEND — use as PRIMARY reference for symbol identification:
-${legendContext}
+  ? `LEGEND (use exact names as assetType): ${legendContext}`
+  : `No legend. Use standard types: Pump, Valve, Vessel, Tank, Compressor, Heat Exchanger, Filter, Instrument, PSV, Control Valve, Motor.`}
 
-CRITICAL NAMING RULE:
-- The "assetType" field MUST use the exact name from this legend (the bullet point name above).
-- If a detected symbol matches a legend entry, use that legend name exactly as the assetType.
-- Do NOT use generic names like "Pump" or "Valve" if the legend has a specific name like "Centrifugal Pump" or "Gate Valve".`
-  : `No legend provided. Use standard ISA 5.1 / ISO 10628 P&ID symbol conventions.`}
+RULES:
+- Detect EVERY equipment symbol, even those without a visible tag
+- assetTag: exact tag code visible near symbol (e.g. P-101, V-201A). null if not visible — do NOT skip
+- assetType: use exact legend name if matched, otherwise use standard type name
+- bbox: normalized 0–1000 (NOT pixels). (0,0)=top-left, (1000,1000)=bottom-right
+- confidence: 0.95+ clearly matches legend+tag, 0.80-0.94 recognizable, 0.60-0.79 uncertain
+- evidence: 1-2 short observations
+- Do NOT detect pipes, flow arrows, title blocks, or legend tables
 
-━━━ DETECTION TASK ━━━
-
-Systematically scan the ENTIRE image from top-left to bottom-right. Detect EVERY equipment symbol visible — including symbols WITHOUT tags.
-
-TAGGING RULES:
-- If an asset tag (e.g. P-101, V-201A, FIC-301) is clearly visible near the symbol → set assetTag to that value
-- If NO tag is visible near the symbol → set assetTag to null (do NOT skip the detection — still report it)
-- Read tags carefully: preserve exact format (P-101A not p101a, XV-302 not xv302)
-- Use spatial proximity: the tag closest to a symbol belongs to it
-
-For EACH equipment symbol found, provide:
-1. assetType — MUST match the legend name exactly if legend is provided. Use the exact symbol_name from legend.
-2. assetTag — tag code visible near this symbol. NULL if not visible. Never invent tags.
-3. confidence — 0.0 to 1.0:
-   - 0.95–1.0: symbol clearly matches legend AND tag clearly readable
-   - 0.80–0.94: symbol recognizable, tag partially obscured or not present
-   - 0.60–0.79: symbol shape ambiguous
-   - below 0.60: uncertain — include only with strong evidence
-4. bbox — NORMALIZED 0–1000 coordinate space (NOT pixel coordinates):
-   - (0,0) = top-left corner of the image, (1000,1000) = bottom-right corner
-   - x, y = top-left corner of the symbol bounding box
-   - width, height = size of the bounding box (tight fit)
-   - Example: symbol at image center ≈ { x:450, y:450, width:80, height:80 }
-   - IMPORTANT: values must be between 0–1000. Never use raw pixel values.
-5. evidence — 1–3 specific observations justifying this detection
-6. legendSymbol — exact legend name this symbol matches, or null
-
-━━━ STRICT RULES ━━━
-
-DO:
-✓ Detect EVERY distinct equipment symbol, even without a tag
-✓ Detect untagged instruments, valves, equipment — assetTag = null is valid
-✓ Include instruments (FIC, PIC, LIC, TIC, FT, PT, etc.)
-✓ Include control valves, PSVs, check valves, isolation valves
-✓ Detect each instance separately when same symbol appears multiple times
-✓ Return integer bbox coordinates
-
-DO NOT:
-✗ Skip symbols just because they have no tag
-✗ Invent or guess asset tags — null is correct if tag not visible
-✗ Use generic type names when legend has a specific name
-✗ Detect pipe lines, signal lines, flow arrows
-✗ Detect title blocks, revision clouds, notes, legend tables
-✗ Group separate equipment into one detection
-
-━━━ OUTPUT FORMAT ━━━
-
-Return ONLY this JSON, no markdown, no explanation:
-{
-  "page": <page_number>,
-  "detections": [
-    {
-      "assetType": "<exact legend name>",
-      "assetTag": "<tag or null>",
-      "description": null,
-      "equipmentClass": null,
-      "service": null,
-      "location": null,
-      "unit": null,
-      "area": null,
-      "confidence": 0.92,
-      "bbox": {"x": 245, "y": 380, "width": 52, "height": 48},
-      "legendSymbol": "<exact legend name>",
-      "evidence": ["Symbol matches legend entry", "No tag visible near symbol"]
-    }
-  ]
-}`;
+OUTPUT — return ONLY this JSON, no markdown:
+{"page":<n>,"detections":[{"assetType":"","assetTag":null,"confidence":0.9,"bbox":{"x":0,"y":0,"width":50,"height":50},"legendSymbol":null,"evidence":[""],"description":null,"equipmentClass":null,"service":null,"location":null,"unit":null,"area":null}]}`;
 }
