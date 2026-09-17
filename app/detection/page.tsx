@@ -507,7 +507,7 @@ function PidViewer({
       {/* Viewer area */}
       <div
         className="relative bg-zinc-100 dark:bg-zinc-800 overflow-hidden select-none flex-1"
-        style={{ minHeight: fullscreen ? 'calc(100vh - 80px)' : 420 }}
+        style={{ minHeight: fullscreen ? 'calc(100vh - 80px)' : 600 }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -1100,7 +1100,7 @@ function DetectionWorkspace() {
   const selectedId = selectedDetection?.id ?? null;
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex flex-col min-h-full gap-4 pb-6">
       {/* Manual Add Modal */}
       <ManualAddModal
         open={showManualAdd}
@@ -1196,8 +1196,8 @@ function DetectionWorkspace() {
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
       {detections.length > 0 || currentJobId ? (
-        <div className="flex gap-4 flex-1 min-h-0" style={{ minHeight: 560 }}>
-          {/* Left: Viewer — takes most of the width */}
+        <div className="flex gap-3 flex-1 min-h-0" style={{ minHeight: 700 }}>
+          {/* Left: Viewer — takes most of the width (~75%) */}
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {/* Job progress inline above viewer — compact, doesn't push viewer down */}
             {currentJobId && (
@@ -1205,7 +1205,7 @@ function DetectionWorkspace() {
                 <JobProgress jobId={currentJobId} onComplete={handleJobComplete} />
               </div>
             )}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0" style={{ minHeight: 640 }}>
               <PidViewer
                 documentId={documentId}
                 detections={pageDetections}
@@ -1222,7 +1222,7 @@ function DetectionWorkspace() {
           </div>
 
           {/* Right panel: Detail on top (when selected) + Table below */}
-          <div className="w-80 xl:w-96 flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+          <div className="w-72 xl:w-80 flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
             {selectedDetection && (
               <div className="flex-shrink-0">
                 <AssetDetail
