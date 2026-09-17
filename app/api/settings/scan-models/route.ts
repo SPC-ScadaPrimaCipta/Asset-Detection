@@ -14,7 +14,17 @@ async function scanGeminiModels(apiKey: string) {
         id: m.name.replace('models/', ''),
         name: m.displayName || m.name,
       }));
-    return { valid: true, models, quota: null };
+
+    // Gemini doesn't expose quota via API, show placeholder info
+    const quota = {
+      balance: 'N/A',
+      granted: null,
+      toppedUp: null,
+      currency: 'USD',
+      info: 'Gemini quota tracked per-API-key in Google Cloud Console'
+    };
+
+    return { valid: true, models, quota };
   } catch (err: unknown) {
     return { valid: false, error: err instanceof Error ? err.message : 'Scan failed', models: [], quota: null };
   }
@@ -43,9 +53,12 @@ async function scanDeepSeekModels(apiKey: string) {
       if (balRes.ok) {
         const balData = await balRes.json() as any;
         if (balData && balData.is_available !== undefined) {
+           const info = balData.balance_infos?.[0];
            quota = {
-             balance: balData.balance_infos?.[0]?.total_balance || '0.00',
-             currency: balData.balance_infos?.[0]?.currency || 'CNY'
+             balance: info?.total_balance || '0.00',
+             granted: info?.granted_balance || '0.00',
+             toppedUp: info?.topped_up_balance || '0.00',
+             currency: info?.currency || 'CNY'
            };
         }
       }

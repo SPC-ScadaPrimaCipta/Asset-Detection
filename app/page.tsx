@@ -284,12 +284,17 @@ function ActionCard({ href, label, desc, iconPath, primary }: {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [quota, setQuota] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/stats')
-      .then(r => r.json())
-      .then(d => { setStats(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    Promise.all([
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/quota').then(r => r.json())
+    ]).then(([statsData, quotaData]) => {
+      setStats(statsData);
+      setQuota(quotaData);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   const activeJobs    = stats ? ((stats.jobs['PENDING'] ?? 0) + (stats.jobs['PROCESSING'] ?? 0)) : 0;
@@ -453,7 +458,73 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Row 3: Job status + Quick actions ── */}
+      {/* ── Row 3: Quota Tracker ── */}
+      {quota && (
+        <div style={{
+          background: C.surface, border: `1px solid ${C.border}`,
+          borderRadius: 12, padding: '20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: C.text }}>API Quota & Balance</p>
+              <p style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>
+                Active Provider: <span style={{ color: C.accent, fontWeight: 600, textTransform: 'capitalize' }}>{quota.provider}</span>
+              </p>
+            </div>
+            {quota.data?.balance && (
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 20, fontWeight: 800, color: C.text, lineHeight: 1 }}>{quota.data.balance} {quota.data.currency}</p>
+                <p style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>Total Balance</p>
+              </div>
+            )}
+          </div>
+
+          {quota.data ? (
+            quota.data.granted && quota.data.toppedUp ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                {/* Free Quota */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: C.textMuted }}>Free Quota</span>
+                    <span style={{ color: C.text, fontWeight: 600 }}>{quota.data.granted}</span>
+                  </div>
+                  <div style={{ height: 6, background: '#0f172a', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(100, (parseFloat(quota.data.granted) / (parseFloat(quota.data.granted) + parseFloat(quota.data.toppedUp)) || 0) * 100)}%`,
+                      height: '100%', background: C.green, borderRadius: 3, transition: 'width 0.8s ease'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Top-up Balance */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: C.textMuted }}>Top-up Balance</span>
+                    <span style={{ color: C.text, fontWeight: 600 }}>{quota.data.toppedUp}</span>
+                  </div>
+                  <div style={{ height: 6, background: '#0f172a', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(100, (parseFloat(quota.data.toppedUp) / (parseFloat(quota.data.granted) + parseFloat(quota.data.toppedUp)) || 0) * 100)}%`,
+                      height: '100%', background: C.blue, borderRadius: 3, transition: 'width 0.8s ease'
+                    }} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic' }}>
+                {quota.message || 'No quota usage data available.'}
+              </p>
+            )
+          ) : (
+            <p style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic' }}>
+              {quota.message || 'Check settings to configure API keys and view quota.'}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Row 4: Job status + Quick actions ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
         {/* Job status */}
         <div style={{

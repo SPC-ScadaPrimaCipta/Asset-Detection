@@ -7,6 +7,7 @@ interface Settings {
   gemini_api_key?: string;
   deepseek_api_key?: string;
   gemini_model: string;
+  deepseek_model?: string;
 }
 
 const DEFAULT_GEMINI_MODELS = [
@@ -42,7 +43,13 @@ export default function SettingsPage() {
         if (!res.ok) throw new Error('Failed to load settings');
         const data = await res.json() as Settings;
         setSettings(data);
-        setFormData(data);
+        setFormData(prev => ({
+          ...prev,
+          ai_provider: data.ai_provider,
+          gemini_model: data.gemini_model,
+          deepseek_model: data.deepseek_model || 'deepseek-chat',
+          // API keys intentionally NOT returned - user must re-enter to scan
+        }));
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Load failed');
       } finally {
@@ -84,6 +91,9 @@ export default function SettingsPage() {
         }
       } else {
         setDsModels(data.models);
+        if (data.models.length > 0 && !data.models.find((m: any) => m.id === formData.deepseek_model)) {
+          setFormData(prev => ({ ...prev, deepseek_model: data.models[0].id }));
+        }
         if (data.quota) {
            setDsQuota(data.quota);
            setSuccess(`Successfully scanned DeepSeek models. Balance: ${data.quota.balance} ${data.quota.currency}`);
@@ -209,7 +219,7 @@ export default function SettingsPage() {
               disabled={scanning || !formData.gemini_api_key}
               className="px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
             >
-              {scanning ? 'Scanning...' : 'Scan Models'}
+              {scanning ? 'Scanning...' : 'Scan Models & Quota'}
             </button>
           </div>
 
@@ -243,6 +253,11 @@ export default function SettingsPage() {
               <p className="text-xs text-zinc-400 mt-1">Your Gemini API key is stored securely server-side</p>
             </label>
           </div>
+
+          {/* Gemini Quota Info Placeholder */}
+           <div className="text-xs text-zinc-400 italic">
+             Note: Gemini quota must be checked via Google Cloud Console.
+           </div>
         </div>
 
         {/* DeepSeek Settings */}
@@ -260,6 +275,23 @@ export default function SettingsPage() {
 
           <div>
             <label className="block">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Model</span>
+              <select
+                value={formData.deepseek_model || ''}
+                onChange={e => setFormData(f => ({ ...f, deepseek_model: e.target.value }))}
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {dsModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
               <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">API Key</span>
               <input
                 type="password"
@@ -273,11 +305,43 @@ export default function SettingsPage() {
           </div>
 
           {dsQuota && (
-            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3">
-              <p className="text-xs font-medium text-blue-700 dark:text-blue-400">Account Balance</p>
-              <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mt-1">
-                {dsQuota.balance} {dsQuota.currency}
-              </p>
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-blue-700 dark:text-blue-400">Account Balance</p>
+                <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">
+                  {dsQuota.balance} {dsQuota.currency}
+                </p>
+              </div>
+
+              {dsQuota.granted && dsQuota.toppedUp && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-blue-700 dark:text-blue-400">Free Quota</span>
+                    <span className="font-medium text-blue-900 dark:text-blue-100">{dsQuota.granted}</span>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-full h-2">
+                    <div
+                      className="bg-emerald-500 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, (parseFloat(dsQuota.granted) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs mt-2">
+                    <span className="text-blue-700 dark:text-blue-400">Top-up Balance</span>
+                    <span className="font-medium text-blue-900 dark:text-blue-100">{dsQuota.toppedUp}</span>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, (parseFloat(dsQuota.toppedUp) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

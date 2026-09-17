@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS settings (
   gemini_api_key TEXT,
   deepseek_api_key TEXT,
   gemini_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
+  deepseek_model VARCHAR(100) DEFAULT 'deepseek-chat',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
