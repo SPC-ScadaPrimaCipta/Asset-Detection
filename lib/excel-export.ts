@@ -17,6 +17,10 @@ export interface ExportAsset {
   detectionStatus: string;
   reviewStatus: string;
   evidence: string[];
+  bboxX: number | null;
+  bboxY: number | null;
+  bboxW: number | null;
+  bboxH: number | null;
 }
 
 export async function buildAssetRegisterWorkbook(
@@ -122,10 +126,28 @@ export async function buildAssetRegisterWorkbook(
     { header: "Evidence", key: "ev", width: 50 },
     { header: "P\u0026ID Number", key: "pid", width: 18 },
     { header: "Page", key: "pg", width: 10 },
+    { header: "BBox (x,y,w,h)", key: "bbox", width: 22 },
   ];
   ws5.getRow(1).font = { bold: true };
+  ws5.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+  ws5.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   ws5.views = [{ state: "frozen", ySplit: 1 }];
-  filtered.forEach((a) => ws5.addRow({ tag: a.assetTag ?? "", type: a.assetType, conf: a.confidence ?? "", sym: a.legendSymbol ?? a.legend ?? "", ev: (a.evidence ?? []).join("; "), pid: a.pidNumber ?? "", pg: a.pidPage ?? "" }));
+  ws5.autoFilter = { from: "A1", to: "H1" };
+  filtered.forEach((a) =>
+    ws5.addRow({
+      tag: a.assetTag ?? "",
+      type: a.assetType,
+      conf: a.confidence != null ? `${Math.round(a.confidence * 100)}%` : "",
+      sym: a.legendSymbol ?? a.legend ?? "",
+      ev: (a.evidence ?? []).join("; "),
+      pid: a.pidNumber ?? "",
+      pg: a.pidPage != null ? `Page ${a.pidPage}` : "",
+      bbox:
+        a.bboxX != null && a.bboxY != null && a.bboxW != null && a.bboxH != null
+          ? `${a.bboxX},${a.bboxY},${a.bboxW},${a.bboxH}`
+          : "",
+    })
+  );
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);

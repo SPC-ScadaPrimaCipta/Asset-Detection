@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -80,22 +81,24 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  const rl = checkRateLimit(`detection:${ip}`, 5, 60_000); // 5 detection triggers/min per IP
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many detection requests. Try again later.' },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   const { document_id, legend_id, project_id } = await request.json();
   if (!document_id) return NextResponse.json({ error: "document_id required" }, { status: 400 });
   const id = uuidv4();
   await db.query("INSERT INTO detection_jobs (id, document_id, legend_id, project_id, status, progress_pct) VALUES ($1,$2,$3,$4,'PENDING',0)", [id, document_id, legend_id ?? null, project_id ?? null]);
-  // BullMQ requires Node.js runtime (not Edge). Dynamic import guards against Edge/build-time errors.
-  try {
-    const { Queue } = await import('bullmq');
-    const IORedis = (await import('ioredis')).default;
-    const conn = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null, enableOfflineQueue: false, lazyConnect: true });
-    await conn.connect().catch(() => {});
-    const q = new Queue('detection', { connection: conn });
-    await q.add('detection', { jobId: id, legendId: legend_id ?? null }, { jobId: id, removeOnComplete: true, removeOnFail: 100 });
-    conn.disconnect();
-  } catch {
-    // Redis unavailable — client polls status; worker process picks up PENDING jobs on restart
-    console.warn(`[detection] Redis unavailable, job ${id} left as PENDING`);
+  // Use singleton queue — avoids creating a new Redis connection per request
+  const { enqueueDetectionJob } = await import('@/lib/queue');
+  const enqueued = await enqueueDetectionJob(id, legend_id ?? null);
+  if (!enqueued) {
+    console.warn(`[detection] Redis unavailable, job ${id} left as PENDING — worker will recover on startup`);
   }
   return NextResponse.json({ id, document_id, legend_id, status: "PENDING" }, { status: 201 });
 }

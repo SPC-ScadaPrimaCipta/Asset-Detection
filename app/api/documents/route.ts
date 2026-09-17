@@ -4,6 +4,7 @@ import db from '@/lib/db';
 import { saveFile } from '@/lib/storage';
 import { validatePdfFile, getPdfPageCountFromBuffer } from '@/lib/pdf-render';
 import { PDFDocument } from 'pdf-lib';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,6 +27,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const rl = checkRateLimit(`upload:${ip}`, 10, 60_000); // 10 uploads/min per IP
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many uploads. Try again later.' },
+        { status: 429, headers: rateLimitHeaders(rl) }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const projectId = formData.get('project_id') as string | null;

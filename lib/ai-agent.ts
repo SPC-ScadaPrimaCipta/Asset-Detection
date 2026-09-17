@@ -63,56 +63,86 @@ export async function runDetectionAgent(input: DetectionJobInput) {
 async function runWithGemini(input: DetectionJobInput, prompt: string) {
   const { getGeminiClient } = await import('@/lib/gemini');
   const client = getGeminiClient();
-  const model = client.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-3.6-flash' });
 
-  // Priority: PNG image > Gemini Files API URI > inline PDF base64
+  // Fallback chain — try models in order until one succeeds (quota/404 → next model)
+  const FALLBACK_MODELS = [
+    process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-pro',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ].filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
+
+  // Build media part once — same for all models
   let mediaPart: Part;
   let contextText: string;
 
   if (input.pageImageBase64) {
-    // Best path — single page PNG, Gemini Vision at full accuracy
-    mediaPart = {
-      inlineData: { mimeType: 'image/png', data: input.pageImageBase64 },
-    };
-    contextText = `This is page ${input.page} of a P&ID document rendered as a high-resolution PNG image.
-Analyze this image and detect all industrial assets and equipment.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    mediaPart = { inlineData: { mimeType: 'image/png', data: input.pageImageBase64 } };
+    contextText = `Analyze page ${input.page} of this P&ID document (rendered as high-resolution PNG at ~288dpi).
+Detect ALL equipment symbols and assets. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.fileUri) {
-    // Fallback A — full PDF via Files API, instruct Gemini to focus on page N
-    mediaPart = {
-      fileData: { mimeType: 'application/pdf', fileUri: input.fileUri },
-    };
-    contextText = `Analyze page ${input.page} of this P&ID PDF document. Focus ONLY on page ${input.page}.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
-  } else if (input.pdfBase64) {
-    // Fallback B — inline full PDF base64
-    mediaPart = {
-      inlineData: { mimeType: 'application/pdf', data: input.pdfBase64 },
-    };
+    mediaPart = { fileData: { mimeType: 'application/pdf', fileUri: input.fileUri } };
     contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
+Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+  } else if (input.pdfBase64) {
+    mediaPart = { inlineData: { mimeType: 'application/pdf', data: input.pdfBase64 } };
+    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
+Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else {
     throw new Error('At least one of pageImageBase64, fileUri, or pdfBase64 must be provided');
   }
 
-  const result = await model.generateContent([
-    { text: prompt },
-    { text: contextText },
-    mediaPart,
-  ]);
+  let lastError: unknown;
 
-  const raw = result.response.text();
-  const json = extractJson(raw) as Record<string, unknown>;
-  const parsed = PageDetectionSchema.safeParse(
-    json.page !== undefined ? json : { ...json, page: input.page }
-  );
-  if (!parsed.success) {
-    throw new Error(
-      `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`
-    );
+  for (const modelName of FALLBACK_MODELS) {
+    try {
+      console.log(`[gemini] trying model=${modelName} page=${input.page}`);
+      const model = client.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const result = await model.generateContent([
+        { text: prompt },
+        { text: contextText },
+        mediaPart,
+      ]);
+
+      const raw = result.response.text();
+      const json = extractJson(raw) as Record<string, unknown>;
+      const parsed = PageDetectionSchema.safeParse(
+        json.page !== undefined ? json : { ...json, page: input.page }
+      );
+      if (!parsed.success) {
+        throw new Error(
+          `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`
+        );
+      }
+      parsed.data.page = input.page;
+      console.log(`[gemini] success model=${modelName} detections=${parsed.data.detections.length}`);
+      return parsed.data;
+
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Only fallback on quota (429) or model not found (404) errors
+      const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404/i.test(msg);
+      console.warn(`[gemini] model=${modelName} failed: ${msg.slice(0, 200)}`);
+      if (shouldFallback) {
+        lastError = e;
+        continue; // try next model
+      }
+      throw e; // non-quota error — propagate immediately
+    }
   }
-  parsed.data.page = input.page;
-  return parsed.data;
+
+  throw lastError ?? new Error('All Gemini models exhausted');
 }
 
 async function runWithDeepSeek(input: DetectionJobInput, prompt: string) {

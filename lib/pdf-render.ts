@@ -1,4 +1,7 @@
 import { PDFDocument } from "pdf-lib";
+import { execFile } from "child_process";
+import path from "path";
+const RENDER_SCRIPT = path.resolve(process.cwd(), "scripts/render-page.mjs");
 
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const ALLOWED_MIME = ["application/pdf"];
@@ -19,60 +22,58 @@ export async function getPdfPageCountFromBuffer(buffer: Buffer): Promise<number>
 }
 
 /**
- * Render a single PDF page to PNG using mupdf.
+ * Render a single PDF page to PNG using mupdf (via ESM child process).
  *
- * @param buffer  - Full PDF buffer
+ * @param buffer     - Full PDF buffer
  * @param pageNumber - 1-based page number
- * @param scale  - Render scale factor. 3.0 ≈ 216 dpi (recommended for P&ID detail).
- *                 Higher = better symbol recognition, larger PNG.
- * @returns PNG as Buffer
+ * @param scale      - Render scale factor. 4.0 ≈ 288 dpi (recommended for P&ID detail).
+ * @returns { png, width, height }
  */
 export async function renderPageToPng(
   buffer: Buffer,
   pageNumber: number,
-  scale = 3.0
+  scale = 4.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
-  try {
-    // Dynamic import — mupdf is ESM with top-level await.
-    // To prevent ts-node/TypeScript from transpiling import() to require() in CommonJS,
-    // we use eval to force native dynamic import.
-    const mupdfModule = await eval('import("mupdf")');
-    const mupdf = mupdfModule.default || mupdfModule;
-    const { Document, Matrix, ColorSpace } = mupdf;
+  const payload = JSON.stringify({
+    pdf: buffer.toString("base64"),
+    page: pageNumber,
+    scale,
+  });
 
-    const doc = Document.openDocument(buffer, "application/pdf");
-    const pageCount = doc.countPages();
-    if (pageNumber < 1 || pageNumber > pageCount) {
-      throw new Error(`Page ${pageNumber} out of range (document has ${pageCount} pages)`);
-    }
+  const stdout = await new Promise<string>((resolve, reject) => {
+    const child = execFile("node", [RENDER_SCRIPT], { maxBuffer: 100 * 1024 * 1024 });
+    let out = "";
+    let err = "";
+    child.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
+    child.on("close", (code) => {
+      if (code !== 0 && !out) reject(new Error(`render-page exited ${code}: ${err}`));
+      else resolve(out);
+    });
+    child.stdin?.write(payload);
+    child.stdin?.end();
+  });
 
-    const page = doc.loadPage(pageNumber - 1); // mupdf is 0-indexed
-    const matrix = Matrix.scale(scale, scale);
-    // DeviceRGB = standard RGB, no alpha channel needed
-    const pixmap = page.toPixmap(matrix, ColorSpace.DeviceRGB, false);
-    const png = pixmap.asPNG();
-
-    // mupdf returns Uint8Array — convert to Node Buffer
-    return { png: Buffer.from(png), width: pixmap.w, height: pixmap.h };
-  } catch (e) {
-    console.error("renderPageToPng failed:", e);
-    throw e;
-  }
+  const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
+  if (result.error) throw new Error(result.error);
+  return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
 }
 
 /**
- * Lightweight text extraction for DeepSeek path (no native deps).
- * Uses pdf-lib raw content scan — best-effort, Gemini path does not need this.
+ * Extract plain text per page using mupdf's built-in text extraction (via ESM child process).
  */
 export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
   try {
-    const doc = await PDFDocument.load(buffer as unknown as Uint8Array, { ignoreEncryption: true });
+    const mupdf = await import("mupdf" as any);
+    const { Document } = mupdf;
+    const doc = Document.openDocument(buffer, "application/pdf");
+    const pageCount = doc.countPages();
     const pages: string[] = [];
-    for (let i = 0; i < doc.getPageCount(); i++) {
+    for (let i = 0; i < pageCount; i++) {
       try {
-        const page = doc.getPage(i);
-        const contents: unknown = (page as unknown as Record<string, unknown>).contents;
-        pages.push(contents ? String(contents).slice(0, 4000) : "");
+        const page = doc.loadPage(i);
+        const structured = page.toStructuredText("preserve-whitespace");
+        pages.push(structured.asText().slice(0, 4000));
       } catch {
         pages.push("");
       }
