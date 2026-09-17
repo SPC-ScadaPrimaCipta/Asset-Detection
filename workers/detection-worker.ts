@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { Worker, Queue, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
@@ -28,7 +27,7 @@ export const worker = new Worker(
     );
     const agentRunId = uuidv4();
     const modelName =
-      process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : (process.env.GEMINI_MODEL || "gemini-3.6-flash");
+      process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : (process.env.GEMINI_MODEL || "gemini-3.5-flash");
     const promptVersion = "v1";
     // Hoisted — referenced in both try and catch for cleanup
     let geminiFileUri: string | undefined;
@@ -52,24 +51,6 @@ export const worker = new Worker(
         model: modelName,
         promptVersion,
       });
-
-      // ── Deduplication ─────────────────────────────────────────────────────
-      // If this document has prior detections from an older job, remove them
-      // so re-running detection doesn't accumulate duplicates.
-      // Only delete DETECTED/PENDING — preserve APPROVED/REJECTED human decisions.
-      const deleted = await db.query(
-        `DELETE FROM detections
-         WHERE document_id = $1
-           AND job_id != $2
-           AND detection_status = 'DETECTED'
-           AND review_status = 'PENDING'`,
-        [doc.id, jobId]
-      );
-      if ((deleted.rowCount ?? 0) > 0) {
-        log(`dedup: removed ${deleted.rowCount} stale DETECTED/PENDING detections`, {
-          documentId: doc.id,
-        });
-      }
 
       const legendSymbols = effectiveLegendId
         ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
@@ -131,30 +112,16 @@ export const worker = new Worker(
         const pageStart = Date.now();
         let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"] = [];
 
-        // Look up document_page_id for this page (populated at upload time)
-        const dpRow = (
-          await db.query(
-            "SELECT id, width, height FROM document_pages WHERE document_id=$1 AND page_number=$2",
-            [doc.id, page]
-          )
-        ).rows[0] as { id: string; width: number | null; height: number | null } | undefined;
-        const documentPageId: string | null = dpRow?.id ?? null;
-
         // Render page to PNG — primary input for Gemini Vision
         let pageImageBase64: string | undefined;
-        let pngWidth: number | undefined;
-        let pngHeight: number | undefined;
+        let pngDimensions: { width: number; height: number } | undefined;
         try {
-          const { png, width, height } = await renderPageToPng(buf, page, 4.0);
+          const { png, width, height } = await renderPageToPng(buf, page, 3.0);
           pageImageBase64 = png.toString("base64");
-          pngWidth  = width;
-          pngHeight = height;
-
+          pngDimensions = { width, height };
           log(`page ${page} PNG rendered`, {
             page,
             sizeKB: Math.round(png.length / 1024),
-            pngWidth,
-            pngHeight,
           });
         } catch (renderErr: unknown) {
           const rmsg = renderErr instanceof Error ? renderErr.message : String(renderErr);
@@ -162,6 +129,7 @@ export const worker = new Worker(
             page,
             error: rmsg.slice(0, 200),
           });
+          // pageImageBase64 stays undefined → agent uses fileUri or pdfBase64 fallback
         }
 
         try {
@@ -177,6 +145,30 @@ export const worker = new Worker(
             ocrText: ocrPages[page - 1] ?? "",
           });
           detections = result.detections;
+
+          // Normalize AI bbox to 0-1000 if not already, or if we have dimensions and want consistency.
+          if (pngDimensions) {
+              detections = detections.map(d => {
+                  const normalized = {
+                      x: Math.round((Number(d.bbox.x) || 0) / pngDimensions!.width * 1000),
+                      y: Math.round((Number(d.bbox.y) || 0) / pngDimensions!.height * 1000),
+                      width: Math.round((Number(d.bbox.width) || 0) / pngDimensions!.width * 1000),
+                      height: Math.round((Number(d.bbox.height) || 0) / pngDimensions!.height * 1000),
+                  };
+                  log(`page ${page} bbox normalize`, {
+                      assetTag: d.assetTag,
+                      confidence: d.confidence,
+                      raw: d.bbox,
+                      pngDims: pngDimensions,
+                      normalized,
+                  });
+                  return {
+                      ...d,
+                      bbox: normalized
+                  };
+              });
+          }
+
           log(`page ${page}/${pageCount} detections=${detections.length}`, {
             page,
             count: detections.length,
@@ -185,6 +177,7 @@ export const worker = new Worker(
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
+          // Do not persist malformed output — skip page, continue job
           await db.query("UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2", [
             Math.round(5 + (page / pageCount) * 90),
             jobId,
@@ -208,48 +201,17 @@ export const worker = new Worker(
                   s.asset_type === d.legendSymbol || s.symbol_name === d.legendSymbol
               )
             : null;
-
-          // ── BBox normalization ────────────────────────────────────────────
-          // AI is instructed to return coords in 0-1000 space.
-          // However if the model returns raw pixel coords (some models ignore
-          // the instruction), normalize them here using actual PNG dimensions.
-          //
-          // Heuristic: if any bbox coordinate exceeds 1000 AND we have PNG dims,
-          // the model returned pixel space — rescale to 0-1000.
-          let bx = d.bbox.x;
-          let by = d.bbox.y;
-          let bw = d.bbox.width;
-          let bh = d.bbox.height;
-
-          if (pngWidth && pngHeight) {
-            const maxCoord = Math.max(bx + bw, by + bh);
-            if (maxCoord > 1000) {
-              // Pixel → 0-1000 normalized
-              bx = Math.round((bx / pngWidth) * 1000);
-              by = Math.round((by / pngHeight) * 1000);
-              bw = Math.round((bw / pngWidth) * 1000);
-              bh = Math.round((bh / pngHeight) * 1000);
-            }
-          }
-
-          // Clamp to valid range
-          bx = Math.max(0, Math.min(1000, bx));
-          by = Math.max(0, Math.min(1000, by));
-          bw = Math.max(1, Math.min(1000 - bx, bw));
-          bh = Math.max(1, Math.min(1000 - by, bh));
-
           await db.query(
             `INSERT INTO detections
-               (id, job_id, document_id, document_page_id, asset_tag, asset_type, equipment_class, description,
+               (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
                 service, location, unit, area, pid_number, pid_page,
                 legend_id, legend_symbol_id, confidence,
                 bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,'DETECTED','PENDING')`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING')`,
             [
               uuidv4(),
               jobId,
               doc.id,
-              documentPageId,
               d.assetTag ?? null,
               d.assetType,
               (d as Record<string, unknown>).equipmentClass ?? null,
@@ -263,10 +225,10 @@ export const worker = new Worker(
               effectiveLegendId ?? null,
               (legendSym as Record<string, unknown> | undefined)?.id ?? null,
               d.confidence,
-              bx,
-              by,
-              bw,
-              bh,
+              Number.isFinite(d.bbox.x) ? d.bbox.x : 0,
+              Number.isFinite(d.bbox.y) ? d.bbox.y : 0,
+              Number.isFinite(d.bbox.width) ? d.bbox.width : 0,
+              Number.isFinite(d.bbox.height) ? d.bbox.height : 0,
               JSON.stringify(d.evidence),
             ]
           );

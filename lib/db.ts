@@ -11,4 +11,6 @@ pool.on('error', (err) => {
   console.error('[db] pool error:', err.message);
 });
 
+export { pool };
 export default pool;
+

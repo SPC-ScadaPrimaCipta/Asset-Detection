@@ -4,6 +4,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   GEMINI_API_KEY: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
   AI_PROVIDER: z.enum(['gemini', 'deepseek']).default('gemini'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   STORAGE_PATH: z.string().default('./storage'),
