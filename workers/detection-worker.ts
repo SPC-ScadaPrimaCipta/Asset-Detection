@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Worker, Queue, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
@@ -144,15 +145,10 @@ export const worker = new Worker(
         let pngWidth: number | undefined;
         let pngHeight: number | undefined;
         try {
-          const png = await renderPageToPng(buf, page, 4.0); // 4x ≈ 288dpi — captures fine P&ID detail
+          const { png, width, height } = await renderPageToPng(buf, page, 4.0);
           pageImageBase64 = png.toString("base64");
-
-          // Decode PNG dimensions from header (bytes 16-24, IHDR chunk)
-          // PNG header: 8-byte sig + 4-byte len + "IHDR" + 4-byte W + 4-byte H
-          if (png.length >= 24) {
-            pngWidth = png.readUInt32BE(16);
-            pngHeight = png.readUInt32BE(20);
-          }
+          pngWidth  = width;
+          pngHeight = height;
 
           log(`page ${page} PNG rendered`, {
             page,

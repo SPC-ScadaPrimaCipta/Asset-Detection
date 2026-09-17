@@ -1,4 +1,7 @@
 import { PDFDocument } from "pdf-lib";
+import { execFile } from "child_process";
+import path from "path";
+const RENDER_SCRIPT = path.resolve(process.cwd(), "scripts/render-page.mjs");
 
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const ALLOWED_MIME = ["application/pdf"];
@@ -19,65 +22,64 @@ export async function getPdfPageCountFromBuffer(buffer: Buffer): Promise<number>
 }
 
 /**
- * Render a single PDF page to PNG using mupdf.
+ * Render a single PDF page to PNG using mupdf (via ESM child process).
  *
- * @param buffer  - Full PDF buffer
+ * @param buffer     - Full PDF buffer
  * @param pageNumber - 1-based page number
- * @param scale  - Render scale factor. 3.0 ≈ 216 dpi (recommended for P&ID detail).
- *                 Higher = better symbol recognition, larger PNG.
- * @returns PNG as Buffer
+ * @param scale      - Render scale factor. 4.0 ≈ 288 dpi (recommended for P&ID detail).
+ * @returns { png, width, height }
  */
 export async function renderPageToPng(
   buffer: Buffer,
   pageNumber: number,
-  scale = 3.0
+  scale = 4.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
-  // Dynamic import — mupdf is ESM with top-level await, must use import()
-  const mupdf = await import("mupdf");
-  const { Document, Matrix } = mupdf;
+  const payload = JSON.stringify({
+    pdf: buffer.toString("base64"),
+    page: pageNumber,
+    scale,
+  });
 
-  const doc = Document.openDocument(buffer, "application/pdf");
-  const pageCount = doc.countPages();
-  if (pageNumber < 1 || pageNumber > pageCount) {
-    throw new Error(`Page ${pageNumber} out of range (document has ${pageCount} pages)`);
-  }
+  const stdout = await new Promise<string>((resolve, reject) => {
+    const child = execFile("node", [RENDER_SCRIPT], { maxBuffer: 100 * 1024 * 1024 });
+    let out = "";
+    let err = "";
+    child.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
+    child.on("close", (code) => {
+      if (code !== 0 && !out) reject(new Error(`render-page exited ${code}: ${err}`));
+      else resolve(out);
+    });
+    child.stdin?.write(payload);
+    child.stdin?.end();
+  });
 
-  const page = doc.loadPage(pageNumber - 1); // mupdf is 0-indexed
-  const matrix = Matrix.scale(scale, scale);
-  // DeviceRGB = standard RGB, no alpha channel needed
-  const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false);
-  const png = pixmap.asPNG();
-
-  // mupdf returns Uint8Array — convert to Node Buffer
-  return { png: Buffer.from(png), width: pixmap.w, height: pixmap.h };
+  const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
+  if (result.error) throw new Error(result.error);
+  return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
 }
 
 /**
- * Extract plain text per page using mupdf's built-in text extraction.
- * Far more reliable than pdf-lib for P&ID documents (vector text, CIDFonts).
- * Used by the DeepSeek fallback path as OCR proxy.
- *
- * Falls back to empty strings per page if mupdf fails (e.g. encrypted PDF).
+ * Extract plain text per page using mupdf's built-in text extraction (via ESM child process).
  */
 export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
   try {
-    const mupdf = await import('mupdf');
+    const mupdf = await import("mupdf" as any);
     const { Document } = mupdf;
-    const doc = Document.openDocument(buffer, 'application/pdf');
+    const doc = Document.openDocument(buffer, "application/pdf");
     const pageCount = doc.countPages();
     const pages: string[] = [];
     for (let i = 0; i < pageCount; i++) {
       try {
         const page = doc.loadPage(i);
-        // extractText returns structured JSON; we just want raw string for OCR proxy
-        const structured = page.toStructuredText('preserve-whitespace');
+        const structured = page.toStructuredText("preserve-whitespace");
         pages.push(structured.asText().slice(0, 4000));
       } catch {
-        pages.push('');
+        pages.push("");
       }
     }
     return pages;
   } catch {
-    return [''];
+    return [""];
   }
 }

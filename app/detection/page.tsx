@@ -380,7 +380,7 @@ function PidViewer({
   const [fullscreen, setFullscreen] = useState(false);
   // Natural image dimensions — used to map bbox coords to display space
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
-  const [imgLoading, setImgLoading] = useState(false);
+  const [imgLoading, setImgLoading] = useState(!!documentId);
   const [imgError, setImgError] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
 
@@ -539,6 +539,7 @@ function PidViewer({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
+                  key={imgSrc}
                   src={imgSrc}
                   alt={`P&ID page ${page}`}
                   onLoad={e => {
@@ -549,9 +550,11 @@ function PidViewer({
                   }}
                   onError={() => { setImgLoading(false); setImgError(true); }}
                   style={{
-                    display: imgLoading ? 'none' : 'block',
+                    display: 'block',
                     maxWidth: '100%',
                     maxHeight: '100%',
+                    opacity: imgLoading ? 0 : 1,
+                    transition: 'opacity 0.2s ease',
                   }}
                   draggable={false}
                 />

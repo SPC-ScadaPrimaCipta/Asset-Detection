@@ -3,6 +3,9 @@ import db from '@/lib/db';
 import { getFile } from '@/lib/storage';
 import { renderPageToPng } from '@/lib/pdf-render';
 
+// Extend route timeout — PDF rendering via child_process can take 3-10s for large P&IDs
+export const maxDuration = 60;
+
 // Render scale: 2.0 ≈ 144dpi — good balance between quality and response size for viewer use.
 // Worker uses 3.0 for AI analysis; viewer only needs 2.0 for display.
 const VIEWER_SCALE = 2.0;
@@ -34,15 +37,16 @@ export async function GET(
     }
 
     const buf = await getFile(file_path) as unknown as Buffer;
-    const png = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
+    const result = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
+    const pngBuf = result.png;
 
-    return new NextResponse(new Uint8Array(png), {
+    return new NextResponse(new Uint8Array(pngBuf), {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
         // Cache 1 hour in browser, 24 hours in CDN/shared cache — PDF pages are immutable
         'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600',
-        'Content-Length': String(png.length),
+        'Content-Length': String(pngBuf.length),
       },
     });
   } catch (e: unknown) {
