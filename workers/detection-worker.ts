@@ -114,9 +114,11 @@ export const worker = new Worker(
 
         // Render page to PNG — primary input for Gemini Vision
         let pageImageBase64: string | undefined;
+        let pngDimensions: { width: number; height: number } | undefined;
         try {
-          const png = await renderPageToPng(buf, page, 3.0);
+          const { png, width, height } = await renderPageToPng(buf, page, 3.0);
           pageImageBase64 = png.toString("base64");
+          pngDimensions = { width, height };
           log(`page ${page} PNG rendered`, {
             page,
             sizeKB: Math.round(png.length / 1024),
@@ -143,6 +145,24 @@ export const worker = new Worker(
             ocrText: ocrPages[page - 1] ?? "",
           });
           detections = result.detections;
+
+          // Normalize AI bbox to 0-1000 if not already, or if we have dimensions and want consistency.
+          // The prompt says "normalized 0–1000", if AI returned pixels, fix here.
+          // Assuming AI returned normalized based on the prompt, but if detection is imprecise,
+          // maybe it returned raw pixels?
+          // Let's assume the fix is to normalize based on PNG dimensions.
+          if (pngDimensions) {
+              detections = detections.map(d => ({
+                  ...d,
+                  bbox: {
+                      x: Math.round((d.bbox.x / pngDimensions!.width) * 1000),
+                      y: Math.round((d.bbox.y / pngDimensions!.height) * 1000),
+                      width: Math.round((d.bbox.width / pngDimensions!.width) * 1000),
+                      height: Math.round((d.bbox.height / pngDimensions!.height) * 1000),
+                  }
+              }));
+          }
+
           log(`page ${page}/${pageCount} detections=${detections.length}`, {
             page,
             count: detections.length,

@@ -31,7 +31,7 @@ export async function renderPageToPng(
   buffer: Buffer,
   pageNumber: number,
   scale = 3.0
-): Promise<Buffer> {
+): Promise<{ png: Buffer; width: number; height: number }> {
   // Dynamic import — mupdf is ESM with top-level await, must use import()
   const mupdf = await import("mupdf");
   const { Document, Matrix } = mupdf;
@@ -49,7 +49,7 @@ export async function renderPageToPng(
   const png = pixmap.asPNG();
 
   // mupdf returns Uint8Array — convert to Node Buffer
-  return Buffer.from(png);
+  return { png: Buffer.from(png), width: pixmap.w, height: pixmap.h };
 }
 
 /**

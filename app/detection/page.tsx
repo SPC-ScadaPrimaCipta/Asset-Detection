@@ -366,12 +366,14 @@ function PidViewer({
     const vw = el.clientWidth || 800;
     const vh = el.clientHeight || 400;
     const renderedW = Math.min(imgNatural.w, vw);
-    const ratio = renderedW / imgNatural.w || 1;
-    const renderedH = imgNatural.h * ratio;
+    const renderedH = Math.min(imgNatural.h, vh);
     const s = 1.5;
     setZoom(s);
-    const bx = (vw - renderedW) / 2 + (d.bbox_x + d.bbox_w / 2) * ratio;
-    const by = (vh - renderedH) / 2 + (d.bbox_y + d.bbox_h / 2) * ratio;
+    // Convert 0-1000 normalized center to pixel coordinates relative to the rendered image size
+    const centerNormX = d.bbox_x + d.bbox_w / 2; // 0-1000
+    const centerNormY = d.bbox_y + d.bbox_h / 2;
+    const bx = (vw - renderedW) / 2 + (centerNormX / 1000) * renderedW;
+    const by = (vh - renderedH) / 2 + (centerNormY / 1000) * renderedH;
     setPan({ x: vw / 2 - s * bx, y: vh / 2 - s * by });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, imgNatural]);
@@ -498,10 +500,10 @@ function PidViewer({
                 draggable={false}
               />
 
-              {/* SVG bbox overlay — positioned over image at exact natural pixel scale */}
+              {/* SVG bbox overlay — positioned over image at normalized 0-1000 coordinate space */}
               {imgNatural && !imgError && (
                 <svg
-                  viewBox={`0 0 ${imgNatural.w} ${imgNatural.h}`}
+                  viewBox="0 0 1000 1000"
                   className="absolute inset-0 w-full h-full"
                   style={{ overflow: 'visible', pointerEvents: 'none' }}
                 >
