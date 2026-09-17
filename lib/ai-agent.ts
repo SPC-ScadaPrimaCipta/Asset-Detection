@@ -58,10 +58,10 @@ async function runWithGemini(input: DetectionJobInput, prompt: string) {
   const FALLBACK_MODELS = [
     process.env.GEMINI_MODEL || 'gemini-3.6-flash',
     'gemini-3.6-flash',
-    'gemini-3.1-pro',
-    'gemini-3.8-flash',
     'gemini-3.5-flash',
+    'gemini-3.8-flash',
     'gemini-2.0-flash',
+    'gemini-1.5-pro',
     'gemini-1.5-flash',
   ].filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
 
@@ -127,14 +127,15 @@ BBOX: normalized 0-1000 space. Return ONLY valid JSON: { "page": ${input.page}, 
 
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Only fallback on quota (429) or model not found (404) errors
-      const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404/i.test(msg);
+      const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404|503|unavailable/i.test(msg);
       console.warn(`[gemini] model=${modelName} failed: ${msg.slice(0, 200)}`);
       if (shouldFallback) {
         lastError = e;
-        continue; // try next model
+        // Short delay before trying next model — avoid immediate hammering
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
       }
-      throw e; // non-quota error — propagate immediately
+      throw e;
     }
   }
 

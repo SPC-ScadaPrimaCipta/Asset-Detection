@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Worker, Queue, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
@@ -265,7 +266,7 @@ export const worker = new Worker(
       throw e;
     }
   },
-  { connection, concurrency: 2 }
+  { connection, concurrency: 1 }
 );
 
 // Recovery: on worker startup, re-queue any PENDING jobs left over from previous crashes/restarts
