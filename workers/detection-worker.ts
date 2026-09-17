@@ -1,4 +1,20 @@
 import 'dotenv/config';
+// Override GEMINI_API_KEY from .env directly — dotenv v16 may decrypt AQ. keys incorrectly
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+try {
+  const envFile = readFileSync(resolve(process.cwd(), '.env'), 'utf-8');
+  for (const line of envFile.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const val = trimmed.slice(eq + 1).trim();
+    // Set directly — do not let dotenv decrypt/override
+    if (val) process.env[key] = val;
+  }
+} catch { /* .env not found — rely on system env */ }
 import { Worker, Queue, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
