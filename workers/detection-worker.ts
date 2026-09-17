@@ -52,6 +52,24 @@ export const worker = new Worker(
         promptVersion,
       });
 
+      // ── Deduplication ─────────────────────────────────────────────────────
+      // If this document has prior detections from an older job, remove them
+      // so re-running detection doesn't accumulate duplicates.
+      // Only delete DETECTED/PENDING — preserve APPROVED/REJECTED human decisions.
+      const deleted = await db.query(
+        `DELETE FROM detections
+         WHERE document_id = $1
+           AND job_id != $2
+           AND detection_status = 'DETECTED'
+           AND review_status = 'PENDING'`,
+        [doc.id, jobId]
+      );
+      if ((deleted.rowCount ?? 0) > 0) {
+        log(`dedup: removed ${deleted.rowCount} stale DETECTED/PENDING detections`, {
+          documentId: doc.id,
+        });
+      }
+
       const legendSymbols = effectiveLegendId
         ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
         : [];
@@ -112,16 +130,35 @@ export const worker = new Worker(
         const pageStart = Date.now();
         let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"] = [];
 
+        // Look up document_page_id for this page (populated at upload time)
+        const dpRow = (
+          await db.query(
+            "SELECT id, width, height FROM document_pages WHERE document_id=$1 AND page_number=$2",
+            [doc.id, page]
+          )
+        ).rows[0] as { id: string; width: number | null; height: number | null } | undefined;
+        const documentPageId: string | null = dpRow?.id ?? null;
+
         // Render page to PNG — primary input for Gemini Vision
         let pageImageBase64: string | undefined;
-        let pngDimensions: { width: number; height: number } | undefined;
+        let pngWidth: number | undefined;
+        let pngHeight: number | undefined;
         try {
-          const { png, width, height } = await renderPageToPng(buf, page, 3.0);
+          const png = await renderPageToPng(buf, page, 4.0); // 4x ≈ 288dpi — captures fine P&ID detail
           pageImageBase64 = png.toString("base64");
-          pngDimensions = { width, height };
+
+          // Decode PNG dimensions from header (bytes 16-24, IHDR chunk)
+          // PNG header: 8-byte sig + 4-byte len + "IHDR" + 4-byte W + 4-byte H
+          if (png.length >= 24) {
+            pngWidth = png.readUInt32BE(16);
+            pngHeight = png.readUInt32BE(20);
+          }
+
           log(`page ${page} PNG rendered`, {
             page,
             sizeKB: Math.round(png.length / 1024),
+            pngWidth,
+            pngHeight,
           });
         } catch (renderErr: unknown) {
           const rmsg = renderErr instanceof Error ? renderErr.message : String(renderErr);
@@ -129,7 +166,6 @@ export const worker = new Worker(
             page,
             error: rmsg.slice(0, 200),
           });
-          // pageImageBase64 stays undefined → agent uses fileUri or pdfBase64 fallback
         }
 
         try {
@@ -145,24 +181,6 @@ export const worker = new Worker(
             ocrText: ocrPages[page - 1] ?? "",
           });
           detections = result.detections;
-
-          // Normalize AI bbox to 0-1000 if not already, or if we have dimensions and want consistency.
-          // The prompt says "normalized 0–1000", if AI returned pixels, fix here.
-          // Assuming AI returned normalized based on the prompt, but if detection is imprecise,
-          // maybe it returned raw pixels?
-          // Let's assume the fix is to normalize based on PNG dimensions.
-          if (pngDimensions) {
-              detections = detections.map(d => ({
-                  ...d,
-                  bbox: {
-                      x: Math.round((d.bbox.x / pngDimensions!.width) * 1000),
-                      y: Math.round((d.bbox.y / pngDimensions!.height) * 1000),
-                      width: Math.round((d.bbox.width / pngDimensions!.width) * 1000),
-                      height: Math.round((d.bbox.height / pngDimensions!.height) * 1000),
-                  }
-              }));
-          }
-
           log(`page ${page}/${pageCount} detections=${detections.length}`, {
             page,
             count: detections.length,
@@ -171,7 +189,6 @@ export const worker = new Worker(
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
-          // Do not persist malformed output — skip page, continue job
           await db.query("UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2", [
             Math.round(5 + (page / pageCount) * 90),
             jobId,
@@ -195,17 +212,48 @@ export const worker = new Worker(
                   s.asset_type === d.legendSymbol || s.symbol_name === d.legendSymbol
               )
             : null;
+
+          // ── BBox normalization ────────────────────────────────────────────
+          // AI is instructed to return coords in 0-1000 space.
+          // However if the model returns raw pixel coords (some models ignore
+          // the instruction), normalize them here using actual PNG dimensions.
+          //
+          // Heuristic: if any bbox coordinate exceeds 1000 AND we have PNG dims,
+          // the model returned pixel space — rescale to 0-1000.
+          let bx = d.bbox.x;
+          let by = d.bbox.y;
+          let bw = d.bbox.width;
+          let bh = d.bbox.height;
+
+          if (pngWidth && pngHeight) {
+            const maxCoord = Math.max(bx + bw, by + bh);
+            if (maxCoord > 1000) {
+              // Pixel → 0-1000 normalized
+              bx = Math.round((bx / pngWidth) * 1000);
+              by = Math.round((by / pngHeight) * 1000);
+              bw = Math.round((bw / pngWidth) * 1000);
+              bh = Math.round((bh / pngHeight) * 1000);
+            }
+          }
+
+          // Clamp to valid range
+          bx = Math.max(0, Math.min(1000, bx));
+          by = Math.max(0, Math.min(1000, by));
+          bw = Math.max(1, Math.min(1000 - bx, bw));
+          bh = Math.max(1, Math.min(1000 - by, bh));
+
           await db.query(
             `INSERT INTO detections
-               (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
+               (id, job_id, document_id, document_page_id, asset_tag, asset_type, equipment_class, description,
                 service, location, unit, area, pid_number, pid_page,
                 legend_id, legend_symbol_id, confidence,
                 bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING')`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,'DETECTED','PENDING')`,
             [
               uuidv4(),
               jobId,
               doc.id,
+              documentPageId,
               d.assetTag ?? null,
               d.assetType,
               (d as Record<string, unknown>).equipmentClass ?? null,
@@ -219,10 +267,10 @@ export const worker = new Worker(
               effectiveLegendId ?? null,
               (legendSym as Record<string, unknown> | undefined)?.id ?? null,
               d.confidence,
-              d.bbox.x,
-              d.bbox.y,
-              d.bbox.width,
-              d.bbox.height,
+              bx,
+              by,
+              bw,
+              bh,
               JSON.stringify(d.evidence),
             ]
           );

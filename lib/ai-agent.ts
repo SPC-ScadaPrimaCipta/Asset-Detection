@@ -63,34 +63,41 @@ export async function runDetectionAgent(input: DetectionJobInput) {
 async function runWithGemini(input: DetectionJobInput, prompt: string) {
   const { getGeminiClient } = await import('@/lib/gemini');
   const client = getGeminiClient();
-  const model = client.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-3.6-flash' });
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  const model = client.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      // Temperature 0 = deterministic, maximum consistency for structured extraction
+      temperature: 0,
+      // Large output budget — P&ID with many assets can produce long JSON
+      maxOutputTokens: 8192,
+      // Force JSON response format where supported
+      responseMimeType: 'application/json',
+    },
+  });
 
   // Priority: PNG image > Gemini Files API URI > inline PDF base64
   let mediaPart: Part;
   let contextText: string;
 
   if (input.pageImageBase64) {
-    // Best path — single page PNG, Gemini Vision at full accuracy
     mediaPart = {
       inlineData: { mimeType: 'image/png', data: input.pageImageBase64 },
     };
-    contextText = `This is page ${input.page} of a P&ID document rendered as a high-resolution PNG image.
-Analyze this image and detect all industrial assets and equipment.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze page ${input.page} of this P&ID document (rendered as high-resolution PNG at ~288dpi).
+Detect ALL equipment symbols and assets. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.fileUri) {
-    // Fallback A — full PDF via Files API, instruct Gemini to focus on page N
     mediaPart = {
       fileData: { mimeType: 'application/pdf', fileUri: input.fileUri },
     };
-    contextText = `Analyze page ${input.page} of this P&ID PDF document. Focus ONLY on page ${input.page}.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
+    contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
+Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else if (input.pdfBase64) {
-    // Fallback B — inline full PDF base64
     mediaPart = {
       inlineData: { mimeType: 'application/pdf', data: input.pdfBase64 },
     };
     contextText = `Analyze page ${input.page} of this P&ID PDF. Focus ONLY on page ${input.page}.
-Return strictly valid JSON: { "page": ${input.page}, "detections": [...] }`;
+Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
   } else {
     throw new Error('At least one of pageImageBase64, fileUri, or pdfBase64 must be provided');
   }

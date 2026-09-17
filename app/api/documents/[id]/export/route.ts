@@ -50,6 +50,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         : typeof a.evidence === "string"
         ? (() => { try { return JSON.parse(a.evidence as string); } catch { return [a.evidence as string]; } })()
         : [],
+      bboxX: a.bbox_x as number | null,
+      bboxY: a.bbox_y as number | null,
+      bboxW: a.bbox_w as number | null,
+      bboxH: a.bbox_h as number | null,
     }));
 
     const buf = await buildAssetRegisterWorkbook(exportAssets, legendName, { includeReviewItems: includeReview });

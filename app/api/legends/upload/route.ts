@@ -5,9 +5,19 @@ import { validatePdfFile, getPdfPageCountFromBuffer } from "@/lib/pdf-render";
 import { getGeminiModel, getDeepSeekClient } from "@/lib/gemini";
 import { saveFile } from "@/lib/storage";
 import { env } from "@/lib/env";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const rl = checkRateLimit(`legend-upload:${ip}`, 5, 60_000); // 5 legend uploads/min per IP
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many legend uploads. Try again later.' },
+        { status: 429, headers: rateLimitHeaders(rl) }
+      );
+    }
+
     const form = await request.formData();
     const file = form.get("file") as File | null;
     const name = (form.get("name") as string) || file?.name?.replace(/\.pdf$/i, "") || "Uploaded Legend";

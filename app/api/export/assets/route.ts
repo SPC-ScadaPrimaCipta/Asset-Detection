@@ -59,6 +59,10 @@ export async function GET(request: NextRequest) {
       detectionStatus: r.detection_status as string,
       reviewStatus: r.review_status as string,
       evidence: parseEvidence(r.evidence),
+      bboxX: r.bbox_x as number | null,
+      bboxY: r.bbox_y as number | null,
+      bboxW: r.bbox_w as number | null,
+      bboxH: r.bbox_h as number | null,
     }));
 
     const buf = await buildAssetRegisterWorkbook(assets, legendName, { includeReviewItems });

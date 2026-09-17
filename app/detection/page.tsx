@@ -77,6 +77,11 @@ function ManualAddModal({
   const [assetTag, setAssetTag] = useState('');
   const [description, setDescription] = useState('');
   const [pidPage, setPidPage] = useState('');
+  // BBox — 0-1000 normalized coordinate space (same as AI detections)
+  const [bboxX, setBboxX] = useState('0');
+  const [bboxY, setBboxY] = useState('0');
+  const [bboxW, setBboxW] = useState('100');
+  const [bboxH, setBboxH] = useState('100');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -87,6 +92,10 @@ function ManualAddModal({
       setAssetTag('');
       setDescription('');
       setPidPage('');
+      setBboxX('0');
+      setBboxY('0');
+      setBboxW('100');
+      setBboxH('100');
       setError('');
       setSubmitting(false);
     }
@@ -94,12 +103,32 @@ function ManualAddModal({
 
   if (!open) return null;
 
+  const numField = (val: string, set: (v: string) => void, label: string, hint: string) => (
+    <label className="block">
+      <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{label}</span>
+      <span className="text-xs text-zinc-400 ml-1 normal-case">{hint}</span>
+      <input
+        type="number"
+        min={0}
+        max={1000}
+        value={val}
+        onChange={e => set(e.target.value)}
+        className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </label>
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assetType.trim()) {
       setError('Asset Type is required.');
       return;
     }
+    const bx = Math.max(0, Math.min(1000, parseInt(bboxX, 10) || 0));
+    const by = Math.max(0, Math.min(1000, parseInt(bboxY, 10) || 0));
+    const bw = Math.max(1, Math.min(1000 - bx, parseInt(bboxW, 10) || 100));
+    const bh = Math.max(1, Math.min(1000 - by, parseInt(bboxH, 10) || 100));
+
     setError('');
     setSubmitting(true);
     try {
@@ -114,10 +143,10 @@ function ManualAddModal({
           document_id: documentId,
           legend_id: legendId || null,
           job_id: jobId,
-          bbox_x: 0,
-          bbox_y: 0,
-          bbox_w: 100,
-          bbox_h: 100,
+          bbox_x: bx,
+          bbox_y: by,
+          bbox_w: bw,
+          bbox_h: bh,
         }),
       });
       if (!res.ok) {
@@ -205,6 +234,20 @@ function ManualAddModal({
               className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </label>
+
+          {/* Bounding Box */}
+          <div>
+            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider block mb-1">
+              Bounding Box
+              <span className="text-zinc-400 normal-case font-normal ml-1">— 0–1000 normalized coordinate space</span>
+            </span>
+            <div className="grid grid-cols-2 gap-3">
+              {numField(bboxX, setBboxX, 'X', '(left edge)')}
+              {numField(bboxY, setBboxY, 'Y', '(top edge)')}
+              {numField(bboxW, setBboxW, 'Width', '')}
+              {numField(bboxH, setBboxH, 'Height', '')}
+            </div>
+          </div>
 
           {/* Error */}
           {error && (
@@ -320,7 +363,6 @@ function PidViewer({
   page,
   totalPages,
   onPageChange,
-  onBboxUpdate,
 }: {
   documentId: string;
   detections: Detection[];
@@ -329,59 +371,52 @@ function PidViewer({
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
-  onBboxUpdate?: (id: string, patch: Partial<Detection>) => Promise<void>;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0); // 0 | 90 | 180 | 270
+  const [fullscreen, setFullscreen] = useState(false);
+  // Natural image dimensions — used to map bbox coords to display space
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgLoading, setImgLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [dragBbox, setDragBbox] = useState<{ id: string; x: number; y: number; w: number; h: number; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const centeredRef = useRef<string | null>(null);
 
   const imgSrc = documentId ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
+  // Reset image state on page or document change
   useEffect(() => {
     setImgNatural(null);
     setImgLoading(!!documentId);
     setImgError(false);
   }, [documentId, page]);
 
+  // Reset pan/zoom/rotation when page changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [page]);
+
+  // ESC exits fullscreen
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const visible = detections.filter(
     d => d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED'
        && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
   );
 
-  // Auto-center + zoom to selected bbox. Transform is scale(s) then translate(pan),
-  // so screen pos = s * containerPos + pan. Solve pan = center - s * bboxContainerPos.
-  useEffect(() => {
-    if (!selectedId || !imgNatural || !viewerRef.current) return;
-    const d = detections.find(x => x.id === selectedId);
-    if (!d || d.bbox_x === null || d.bbox_y === null || d.bbox_w === null || d.bbox_h === null) return;
-    const el = viewerRef.current;
-    const vw = el.clientWidth || 800;
-    const vh = el.clientHeight || 400;
-    const renderedW = Math.min(imgNatural.w, vw);
-    const renderedH = Math.min(imgNatural.h, vh);
-    const s = 1.5;
-    setZoom(s);
-    // Convert 0-1000 normalized center to pixel coordinates relative to the rendered image size
-    const centerNormX = d.bbox_x + d.bbox_w / 2; // 0-1000
-    const centerNormY = d.bbox_y + d.bbox_h / 2;
-    const bx = (vw - renderedW) / 2 + (centerNormX / 1000) * renderedW;
-    const by = (vh - renderedH) / 2 + (centerNormY / 1000) * renderedH;
-    setPan({ x: vw / 2 - s * bx, y: vh / 2 - s * by });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, imgNatural]);
-
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(prev => Math.max(0.3, Math.min(5, prev + delta)));
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    setZoom(prev => Math.max(0.2, Math.min(6, prev + delta)));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -389,82 +424,90 @@ function PidViewer({
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
-
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (dragBbox && imgNatural && viewerRef.current) {
-      const vw = viewerRef.current.clientWidth;
-      const renderedW = Math.min(imgNatural.w, vw - 32);
-      const ratio = renderedW / imgNatural.w || 1;
-      const dx = e.clientX - dragBbox.startX;
-      const dy = e.clientY - dragBbox.startY;
-      const ndx = dx / zoom / ratio;
-      const ndy = dy / zoom / ratio;
-      const nx = Math.max(0, Math.min(imgNatural.w - dragBbox.w, dragBbox.origX + ndx));
-      const ny = Math.max(0, Math.min(imgNatural.h - dragBbox.h, dragBbox.origY + ndy));
-      setDragBbox(prev => prev ? { ...prev, x: nx, y: ny } : prev);
-      return;
-    }
     if (!dragging) return;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
+  const handleMouseUp = () => setDragging(false);
 
-  const handleMouseUp = async () => {
-    setDragging(false);
-    if (dragBbox && onBboxUpdate) {
-      const { id, x, y, origX, origY } = dragBbox;
-      setDragBbox(null);
-      if (x !== origX || y !== origY) {
-        await onBboxUpdate(id, { bbox_x: Math.round(x), bbox_y: Math.round(y) } as Partial<Detection>);
-      }
-      return;
-    }
-    setDragBbox(null);
-  };
+  const rotate = () => setRotation(r => (r + 90) % 360);
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); setRotation(0); };
 
-  useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, [page]);
+  // Build CSS transform: rotation applied first, then zoom+pan
+  const imgTransform = `rotate(${rotation}deg)`;
+  const containerTransform = `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`;
 
-  return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-        <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">P&ID Viewer</span>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-400">{visible.length} bbox</span>
-          {/* Zoom controls */}
+  const viewerContent = (
+    <>
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex-wrap">
+        {/* Page nav */}
+        {totalPages > 1 && (
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setZoom(z => Math.max(0.3, +(z - 0.2).toFixed(1)))}
-              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
-              title="Zoom out"
-            >−</button>
-            <span className="text-xs text-zinc-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
-            <button
-              onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(1)))}
-              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
-              title="Zoom in"
-            >+</button>
-            <button
-              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
-              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
-              title="Reset view"
-            >⊙</button>
+            <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}
+              className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-700">◀</button>
+            <span className="text-xs text-zinc-500 px-2 font-medium">Page {page} / {totalPages}</span>
+            <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages}
+              className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-700">▶</button>
           </div>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40">◀</button>
-              <span className="text-xs text-zinc-500 w-10 text-center">{page}/{totalPages}</span>
-              <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 disabled:opacity-40">▶</button>
-            </div>
-          )}
+        )}
+
+        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 hidden sm:block" />
+
+        {/* Zoom */}
+        <div className="flex items-center gap-1">
+          <button onClick={() => setZoom(z => Math.max(0.2, +(z - 0.2).toFixed(1)))}
+            className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-bold">−</button>
+          <span className="text-xs text-zinc-500 w-12 text-center font-mono">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(6, +(z + 0.2).toFixed(1)))}
+            className="px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-bold">+</button>
+        </div>
+
+        {/* Rotate button */}
+        <button
+          onClick={rotate}
+          title="Rotate 90°"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Rotate{rotation > 0 ? ` (${rotation}°)` : ''}
+        </button>
+
+        {/* Reset */}
+        <button onClick={resetView}
+          title="Reset view"
+          className="px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
+          Reset
+        </button>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-zinc-400">{visible.length} bbox</span>
+          {/* Fullscreen toggle */}
+          <button
+            onClick={() => setFullscreen(f => !f)}
+            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          >
+            {fullscreen ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            )}
+            {fullscreen ? 'Exit' : 'Fullscreen'}
+          </button>
         </div>
       </div>
 
       {/* Viewer area */}
       <div
-        className="relative bg-zinc-100 dark:bg-zinc-800 overflow-hidden select-none"
-        style={{ minHeight: 400 }}
+        className="relative bg-zinc-100 dark:bg-zinc-800 overflow-hidden select-none flex-1"
+        style={{ minHeight: fullscreen ? 'calc(100vh - 80px)' : 420 }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -472,140 +515,145 @@ function PidViewer({
         onMouseLeave={handleMouseUp}
         ref={viewerRef}
       >
-        {/* Transformed inner container — zoom + pan applied here */}
+        {/* Transformed container — zoom + pan, centered */}
         <div
           className="absolute inset-0 flex items-center justify-center"
-          style={{
-            transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-            transformOrigin: 'top left',
-            cursor: dragging ? 'grabbing' : 'grab',
-          }}
+          style={{ cursor: dragging ? 'grabbing' : 'grab' }}
         >
-          {/* PDF page image */}
-          {imgSrc && (
-            <div className="relative inline-block">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imgSrc}
-                alt={`P&ID page ${page}`}
-                onLoad={e => {
-                  const img = e.currentTarget;
-                  setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
-                  setImgLoading(false);
-                  setImgError(false);
+          {/* Inner wrapper takes zoom+pan transform */}
+          <div style={{
+            transform: containerTransform,
+            transformOrigin: 'center center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {imgSrc && (
+              <div
+                className="relative shadow-lg"
+                style={{
+                  transform: imgTransform,
+                  transformOrigin: 'center center',
+                  lineHeight: 0,
                 }}
-                onError={() => { setImgLoading(false); setImgError(true); }}
-                className="block max-w-none"
-                style={{ maxWidth: '100%', display: imgLoading ? 'none' : 'block' }}
-                draggable={false}
-              />
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imgSrc}
+                  alt={`P&ID page ${page}`}
+                  onLoad={e => {
+                    const img = e.currentTarget;
+                    setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+                    setImgLoading(false);
+                    setImgError(false);
+                  }}
+                  onError={() => { setImgLoading(false); setImgError(true); }}
+                  style={{
+                    display: imgLoading ? 'none' : 'block',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                  }}
+                  draggable={false}
+                />
 
-              {/* SVG bbox overlay — positioned over image at normalized 0-1000 coordinate space */}
-              {imgNatural && !imgError && (
-                <svg
-                  viewBox="0 0 1000 1000"
-                  className="absolute inset-0 w-full h-full"
-                  style={{ overflow: 'visible', pointerEvents: 'none' }}
-                >
-                  {visible.map(d => {
-                    const x = d.bbox_x ?? 0;
-                    const y = d.bbox_y ?? 0;
-                    const w = d.bbox_w ?? 50;
-                    const h = d.bbox_h ?? 50;
-                    const selected = d.id === selectedId;
-                    const color = d.review_status === 'APPROVED'
-                      ? '#10b981'
-                      : (d.confidence ?? 0) >= 0.95 ? '#3b82f6'
-                      : (d.confidence ?? 0) >= 0.80 ? '#f59e0b'
-                      : '#ef4444';
-                    const labelW = Math.max(w, 90);
-                    const labelY = y > 24 ? y - 24 : y + h + 4;
-                    return (
-                      <g
-                        key={d.id}
-                        data-bbox="true"
-                        onClick={(e) => { e.stopPropagation(); onSelect(d.id); }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          if (selected) {
-                            setDragBbox({ id: d.id, x, y, w, h, startX: e.clientX, startY: e.clientY, origX: x, origY: y });
-                          } else {
-                            onSelect(d.id);
-                          }
-                        }}
-                        style={{ pointerEvents: 'all', cursor: selected ? 'move' : 'pointer' }}
-                      >
-                        {/* Invisible hit area */}
-                        <rect x={x} y={y} width={w} height={h} fill="transparent" />
-                        {/* Border */}
-                        <rect
-                          x={x} y={y} width={w} height={h}
-                          fill={selected ? `${color}33` : "none"}
-                          stroke={color}
-                          strokeWidth={selected ? 3 : 2}
-                          strokeDasharray={selected ? undefined : '8 4'}
-                          rx={3}
-                          opacity={selected ? 1 : 0.8}
-                          className={selected ? 'animate-pulse' : ''}
-                        />
-                        {/* Label pill */}
-                        <rect
-                          x={x} y={labelY}
-                          width={labelW} height={20}
-                          fill={color} rx={3}
-                          opacity={selected ? 1 : 0.85}
-                        />
-                        <text
-                          x={x + 5} y={labelY + 14}
-                          fill="white" fontSize={13}
-                          fontFamily="ui-monospace, monospace"
-                          fontWeight={selected ? 700 : 400}
-                        >
-                          {(d.asset_tag ?? d.asset_type).slice(0, 16)}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              )}
-            </div>
-          )}
-
-          {/* Loading state */}
-          {imgLoading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center text-zinc-400">
-                <svg className="w-8 h-8 mx-auto mb-2 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                <p className="text-xs">Rendering page {page}…</p>
+                {/* SVG bbox overlay */}
+                {imgNatural && !imgError && (
+                  <svg
+                    viewBox={`0 0 ${imgNatural.w} ${imgNatural.h}`}
+                    style={{
+                      position: 'absolute', inset: 0,
+                      width: '100%', height: '100%',
+                      overflow: 'visible', pointerEvents: 'none',
+                    }}
+                  >
+                    {visible.map(d => {
+                      const x = (d.bbox_x ?? 0) / 1000 * imgNatural.w;
+                      const y = (d.bbox_y ?? 0) / 1000 * imgNatural.h;
+                      const w = (d.bbox_w ?? 50) / 1000 * imgNatural.w;
+                      const h = (d.bbox_h ?? 50) / 1000 * imgNatural.h;
+                      const selected = d.id === selectedId;
+                      const color = d.review_status === 'APPROVED'
+                        ? '#10b981'
+                        : (d.confidence ?? 0) >= 0.95 ? '#3b82f6'
+                        : (d.confidence ?? 0) >= 0.80 ? '#f59e0b'
+                        : '#ef4444';
+                      const labelW = Math.max(w, 80);
+                      const labelY = y > 22 ? y - 22 : y + h + 4;
+                      return (
+                        <g key={d.id} data-bbox="true" onClick={() => onSelect(d.id)} style={{ pointerEvents: 'all', cursor: 'pointer' }}>
+                          <rect x={x} y={y} width={w} height={h} fill="transparent" />
+                          <rect x={x} y={y} width={w} height={h}
+                            fill={selected ? `${color}18` : 'none'}
+                            stroke={color} strokeWidth={selected ? 3 : 2}
+                            strokeDasharray={selected ? undefined : '8 4'} rx={3}
+                            opacity={selected ? 1 : 0.85} />
+                          <rect x={x} y={labelY} width={labelW} height={20} fill={color} rx={3} opacity={selected ? 1 : 0.85} />
+                          <text x={x + 5} y={labelY + 14} fill="white" fontSize={13}
+                            fontFamily="ui-monospace, monospace" fontWeight={selected ? 700 : 400}>
+                            {(d.asset_tag ?? d.asset_type).slice(0, 16)}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Error / no document state */}
-          {(imgError || !imgSrc) && !imgLoading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center text-zinc-300 dark:text-zinc-600 select-none">
-                <svg className="w-16 h-16 mx-auto mb-2" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p className="text-sm">{imgError ? 'Failed to load page' : 'P&ID document'}</p>
-                <p className="text-xs mt-1">{imgError ? 'Check server logs' : 'Run detection to see bounding boxes'}</p>
+            {/* Loading */}
+            {imgLoading && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                  <svg style={{ width: 32, height: 32, margin: '0 auto 8px', animation: 'spin 1s linear infinite' }} fill="none" viewBox="0 0 24 24">
+                    <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <p style={{ fontSize: 12 }}>Rendering page {page}…</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* Error / empty */}
+            {(imgError || !imgSrc) && !imgLoading && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: '#475569' }}>
+                  <svg style={{ width: 56, height: 56, margin: '0 auto 8px' }} fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p style={{ fontSize: 13 }}>{imgError ? 'Failed to load page' : 'Select document to view'}</p>
+                  <p style={{ fontSize: 11, marginTop: 4 }}>{imgError ? 'Check server logs' : 'Run detection to see bounding boxes'}</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800 flex gap-4 text-xs text-zinc-500">
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-blue-500"/>&ge;95% High</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-yellow-500"/>&ge;80% Medium</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-red-500"/>Review</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-emerald-500"/>Confirmed</span>
+      {/* Legend bar */}
+      <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800 flex gap-4 flex-wrap text-xs text-zinc-500 bg-white dark:bg-zinc-900">
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-blue-500 rounded"/>&ge;95% High</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-yellow-500 rounded"/>&ge;80% Medium</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-red-500 rounded"/>Review</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-emerald-500 rounded"/>Confirmed</span>
+        <span className="ml-auto text-zinc-400 text-xs">Scroll to zoom · Drag to pan · Click bbox to select</span>
       </div>
+    </>
+  );
+
+  // Fullscreen overlay
+  if (fullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col">
+        <div className="flex flex-col flex-1 min-h-0">
+          {viewerContent}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden flex flex-col" style={{ minHeight: 480 }}>
+      {viewerContent}
     </div>
   );
 }
@@ -629,15 +677,6 @@ function AssetDetail({
   const [editTag, setEditTag] = useState(detection.asset_tag ?? '');
   const [editType, setEditType] = useState(detection.asset_type);
   const [editDesc, setEditDesc] = useState(detection.description ?? '');
-  const [editService, setEditService] = useState(detection.service ?? '');
-  const [editLocation, setEditLocation] = useState(detection.location ?? '');
-  const [editUnit, setEditUnit] = useState(detection.unit ?? '');
-  const [editArea, setEditArea] = useState(detection.area ?? '');
-  const [editClass, setEditClass] = useState(detection.equipment_class ?? '');
-  const [editX, setEditX] = useState(detection.bbox_x ?? 0);
-  const [editY, setEditY] = useState(detection.bbox_y ?? 0);
-  const [editW, setEditW] = useState(detection.bbox_w ?? 0);
-  const [editH, setEditH] = useState(detection.bbox_h ?? 0);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -646,15 +685,6 @@ function AssetDetail({
       asset_tag: editTag || null,
       asset_type: editType,
       description: editDesc || null,
-      service: editService || null,
-      location: editLocation || null,
-      unit: editUnit || null,
-      area: editArea || null,
-      equipment_class: editClass || null,
-      bbox_x: editX,
-      bbox_y: editY,
-      bbox_w: editW,
-      bbox_h: editH,
     } as Partial<Detection>);
     setSaving(false);
     setEditing(false);
@@ -721,53 +751,31 @@ function AssetDetail({
           </dl>
         ) : (
           <div className="space-y-3">
-            {[
-              ['Asset Tag', editTag, (v: string) => setEditTag(v), 'text'],
-              ['Asset Type', editType, (v: string) => setEditType(v), 'text'],
-              ['Description', editDesc, (v: string) => setEditDesc(v), 'textarea'],
-              ['Equipment Class', editClass, (v: string) => setEditClass(v), 'text'],
-              ['Service', editService, (v: string) => setEditService(v), 'text'],
-              ['Location', editLocation, (v: string) => setEditLocation(v), 'text'],
-              ['Unit', editUnit, (v: string) => setEditUnit(v), 'text'],
-              ['Area', editArea, (v: string) => setEditArea(v), 'text'],
-            ].map(([label, val, setter, kind]) => (
-              <label key={String(label)} className="block">
-                <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{String(label)}</span>
-                {kind === 'textarea' ? (
-                  <textarea
-                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none"
-                    rows={2}
-                    value={val as string}
-                    onChange={e => (setter as (v: string) => void)(e.target.value)}
-                  />
-                ) : (
-                  <input
-                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
-                    value={val as string}
-                    onChange={e => (setter as (v: string) => void)(e.target.value)}
-                  />
-                )}
-              </label>
-            ))}
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                ['X', editX, setEditX],
-                ['Y', editY, setEditY],
-                ['W', editW, setEditW],
-                ['H', editH, setEditH],
-              ].map(([label, val, setter]) => (
-                <label key={String(label)} className="block">
-                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{String(label)}</span>
-                  <input
-                    type="number"
-                    className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-sm font-mono"
-                    value={val as number}
-                    onChange={e => (setter as (v: number) => void)(parseInt(e.target.value, 10) || 0)}
-                  />
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-zinc-400">Tip: drag the highlighted box in the viewer to move it, or edit numbers here.</p>
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Tag</span>
+              <input
+                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
+                value={editTag}
+                onChange={e => setEditTag(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Type</span>
+              <input
+                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm"
+                value={editType}
+                onChange={e => setEditType(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Description</span>
+              <textarea
+                className="mt-1 w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm resize-none"
+                rows={3}
+                value={editDesc}
+                onChange={e => setEditDesc(e.target.value)}
+              />
+            </label>
           </div>
         )}
       </div>
@@ -1183,48 +1191,37 @@ function DetectionWorkspace() {
         </div>
       )}
 
-      {/* Job progress */}
-      {currentJobId && (
-        <JobProgress jobId={currentJobId} onComplete={handleJobComplete} />
-      )}
-
-      {/* Main workspace: Viewer + Table + Detail */}
+      {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
       {detections.length > 0 || currentJobId ? (
-        <div className="flex gap-4 flex-1 min-h-0" style={{ minHeight: 480 }}>
-          {/* Left: Viewer */}
-          <div className="flex-1 min-w-0 flex flex-col gap-4">
-            <PidViewer
-              documentId={documentId}
-              detections={pageDetections}
-              selectedId={selectedId}
-              onSelect={id => {
-                const d = detections.find(x => x.id === id);
-                if (d) {
-                  setSelectedDetection(d);
-                  if (d.pid_page && d.pid_page !== currentPage) {
-                    setCurrentPage(d.pid_page);
-                  }
-                }
-              }}
-              page={currentPage || 1}
-              totalPages={maxPage}
-              onPageChange={setCurrentPage}
-              onBboxUpdate={async (id, patch) => {
-                await fetch(`/api/detections/${id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(patch),
-                });
-                await loadDetections();
-                setSelectedDetection(prev => prev?.id === id ? { ...prev, ...patch } : prev);
-              }}
-            />
+        <div className="flex gap-4 flex-1 min-h-0" style={{ minHeight: 560 }}>
+          {/* Left: Viewer — takes most of the width */}
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            {/* Job progress inline above viewer — compact, doesn't push viewer down */}
+            {currentJobId && (
+              <div className="flex-shrink-0">
+                <JobProgress jobId={currentJobId} onComplete={handleJobComplete} />
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <PidViewer
+                documentId={documentId}
+                detections={pageDetections}
+                selectedId={selectedId}
+                onSelect={id => {
+                  const d = detections.find(x => x.id === id);
+                  if (d) setSelectedDetection(d);
+                }}
+                page={currentPage || 1}
+                totalPages={maxPage}
+                onPageChange={setCurrentPage}
+              />
+            </div>
           </div>
 
-          {/* Right: Table + Detail */}
-          <div className="w-96 flex flex-col gap-4 min-h-0">
-            {selectedDetection ? (
-              <div className="flex-1 min-h-0" style={{ minHeight: 300 }}>
+          {/* Right panel: Detail on top (when selected) + Table below */}
+          <div className="w-80 xl:w-96 flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+            {selectedDetection && (
+              <div className="flex-shrink-0">
                 <AssetDetail
                   detection={selectedDetection}
                   onClose={() => setSelectedDetection(null)}
@@ -1233,24 +1230,14 @@ function DetectionWorkspace() {
                   onEdit={handleEdit}
                 />
               </div>
-            ) : (
-              <div style={{ minHeight: 300, flex: 1 }}>
-                <DetectionsTable
-                  detections={detections}
-                  selectedId={selectedId}
-                  onSelect={setSelectedDetection}
-                />
-              </div>
             )}
-            {selectedDetection && (
-              <div style={{ flex: 1, minHeight: 200 }}>
-                <DetectionsTable
-                  detections={detections}
-                  selectedId={selectedId}
-                  onSelect={setSelectedDetection}
-                />
-              </div>
-            )}
+            <div className="flex-1 min-h-0" style={{ minHeight: 300 }}>
+              <DetectionsTable
+                detections={detections}
+                selectedId={selectedId}
+                onSelect={setSelectedDetection}
+              />
+            </div>
           </div>
         </div>
       ) : (

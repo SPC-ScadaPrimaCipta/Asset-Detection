@@ -53,24 +53,31 @@ export async function renderPageToPng(
 }
 
 /**
- * Lightweight text extraction for DeepSeek path (no native deps).
- * Uses pdf-lib raw content scan — best-effort, Gemini path does not need this.
+ * Extract plain text per page using mupdf's built-in text extraction.
+ * Far more reliable than pdf-lib for P&ID documents (vector text, CIDFonts).
+ * Used by the DeepSeek fallback path as OCR proxy.
+ *
+ * Falls back to empty strings per page if mupdf fails (e.g. encrypted PDF).
  */
 export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
   try {
-    const doc = await PDFDocument.load(buffer as unknown as Uint8Array, { ignoreEncryption: true });
+    const mupdf = await import('mupdf');
+    const { Document } = mupdf;
+    const doc = Document.openDocument(buffer, 'application/pdf');
+    const pageCount = doc.countPages();
     const pages: string[] = [];
-    for (let i = 0; i < doc.getPageCount(); i++) {
+    for (let i = 0; i < pageCount; i++) {
       try {
-        const page = doc.getPage(i);
-        const contents: unknown = (page as unknown as Record<string, unknown>).contents;
-        pages.push(contents ? String(contents).slice(0, 4000) : "");
+        const page = doc.loadPage(i);
+        // extractText returns structured JSON; we just want raw string for OCR proxy
+        const structured = page.toStructuredText('preserve-whitespace');
+        pages.push(structured.asText().slice(0, 4000));
       } catch {
-        pages.push("");
+        pages.push('');
       }
     }
     return pages;
   } catch {
-    return [""];
+    return [''];
   }
 }
