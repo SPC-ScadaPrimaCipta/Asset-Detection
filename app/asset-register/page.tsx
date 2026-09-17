@@ -144,7 +144,7 @@ function AssetRegisterContent() {
 
 export default function AssetRegisterPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--foreground-muted)' }}>Loading...</div>}>
       <AssetRegisterContent />
     </Suspense>
   );

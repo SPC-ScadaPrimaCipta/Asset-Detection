@@ -88,3 +88,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--foreground-muted);
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

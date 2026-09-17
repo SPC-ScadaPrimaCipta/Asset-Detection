@@ -1,71 +1,74 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
 import OpenAI from "openai";
-import { env } from "./env";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import { getAiConfig } from "./ai-config";
 
 export type AIProvider = "gemini" | "deepseek";
 
-export function getGeminiModel() {
-  const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY!);
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
-  return genAI.getGenerativeModel({ model });
+// --- Resolved (Settings DB wins, env fallback) — use these in all runtime paths ---
+
+export async function getGeminiClient() {
+  const { geminiKey } = await getAiConfig();
+  if (!geminiKey) throw new Error("GEMINI_API_KEY not configured — set in Settings or .env.local");
+  return new GoogleGenerativeAI(geminiKey);
 }
 
-export function getGeminiClient() {
-  return new GoogleGenerativeAI(env.GEMINI_API_KEY!);
+export async function getGeminiFileManager() {
+  const { geminiKey } = await getAiConfig();
+  if (!geminiKey) throw new Error("GEMINI_API_KEY not configured — set in Settings or .env.local");
+  return new GoogleAIFileManager(geminiKey);
 }
 
-export function getGeminiFileManager() {
-  return new GoogleAIFileManager(env.GEMINI_API_KEY!);
+export async function getGeminiModel() {
+  const { geminiKey, geminiModel } = await getAiConfig();
+  if (!geminiKey) throw new Error("GEMINI_API_KEY not configured — set in Settings or .env.local");
+  return new GoogleGenerativeAI(geminiKey).getGenerativeModel({ model: geminiModel });
+}
+
+export async function getDeepSeekClient() {
+  const { deepseekKey } = await getAiConfig();
+  if (!deepseekKey) throw new Error("DEEPSEEK_API_KEY not configured — set in Settings or .env.local");
+  return new OpenAI({ apiKey: deepseekKey, baseURL: "https://api.deepseek.com/v1" });
+}
+
+// --- Explicit-key variants (for scan/validate flows that haven't saved yet) ---
+
+export function makeGeminiClient(apiKey: string) {
+  if (!apiKey) throw new Error("apiKey required");
+  return new GoogleGenerativeAI(apiKey);
+}
+export function makeGeminiFileManager(apiKey: string) {
+  if (!apiKey) throw new Error("apiKey required");
+  return new GoogleAIFileManager(apiKey);
+}
+export function makeDeepSeekClient(apiKey: string) {
+  if (!apiKey) throw new Error("apiKey required");
+  return new OpenAI({ apiKey, baseURL: "https://api.deepseek.com/v1" });
 }
 
 /**
  * Upload PDF buffer to Gemini Files API.
- * Returns fileUri + mimeType for use in subsequent generateContent calls.
- * File persists ~48h — caller should delete after job if desired.
+ * Resolves API key from Settings DB (not hardcoded env).
  */
-export async function uploadPdfToGemini(
-  buf: Buffer,
-  displayName: string
-): Promise<{ fileUri: string; mimeType: string }> {
-  const fm = getGeminiFileManager();
-  // Write to temp file — GoogleAIFileManager requires file path
+export async function uploadPdfToGemini(buf: Buffer, displayName: string): Promise<{ fileUri: string; mimeType: string }> {
+  const fm = await getGeminiFileManager();
   const tmpPath = path.join(tmpdir(), `gemini-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   await writeFile(tmpPath, buf);
   try {
-    const res = await fm.uploadFile(tmpPath, {
-      mimeType: "application/pdf",
-      displayName,
-    });
+    const res = await fm.uploadFile(tmpPath, { mimeType: "application/pdf", displayName });
     return { fileUri: res.file.uri, mimeType: res.file.mimeType };
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
 }
 
-/**
- * Delete a Gemini uploaded file by URI (cleanup after job).
- * Non-fatal — swallow errors.
- */
 export async function deleteGeminiFile(fileUri: string): Promise<void> {
   try {
-    const fm = getGeminiFileManager();
-    // Extract file name from URI: files/{name}
+    const fm = await getGeminiFileManager();
     const name = fileUri.split("/files/")[1];
     if (name) await fm.deleteFile(name);
-  } catch {
-    // Non-fatal cleanup
-  }
+  } catch {}
 }
-
-export function getDeepSeekClient() {
-  return new OpenAI({
-    apiKey: env.DEEPSEEK_API_KEY!,
-    baseURL: "https://api.deepseek.com/v1",
-  });
-}
-
-export const aiProvider = env.AI_PROVIDER as AIProvider;

@@ -737,7 +737,7 @@ function AssetRegisterWorkspace() {
 // Need Suspense for useSearchParams
 export default function AssetsPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--foreground-muted)' }}>Loading...</div>}>
       <AssetRegisterWorkspace />
     </Suspense>
   );

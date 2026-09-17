@@ -83,6 +83,14 @@ const thStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
 const tdBase: React.CSSProperties = { padding: '10px 12px' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -492,20 +500,30 @@ export default function LegendDetailPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
           <Link
             href="/legends"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '14px', color: 'var(--foreground-muted)', textDecoration: 'none' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '14px', color: 'var(--foreground-muted)', textDecoration: 'none', flexShrink: 0 }}
           >
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
             Legends
           </Link>
-          <span style={{ color: 'var(--foreground-subtle)' }}>/</span>
-          <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>{legend.name}</h1>
+          <span style={{ color: 'var(--foreground-subtle)', flexShrink: 0 }}>/</span>
+          <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{legend.name}</h1>
         </div>
+        <Link
+          href={`/legends/${legendId}/review`}
+          style={{ ...primaryButtonStyle, textDecoration: 'none', flexShrink: 0, padding: '7px 14px', fontSize: '13px' }}
+        >
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Review
+        </Link>
       </div>
 
       {/* Legend info card */}
