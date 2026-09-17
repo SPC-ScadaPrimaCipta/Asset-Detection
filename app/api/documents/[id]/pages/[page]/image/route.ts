@@ -34,7 +34,7 @@ export async function GET(
     }
 
     const buf = await getFile(file_path) as unknown as Buffer;
-    const png = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
+    const { png } = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
 
     return new NextResponse(new Uint8Array(png), {
       status: 200,

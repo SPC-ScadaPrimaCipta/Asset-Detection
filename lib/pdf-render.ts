@@ -32,24 +32,32 @@ export async function renderPageToPng(
   pageNumber: number,
   scale = 3.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
-  // Dynamic import — mupdf is ESM with top-level await, must use import()
-  const mupdf = await import("mupdf");
-  const { Document, Matrix } = mupdf;
+  try {
+    // Dynamic import — mupdf is ESM with top-level await.
+    // To prevent ts-node/TypeScript from transpiling import() to require() in CommonJS,
+    // we use eval to force native dynamic import.
+    const mupdfModule = await eval('import("mupdf")');
+    const mupdf = mupdfModule.default || mupdfModule;
+    const { Document, Matrix, ColorSpace } = mupdf;
 
-  const doc = Document.openDocument(buffer, "application/pdf");
-  const pageCount = doc.countPages();
-  if (pageNumber < 1 || pageNumber > pageCount) {
-    throw new Error(`Page ${pageNumber} out of range (document has ${pageCount} pages)`);
+    const doc = Document.openDocument(buffer, "application/pdf");
+    const pageCount = doc.countPages();
+    if (pageNumber < 1 || pageNumber > pageCount) {
+      throw new Error(`Page ${pageNumber} out of range (document has ${pageCount} pages)`);
+    }
+
+    const page = doc.loadPage(pageNumber - 1); // mupdf is 0-indexed
+    const matrix = Matrix.scale(scale, scale);
+    // DeviceRGB = standard RGB, no alpha channel needed
+    const pixmap = page.toPixmap(matrix, ColorSpace.DeviceRGB, false);
+    const png = pixmap.asPNG();
+
+    // mupdf returns Uint8Array — convert to Node Buffer
+    return { png: Buffer.from(png), width: pixmap.w, height: pixmap.h };
+  } catch (e) {
+    console.error("renderPageToPng failed:", e);
+    throw e;
   }
-
-  const page = doc.loadPage(pageNumber - 1); // mupdf is 0-indexed
-  const matrix = Matrix.scale(scale, scale);
-  // DeviceRGB = standard RGB, no alpha channel needed
-  const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false);
-  const png = pixmap.asPNG();
-
-  // mupdf returns Uint8Array — convert to Node Buffer
-  return { png: Buffer.from(png), width: pixmap.w, height: pixmap.h };
 }
 
 /**

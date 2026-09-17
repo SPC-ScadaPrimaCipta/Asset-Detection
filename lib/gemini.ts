@@ -10,7 +10,7 @@ export type AIProvider = "gemini" | "deepseek";
 
 export function getGeminiModel() {
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY!);
-  const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
   return genAI.getGenerativeModel({ model });
 }
 

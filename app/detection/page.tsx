@@ -333,6 +333,7 @@ function PidViewer({
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
@@ -342,6 +343,17 @@ function PidViewer({
   const viewerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const centeredRef = useRef<string | null>(null);
+  const panRef = useRef(pan);
+  const rotationRef = useRef(rotation);
+  const prevMouseRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  useEffect(() => {
+    rotationRef.current = rotation;
+  }, [rotation]);
 
   const imgSrc = documentId ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
@@ -387,11 +399,12 @@ function PidViewer({
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
     setDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    prevMouseRef.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (dragBbox && imgNatural && viewerRef.current) {
+      // ... (bbox drag code unchanged)
       const vw = viewerRef.current.clientWidth;
       const renderedW = Math.min(imgNatural.w, vw - 32);
       const ratio = renderedW / imgNatural.w || 1;
@@ -404,12 +417,29 @@ function PidViewer({
       setDragBbox(prev => prev ? { ...prev, x: nx, y: ny } : prev);
       return;
     }
-    if (!dragging) return;
-    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    if (!dragging || !prevMouseRef.current) return;
+
+    // Relative delta
+    let dx = e.clientX - prevMouseRef.current.x;
+    let dy = e.clientY - prevMouseRef.current.y;
+    prevMouseRef.current = { x: e.clientX, y: e.clientY };
+
+    // Rotate delta vector back to unrotated space
+    const rad = (rotationRef.current * Math.PI) / 180;
+    const cos = Math.cos(-rad);
+    const sin = Math.sin(-rad);
+    const rotatedDx = cos * dx - sin * dy;
+    const rotatedDy = sin * dx + cos * dy;
+
+    setPan({
+      x: panRef.current.x + rotatedDx,
+      y: panRef.current.y + rotatedDy
+    });
   };
 
   const handleMouseUp = async () => {
     setDragging(false);
+    prevMouseRef.current = null;
     if (dragBbox && onBboxUpdate) {
       const { id, x, y, origX, origY } = dragBbox;
       setDragBbox(null);
@@ -424,6 +454,7 @@ function PidViewer({
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
   }, [page]);
 
   return (
@@ -446,10 +477,24 @@ function PidViewer({
               title="Zoom in"
             >+</button>
             <button
-              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setRotation(0); }}
               className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
               title="Reset view"
             >⊙</button>
+          </div>
+          {/* Rotation controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setRotation(r => (r - 90 + 360) % 360)}
+              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              title="Rotate left"
+            >↺</button>
+            <span className="text-xs text-zinc-500 w-8 text-center">{rotation}°</span>
+            <button
+              onClick={() => setRotation(r => (r + 90) % 360)}
+              className="px-1.5 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              title="Rotate right"
+            >↻</button>
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-1.5">
@@ -472,12 +517,12 @@ function PidViewer({
         onMouseLeave={handleMouseUp}
         ref={viewerRef}
       >
-        {/* Transformed inner container — zoom + pan applied here */}
+        {/* Transformed inner container — zoom + pan + rotation applied here */}
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
-            transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-            transformOrigin: 'top left',
+            transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+            transformOrigin: 'center center',
             cursor: dragging ? 'grabbing' : 'grab',
           }}
         >

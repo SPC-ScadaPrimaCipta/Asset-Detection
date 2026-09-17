@@ -27,7 +27,7 @@ export const worker = new Worker(
     );
     const agentRunId = uuidv4();
     const modelName =
-      process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : (process.env.GEMINI_MODEL || "gemini-3.6-flash");
+      process.env.AI_PROVIDER === "deepseek" ? "deepseek-chat" : (process.env.GEMINI_MODEL || "gemini-3.5-flash");
     const promptVersion = "v1";
     // Hoisted — referenced in both try and catch for cleanup
     let geminiFileUri: string | undefined;
@@ -147,18 +147,14 @@ export const worker = new Worker(
           detections = result.detections;
 
           // Normalize AI bbox to 0-1000 if not already, or if we have dimensions and want consistency.
-          // The prompt says "normalized 0–1000", if AI returned pixels, fix here.
-          // Assuming AI returned normalized based on the prompt, but if detection is imprecise,
-          // maybe it returned raw pixels?
-          // Let's assume the fix is to normalize based on PNG dimensions.
           if (pngDimensions) {
               detections = detections.map(d => ({
                   ...d,
                   bbox: {
-                      x: Math.round((d.bbox.x / pngDimensions!.width) * 1000),
-                      y: Math.round((d.bbox.y / pngDimensions!.height) * 1000),
-                      width: Math.round((d.bbox.width / pngDimensions!.width) * 1000),
-                      height: Math.round((d.bbox.height / pngDimensions!.height) * 1000),
+                      x: Math.round((Number(d.bbox.x) || 0) / pngDimensions!.width * 1000),
+                      y: Math.round((Number(d.bbox.y) || 0) / pngDimensions!.height * 1000),
+                      width: Math.round((Number(d.bbox.width) || 0) / pngDimensions!.width * 1000),
+                      height: Math.round((Number(d.bbox.height) || 0) / pngDimensions!.height * 1000),
                   }
               }));
           }
@@ -219,10 +215,10 @@ export const worker = new Worker(
               effectiveLegendId ?? null,
               (legendSym as Record<string, unknown> | undefined)?.id ?? null,
               d.confidence,
-              d.bbox.x,
-              d.bbox.y,
-              d.bbox.width,
-              d.bbox.height,
+              Number.isFinite(d.bbox.x) ? d.bbox.x : 0,
+              Number.isFinite(d.bbox.y) ? d.bbox.y : 0,
+              Number.isFinite(d.bbox.width) ? d.bbox.width : 0,
+              Number.isFinite(d.bbox.height) ? d.bbox.height : 0,
               JSON.stringify(d.evidence),
             ]
           );
