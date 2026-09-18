@@ -57,17 +57,49 @@ export default function LegendReviewPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [viewport, setViewport] = useState<{ w: number; h: number } | null>(null);
   const [dragBbox, setDragBbox] = useState<any>(null);
+  // Set true once a real drag happens — used to swallow the click event that
+  // follows mouseup after moving/resizing (so the sidebar doesn't jump).
+  const suppressClickRef = useRef(false);
 
-  // non-passive wheel for pdf zoom
+  // non-passive wheel for pdf zoom — anchored at cursor position.
+  // The content div uses transformOrigin 'top left', so a plain scale() would
+  // grow toward bottom-right. We compensate by shifting pan so the point under
+  // the cursor stays fixed on screen.
+  // NOTE: deps include `loading` — on first render the component early-returns
+  // while loading, so viewerRef.current is null and there is nothing to bind to.
+  // When loading finishes the viewer mounts and this effect must re-run to attach.
+  // `zoom` is a dep so the handler always sees the current zoom (no stale closure).
   useEffect(() => {
-    const el = viewerRef.current; if (!el) return;
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); const d = e.deltaY > 0 ? -0.08 : 0.08; setZoom(p => Math.max(0.3, Math.min(4, p + d))); };
+    const el = viewerRef.current; const content = contentRef.current;
+    if (!el || !content) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const next = Math.max(0.3, Math.min(4, zoom + (e.deltaY > 0 ? -0.08 : 0.08)));
+      if (next === zoom) return;
+      const vRect = el.getBoundingClientRect();
+      const cRect = content.getBoundingClientRect();
+      if (cRect.width === 0 || cRect.height === 0) { setZoom(next); return; }
+      // Unscaled content size + cursor position as a fraction across content.
+      // getBoundingClientRect already includes the current scale transform,
+      // so dividing by `zoom` recovers layout size — origin-independent.
+      const layoutW = cRect.width / zoom; const layoutH = cRect.height / zoom;
+      const nx = (e.clientX - cRect.left) / cRect.width;
+      const ny = (e.clientY - cRect.top) / cRect.height;
+      // Where the content's top-left corner must be (viewer-relative) after
+      // zoom so the same content point stays under the cursor. pan is a
+      // screen-pixel offset, so shift it by the corner delta.
+      const dx = ((e.clientX - vRect.left) - nx * layoutW * next) - (cRect.left - vRect.left);
+      const dy = ((e.clientY - vRect.top) - ny * layoutH * next) - (cRect.top - vRect.top);
+      setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+      setZoom(next);
+    };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [loading, zoom]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
@@ -83,19 +115,25 @@ export default function LegendReviewPage() {
     const onMove = (e: MouseEvent) => {
       const ndx = (e.clientX - dragBbox.startX) / zoom;
       const ndy = (e.clientY - dragBbox.startY) / zoom;
+      if (Math.abs(e.clientX - dragBbox.startX) > 3 || Math.abs(e.clientY - dragBbox.startY) > 3) suppressClickRef.current = true;
       if (dragBbox.mode === 'move') {
         const nx = Math.max(0, Math.min(cssW - dragBbox.w, dragBbox.origX + ndx));
         const ny = Math.max(0, Math.min(cssH - dragBbox.h, dragBbox.origY + ndy));
         setDragBbox((p: any) => p ? { ...p, x: nx, y: ny } : p);
       } else {
-        let nw = dragBbox.origW; let nh = dragBbox.origH; let nx = dragBbox.origX; let ny = dragBbox.origY;
-        if (dragBbox.mode.includes('r')) nw = Math.max(10, dragBbox.origW + ndx);
-        if (dragBbox.mode.includes('l')) { nw = Math.max(10, dragBbox.origW - ndx); nx = dragBbox.origX + ndx; }
-        if (dragBbox.mode.includes('b')) nh = Math.max(10, dragBbox.origH + ndy);
-        if (dragBbox.mode.includes('t')) { nh = Math.max(10, dragBbox.origH - ndy); ny = dragBbox.origY + ndy; }
-        const cw = Math.min(nw, cssW - nx); const ch = Math.min(nh, cssH - ny);
-        const fx = Math.max(0, Math.min(nx, cssW - cw)); const fy = Math.max(0, Math.min(ny, cssH - ch));
-        setDragBbox((p: any) => p ? { ...p, x: fx, y: fy, w: cw, h: ch } : p);
+        // Resize — mode is a combination of r/l/t/b (e.g. 'r', 'tl', 'br').
+        // Right/bottom edges grow w/h; left/top edges move x/y with the
+        // opposite edge anchored. All clamped to canvas, min 10px.
+        const mode: string = dragBbox.mode;
+        const right = dragBbox.origX + dragBbox.origW;
+        const bottom = dragBbox.origY + dragBbox.origH;
+        let nx = dragBbox.origX; let ny = dragBbox.origY;
+        let nw = dragBbox.origW; let nh = dragBbox.origH;
+        if (mode.includes('r')) nw = Math.max(10, Math.min(dragBbox.origW + ndx, cssW - dragBbox.origX));
+        if (mode.includes('b')) nh = Math.max(10, Math.min(dragBbox.origH + ndy, cssH - dragBbox.origY));
+        if (mode.includes('l')) { nx = Math.max(0, Math.min(dragBbox.origX + ndx, right - 10)); nw = right - nx; }
+        if (mode.includes('t')) { ny = Math.max(0, Math.min(dragBbox.origY + ndy, bottom - 10)); nh = bottom - ny; }
+        setDragBbox((p: any) => p ? { ...p, x: nx, y: ny, w: nw, h: nh } : p);
       }
     };
     const onUp = async () => {
@@ -290,13 +328,13 @@ export default function LegendReviewPage() {
             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
             style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: dragging ? 'grabbing' : 'grab', padding: 6 }}
           >
-            <div style={{ position: 'relative', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', boxShadow: '0 1px 8px rgba(0,0,0,0.12)', flexShrink: 0 }}>
+            <div ref={contentRef} style={{ position: 'relative', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', boxShadow: '0 1px 8px rgba(0,0,0,0.12)', flexShrink: 0 }}>
               <canvas ref={canvasRef} style={{ background: '#fff', display: 'block', width: viewport ? viewport.w / (renderScale || 1) : 0, height: viewport ? viewport.h / (renderScale || 1) : 0 }} />
               {viewport && (() => {
                 const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
                 return (
                   <svg viewBox={`0 0 ${cssW} ${cssH}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null).map(sym => {
+                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null && s.id === selectedId).map(sym => {
                       const isSel = sym.id === selectedId;
                       const x = (sym.bbox_x! / 1000) * cssW; const y = (sym.bbox_y! / 1000) * cssH;
                       const w = (sym.bbox_w! / 1000) * cssW; const h = (sym.bbox_h! / 1000) * cssH;
@@ -306,12 +344,41 @@ export default function LegendReviewPage() {
                       const label = (sym.symbol_name || sym.asset_type).slice(0, 16);
                       return (
                         <g key={sym.id} data-bbox="true" style={{ pointerEvents: 'all', cursor: isSel ? 'move' : 'pointer' }}
-                          onClick={e => { e.stopPropagation(); setSelectedId(sym.id); cardRefs.current[sym.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-                          onMouseDown={e => { e.stopPropagation(); if (isSel && viewport) setDragBbox({ id: sym.id, x, y, w, h, startX: e.clientX, startY: e.clientY, origX: x, origY: y, origW: w, origH: h, mode: 'move' }); else setSelectedId(sym.id); }}>
+                          onClick={e => { e.stopPropagation(); if (suppressClickRef.current) { suppressClickRef.current = false; return; } setSelectedId(sym.id); cardRefs.current[sym.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
+                          onMouseDown={e => {
+                            e.stopPropagation();
+                            if (!viewport) { setSelectedId(sym.id); return; }
+                            suppressClickRef.current = false;
+                            // Resize handle? (data-handle="r|l|t|b|tr|tl|br|bl" on handle rects)
+                            const handle = (e.target as Element).getAttribute?.('data-handle');
+                            if (handle) {
+                              setDragBbox({ id: sym.id, x, y, w, h, startX: e.clientX, startY: e.clientY, origX: x, origY: y, origW: w, origH: h, mode: handle });
+                            } else if (isSel) {
+                              setDragBbox({ id: sym.id, x, y, w, h, startX: e.clientX, startY: e.clientY, origX: x, origY: y, origW: w, origH: h, mode: 'move' });
+                            } else {
+                              setSelectedId(sym.id);
+                            }
+                          }}>
                           <rect x={rx - 2} y={ry - 2} width={w + 4} height={h + 4} fill="transparent" />
                           <rect x={rx} y={ry} width={rw} height={rh} fill="#fbbf24" fillOpacity={isSel ? 0.55 : 0.32} stroke={color} strokeWidth={isSel ? 1.8 : 1} strokeDasharray={isSel ? undefined : '5 3'} rx={1} />
                           <rect x={rx} y={ry > 14 ? ry - 12 : ry + rh + 1} width={Math.min(90, Math.max(w, 62))} height={11} rx={3} fill={color} opacity={0.95} />
                           <text x={rx + 3} y={(ry > 14 ? ry - 12 : ry + rh + 1) + 8} fill="#fff" fontSize={7} fontFamily="ui-monospace,monospace" fontWeight={isSel ? 700 : 500}>{label}</text>
+                          {/* Resize handles — 4 corners + 4 edges, only on selected bbox */}
+                          {isSel && ([
+                            { m: 'tl', hx: rx, hy: ry, c: 'nwse-resize', t: 'Resize top-left' },
+                            { m: 'tr', hx: rx + rw, hy: ry, c: 'nesw-resize', t: 'Resize top-right' },
+                            { m: 'bl', hx: rx, hy: ry + rh, c: 'nesw-resize', t: 'Resize bottom-left' },
+                            { m: 'br', hx: rx + rw, hy: ry + rh, c: 'nwse-resize', t: 'Resize bottom-right' },
+                            { m: 't', hx: rx + rw / 2, hy: ry, c: 'ns-resize', t: 'Resize top edge' },
+                            { m: 'b', hx: rx + rw / 2, hy: ry + rh, c: 'ns-resize', t: 'Resize bottom edge' },
+                            { m: 'l', hx: rx, hy: ry + rh / 2, c: 'ew-resize', t: 'Resize left edge' },
+                            { m: 'r', hx: rx + rw, hy: ry + rh / 2, c: 'ew-resize', t: 'Resize right edge' },
+                          ].map(h => (
+                            <rect key={h.m} data-handle={h.m} x={h.hx - 5} y={h.hy - 5} width={10} height={10}
+                              fill="#fff" stroke={color} strokeWidth={1.5} rx={1.5} style={{ cursor: h.c }}>
+                              <title>{h.t}</title>
+                            </rect>
+                          )))}
                         </g>
                       );
                     })}
