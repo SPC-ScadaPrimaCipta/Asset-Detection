@@ -487,18 +487,24 @@ function PidViewer({
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const visible = detections.filter(
-    d => d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED'
-       && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
-  );
+  // Only the selected detection's bbox is shown — everything else stays hidden
+  const visible = selectedId
+    ? detections.filter(
+        d => d.id === selectedId
+          && d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED'
+          && d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
+      )
+    : [];
 
   // wheel must be non-passive to allow preventDefault (React onWheel is passive in Chrome)
+  // Re-bind when `fullscreen` toggles: viewerContent remounts under a new parent,
+  // so viewerRef.current points to a new DOM node.
   useEffect(() => {
     const el = viewerRef.current; if (!el) return;
     const onWheel = (e: WheelEvent) => { e.preventDefault(); const d = e.deltaY > 0 ? -0.15 : 0.15; setZoom(p => Math.max(0.2, Math.min(6, p + d))); };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [fullscreen]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
@@ -562,7 +568,11 @@ function PidViewer({
         </button>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>{visible.length} bbox</span>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>
+            {visible.length > 0
+              ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
+              : 'Bbox hidden — select an asset to show'}
+          </span>
           {/* Fullscreen toggle */}
           <button
             onClick={() => setFullscreen(f => !f)}
@@ -603,6 +613,9 @@ function PidViewer({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            maxWidth: '100%',
+            maxHeight: '100%',
+            flexShrink: 0,
           }}>
             {imgSrc && (
               <div
@@ -610,6 +623,10 @@ function PidViewer({
                   transform: imgTransform,
                   transformOrigin: 'center center',
                   lineHeight: 0,
+                  position: 'relative',
+                  display: 'inline-block',
+                  flexShrink: 0,
+                  maxWidth: '100%',
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -626,8 +643,10 @@ function PidViewer({
                   onError={() => { setImgLoading(false); setImgError(true); }}
                   style={{
                     display: 'block',
-                    maxWidth: '100%',
-                    maxHeight: '100%',
+                    width: 'auto',
+                    height: 'auto',
+                    maxWidth: fullscreen ? '88vw' : '100%',
+                    maxHeight: fullscreen ? 'calc(100vh - 200px)' : '560px',
                     opacity: imgLoading ? 0 : 1,
                     transition: 'opacity 0.2s ease',
                   }}
@@ -713,7 +732,7 @@ function PidViewer({
         <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--warning)', borderRadius: 1 }} />≥70% Medium</span>
         <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--danger)', borderRadius: 1 }} />Review</span>
         <span style={legendItemStyle}><span style={{ display: 'inline-block', width: 12, height: 2, background: 'var(--success)', borderRadius: 1 }} />Confirmed</span>
-        <span style={{ marginLeft: 'auto', color: 'var(--foreground-subtle)' }}>Scroll to zoom · Drag to pan · Click bbox to select</span>
+        <span style={{ marginLeft: 'auto', color: 'var(--foreground-subtle)' }}>Scroll to zoom · Drag to pan · Select asset in table to show bbox</span>
       </div>
     </>
   );
@@ -1316,7 +1335,11 @@ function DetectionWorkspace() {
               <DetectionsTable
                 detections={detections}
                 selectedId={selectedId}
-                onSelect={setSelectedDetection}
+                onSelect={d => {
+                  setSelectedDetection(d);
+                  // Jump viewer to the selected symbol's page so its bbox becomes visible
+                  if (d.pid_page !== null && d.pid_page !== currentPage) setCurrentPage(d.pid_page);
+                }}
               />
             </div>
           </div>
