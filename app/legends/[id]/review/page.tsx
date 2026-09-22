@@ -65,47 +65,126 @@ export default function LegendReviewPage() {
   // follows mouseup after moving/resizing (so the sidebar doesn't jump).
   const suppressClickRef = useRef(false);
 
-  // non-passive wheel for pdf zoom — anchored at cursor position.
+  // ---- PDF preview zoom: pure-ref math, zero DOM reads in the hot path ----
+  // viewRef   = what is displayed (eased toward target every frame)
+  // targetRef = where the view is heading (accumulates wheel events)
+  // All anchor math derives from these refs + stable layout sizes
+  // (offsetWidth/offsetLeft — unaffected by the scale transform), so rapid
+  // event streams can never observe a half-rendered frame and jump.
+  const ZMIN = 0.3, ZMAX = 4;
+  const viewRef = useRef({ zoom, pan });
+  const targetRef = useRef({ zoom, pan });
+  const animRef = useRef<number | null>(null);
+
+  const stopZoomAnim = useCallback(() => {
+    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+  }, []);
+  useEffect(() => () => { if (animRef.current) cancelAnimationFrame(animRef.current); }, []);
+
+  // Frame-rate independent easing toward the target (same feel on 60/120Hz+).
+  const kickZoomAnim = useCallback(() => {
+    if (animRef.current) return;
+    let last = performance.now();
+    const tick = (t: number) => {
+      const dt = Math.min(64, t - last); last = t;
+      const V = viewRef.current, T = targetRef.current;
+      const a = 1 - Math.exp(-dt * 0.016);
+      const nz = V.zoom + (T.zoom - V.zoom) * a;
+      const nxp = V.pan.x + (T.pan.x - V.pan.x) * a;
+      const nyp = V.pan.y + (T.pan.y - V.pan.y) * a;
+      if (Math.abs(T.zoom - nz) < 0.0008 && Math.abs(T.pan.x - nxp) < 0.05 && Math.abs(T.pan.y - nyp) < 0.05) {
+        V.zoom = T.zoom; V.pan = { ...T.pan };
+        setZoom(V.zoom); setPan(V.pan);
+        animRef.current = null;
+        return;
+      }
+      V.zoom = nz; V.pan = { x: nxp, y: nyp };
+      setZoom(nz); setPan(V.pan);
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  // Stable layout metrics (viewer/content are never transformed themselves).
+  const zoomMetrics = useCallback(() => {
+    const el = viewerRef.current; const content = contentRef.current;
+    if (!el || !content) return null;
+    const vRect = el.getBoundingClientRect();
+    const layoutW = content.offsetWidth;
+    const layoutH = content.offsetHeight;
+    if (layoutW === 0 || layoutH === 0) return null;
+    return { vLeft: vRect.left, vTop: vRect.top, offLeft: content.offsetLeft, offTop: content.offsetTop, layoutW, layoutH };
+  }, []);
+
+  // Move the TARGET so the content point under (clientX, clientY) stays fixed.
+  // nx/ny are measured in the VIEW frame (what the user actually sees);
+  // the correction is expressed at target zoom — all ref-exact, no DOM reads.
+  const retargetZoom = useCallback((clientX: number, clientY: number, next: number) => {
+    const m = zoomMetrics(); if (!m) return;
+    next = Math.max(ZMIN, Math.min(ZMAX, next));
+    const V = viewRef.current, T = targetRef.current;
+    if (Math.abs(next - T.zoom) < 0.0005) return;
+    const px = clientX - m.vLeft, py = clientY - m.vTop;
+    const cornerVx = m.offLeft + V.pan.x, cornerVy = m.offTop + V.pan.y;
+    const nx = Math.max(0, Math.min(1, (px - cornerVx) / (m.layoutW * V.zoom)));
+    const ny = Math.max(0, Math.min(1, (py - cornerVy) / (m.layoutH * V.zoom)));
+    const cornerTx = m.offLeft + T.pan.x, cornerTy = m.offTop + T.pan.y;
+    const ncx = px - nx * m.layoutW * next;
+    const ncy = py - ny * m.layoutH * next;
+    T.zoom = next;
+    T.pan = { x: T.pan.x + (ncx - cornerTx), y: T.pan.y + (ncy - cornerTy) };
+    kickZoomAnim();
+  }, [zoomMetrics, kickZoomAnim]);
+
+  const stepZoom = useCallback((dir: 1 | -1) => {
+    const el = viewerRef.current; if (!el) return;
+    const vRect = el.getBoundingClientRect();
+    retargetZoom(
+      vRect.left + vRect.width / 2, vRect.top + vRect.height / 2,
+      targetRef.current.zoom + dir * 0.2,
+    );
+  }, [retargetZoom]);
+
+  // Snap everything instantly (page change / fit-compute). No animation.
+  const snapZoom = useCallback((z: number, p: { x: number; y: number }) => {
+    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+    viewRef.current = { zoom: z, pan: { ...p } };
+    targetRef.current = { zoom: z, pan: { ...p } };
+    setZoom(z); setPan({ ...p });
+  }, []);
+
+  // non-passive wheel for pdf zoom — scroll (biasa) = zoom, anchored at cursor.
   // The content div uses transformOrigin 'top left', so a plain scale() would
-  // grow toward bottom-right. We compensate by shifting pan so the point under
-  // the cursor stays fixed on screen.
+  // grow toward bottom-right; retargetZoom compensates via pan.
   // NOTE: deps include `loading` — on first render the component early-returns
   // while loading, so viewerRef.current is null and there is nothing to bind to.
   // When loading finishes the viewer mounts and this effect must re-run to attach.
-  // `zoom` is a dep so the handler always sees the current zoom (no stale closure).
   useEffect(() => {
     const el = viewerRef.current; const content = contentRef.current;
     if (!el || !content) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const next = Math.max(0.3, Math.min(4, zoom + (e.deltaY > 0 ? -0.08 : 0.08)));
-      if (next === zoom) return;
-      const vRect = el.getBoundingClientRect();
-      const cRect = content.getBoundingClientRect();
-      if (cRect.width === 0 || cRect.height === 0) { setZoom(next); return; }
-      // Unscaled content size + cursor position as a fraction across content.
-      // getBoundingClientRect already includes the current scale transform,
-      // so dividing by `zoom` recovers layout size — origin-independent.
-      const layoutW = cRect.width / zoom; const layoutH = cRect.height / zoom;
-      const nx = (e.clientX - cRect.left) / cRect.width;
-      const ny = (e.clientY - cRect.top) / cRect.height;
-      // Where the content's top-left corner must be (viewer-relative) after
-      // zoom so the same content point stays under the cursor. pan is a
-      // screen-pixel offset, so shift it by the corner delta.
-      const dx = ((e.clientX - vRect.left) - nx * layoutW * next) - (cRect.left - vRect.left);
-      const dy = ((e.clientY - vRect.top) - ny * layoutH * next) - (cRect.top - vRect.top);
-      setPan(p => ({ x: p.x + dx, y: p.y + dy }));
-      setZoom(next);
+      if (e.deltaY === 0) return;
+      // Normalize trackpad line-scroll deltas, then exponential factor so zoom
+      // speed follows scroll velocity. Per-event change clamped so aggressive
+      // scroll drivers can't teleport (fast scroll still zooms fast via volume).
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      const raw = Math.exp(-dy * 0.002);
+      const factor = Math.max(0.85, Math.min(1.18, raw));
+      retargetZoom(e.clientX, e.clientY, targetRef.current.zoom * factor);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [loading, zoom]);
+  }, [loading, retargetZoom]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
-    setDragging(true); setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    stopZoomAnim();
+    const V = viewRef.current;
+    targetRef.current = { zoom: V.zoom, pan: { ...V.pan } };
+    setDragging(true); setDragStart({ x: e.clientX - V.pan.x, y: e.clientY - V.pan.y });
   };
-  const handleMouseMove = (e: React.MouseEvent) => { if (!dragging) return; setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); };
+  const handleMouseMove = (e: React.MouseEvent) => { if (!dragging) return; const np = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }; viewRef.current.pan = np; targetRef.current.pan = np; setPan(np); };
   const handleMouseUp = () => setDragging(false);
 
   // drag bbox move/resize
@@ -194,8 +273,8 @@ export default function LegendReviewPage() {
       const cw = viewerRef.current.clientWidth - 16;
       if (cw <= 0) return;
       const fit = Math.max(0.45, Math.min(1.2, cw / vp.width));
-      setFitZoom(fit); setZoom(fit); setRenderScale(Math.min(2.8, fit * 1.8));
-      setPan({ x: 0, y: 0 });
+      setFitZoom(fit); setRenderScale(Math.min(2.8, fit * 1.8));
+      snapZoom(fit, { x: 0, y: 0 });
     };
     compute();
     const ro = new ResizeObserver(() => compute());
@@ -312,11 +391,11 @@ export default function LegendReviewPage() {
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <button onClick={() => setZoom(z => Math.max(0.3, +(z - 0.08).toFixed(2)))} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>−</button>
+                <button onClick={() => stepZoom(-1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>−</button>
                 <span style={{ fontSize: 11, width: 30, textAlign: 'center', color: 'var(--foreground-muted)' }}>{Math.round(zoom * 100)}%</span>
-                <button onClick={() => setZoom(z => Math.min(4, +(z + 0.08).toFixed(2)))} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>+</button>
-                <button onClick={() => setZoom(fitZoom)} title="Fit" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊡</button>
-                <button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }} title="Reset" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊙</button>
+                <button onClick={() => stepZoom(1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>+</button>
+                <button onClick={() => { const el = viewerRef.current; if (!el) return; const v = el.getBoundingClientRect(); retargetZoom(v.left + v.width / 2, v.top + v.height / 2, fitZoom); }} title="Fit" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊡</button>
+                <button onClick={() => { targetRef.current = { zoom: fitZoom, pan: { x: 0, y: 0 } }; kickZoomAnim(); }} title="Reset" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊙</button>
               </div>
               <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
               <button onClick={() => setShowCards(v => !v)} style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: showCards ? 'var(--primary)' : 'var(--surface)', color: showCards ? '#fff' : 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}>{showCards ? 'Hide' : 'Show'} Symbols</button>
@@ -326,9 +405,9 @@ export default function LegendReviewPage() {
           <div
             ref={viewerRef}
             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
-            style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: dragging ? 'grabbing' : 'grab', padding: 6 }}
+            style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: dragging ? 'grabbing' : 'grab', padding: 6 }}
           >
-            <div ref={contentRef} style={{ position: 'relative', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', boxShadow: '0 1px 8px rgba(0,0,0,0.12)', flexShrink: 0 }}>
+            <div ref={contentRef} style={{ position: 'relative', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', boxShadow: '0 1px 8px rgba(0,0,0,0.12)', flexShrink: 0, willChange: 'transform' }}>
               <canvas ref={canvasRef} style={{ background: '#fff', display: 'block', width: viewport ? viewport.w / (renderScale || 1) : 0, height: viewport ? viewport.h / (renderScale || 1) : 0 }} />
               {viewport && (() => {
                 const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
