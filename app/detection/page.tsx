@@ -406,22 +406,9 @@ function JobProgress({ jobId, onComplete }: { jobId: string; onComplete: () => v
       </div>
       <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>{job.progress_pct ?? 0}% complete</p>
 
-      {job.status === 'PENDING' && (
-        <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <svg style={{ width: 14, height: 14, animation: 'spin 1s linear infinite', flexShrink: 0 }} fill="none" viewBox="0 0 24 24">
-            <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-          </svg>
-          Waiting in queue… Worker will pick up this job shortly.
-        </p>
-      )}
       {job.status === 'PROCESSING' && (
-        <p style={{ fontSize: '12px', color: 'var(--info)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <svg style={{ width: 14, height: 14, animation: 'spin 1s linear infinite', flexShrink: 0 }} fill="none" viewBox="0 0 24 24">
-            <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-          </svg>
-          Analyzing P&ID with AI… Detected assets will appear in the table below as each page completes.
+        <p style={{ fontSize: '12px', color: 'var(--info)', margin: 0, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+          Analyzing P&ID with AI…
         </p>
       )}
       {job.status === 'FAILED' && job.error_detail && (
@@ -499,47 +486,6 @@ function PidViewer({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
-
-  // Auto-center viewer on selected detection bbox.
-  // Triggers on selectedId change OR when imgNatural becomes available (image loaded after page jump).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!selectedId || !imgNatural) return;
-    const d = detections.find(x => x.id === selectedId);
-    if (!d || d.bbox_x == null || d.bbox_y == null || d.bbox_w == null || d.bbox_h == null) return;
-
-    const viewerEl = viewerRef.current;
-    if (!viewerEl) return;
-    const viewerRect = viewerEl.getBoundingClientRect();
-    const viewW = viewerRect.width || 800;
-    const viewH = viewerRect.height || 600;
-
-    // Convert 0-1000 normalized bbox → fraction of image
-    const bboxCxFrac = (d.bbox_x + d.bbox_w / 2) / 1000;
-    const bboxCyFrac = (d.bbox_y + d.bbox_h / 2) / 1000;
-    const bboxWFrac  = Math.max(d.bbox_w / 1000, 0.01);
-    const bboxHFrac  = Math.max(d.bbox_h / 1000, 0.01);
-
-    // Target zoom: fit bbox with padding so symbol clearly visible, clamp 2-5×
-    const PAD = 5;
-    const zoomByW = viewW / (imgNatural.w * bboxWFrac * PAD);
-    const zoomByH = viewH / (imgNatural.h * bboxHFrac * PAD);
-    const targetZoom = Math.min(Math.max(Math.min(zoomByW, zoomByH), 2), 5);
-
-    // Displayed image size at zoom=1 (image fits viewer, constrained by CSS maxWidth/Height)
-    const scale = Math.min(viewW / imgNatural.w, viewH / imgNatural.h, 1);
-    const imgDisplayW = imgNatural.w * scale;
-    const imgDisplayH = imgNatural.h * scale;
-
-    // Pan so bbox center aligns with viewport center
-    const bboxDisplayCx = bboxCxFrac * imgDisplayW;
-    const bboxDisplayCy = bboxCyFrac * imgDisplayH;
-    const panX = viewW / 2 - bboxDisplayCx * targetZoom;
-    const panY = viewH / 2 - bboxDisplayCy * targetZoom;
-
-    setZoom(targetZoom);
-    setPan({ x: panX, y: panY });
-  }, [selectedId, imgNatural]);
 
   // Only the selected detection's bbox is shown — everything else stays hidden
   const visible = selectedId
@@ -733,19 +679,11 @@ function PidViewer({
                       return (
                         <g key={d.id} data-bbox="true" onClick={() => onSelect(d.id)} style={{ pointerEvents: 'all', cursor: 'pointer' }}>
                           <rect x={x} y={y} width={w} height={h} fill="transparent" />
-                          {/* Outer glow ring for selected — visible even on small symbols */}
-                          {selected && (
-                            <rect
-                              x={x - 6} y={y - 6} width={w + 12} height={h + 12}
-                              fill="none" stroke={color} strokeWidth={3}
-                              strokeDasharray="6 3" rx={4} opacity={0.5}
-                            />
-                          )}
                           <rect x={x} y={y} width={w} height={h}
-                            fill={selected ? `${color}25` : 'none'}
-                            stroke={color} strokeWidth={selected ? 3 : 1.5}
-                            strokeDasharray={selected ? undefined : '6 3'} rx={2}
-                            opacity={selected ? 1 : 0.7} />
+                            fill={selected ? `${color}18` : 'none'}
+                            stroke={color} strokeWidth={selected ? 3 : 2}
+                            strokeDasharray={selected ? undefined : '8 4'} rx={3}
+                            opacity={selected ? 1 : 0.85} />
                           <rect x={x} y={labelY} width={labelW} height={20} fill={color} rx={3} opacity={selected ? 1 : 0.85} />
                           <text x={x + 5} y={labelY + 14} fill="white" fontSize={13}
                             fontFamily="ui-monospace, monospace" fontWeight={selected ? 700 : 400}>
@@ -1209,7 +1147,6 @@ function DetectionWorkspace() {
     setRunning(true);
     setDetections([]);
     setSelectedDetection(null);
-    setCurrentJobId(null); // clear previous job so workspace shows loading state
     const r = await fetch('/api/detection/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1355,24 +1292,11 @@ function DetectionWorkspace() {
       )}
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
-      {detections.length > 0 || currentJobId || running ? (
+      {detections.length > 0 || currentJobId ? (
         <div style={{ display: 'flex', gap: '12px', flex: 1, minHeight: 700 }}>
           {/* Left: Viewer — takes most of the width (~75%) */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Submitting state — job not yet created */}
-            {running && !currentJobId && (
-              <div style={{ ...cardStyle, padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <svg style={{ width: 18, height: 18, flexShrink: 0, animation: 'spin 1s linear infinite', color: 'var(--info)' }} fill="none" viewBox="0 0 24 24">
-                  <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                <div>
-                  <p style={{ margin: 0, fontSize: '13px', fontWeight: '500', color: 'var(--foreground)' }}>Starting detection job…</p>
-                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--foreground-muted)' }}>Queuing job and preparing document</p>
-                </div>
-              </div>
-            )}
-            {/* Job progress — shown once job ID is available */}
+            {/* Job progress inline above viewer — compact, doesn't push viewer down */}
             {currentJobId && (
               <div style={{ flexShrink: 0 }}>
                 <JobProgress jobId={currentJobId} onComplete={handleJobComplete} />
@@ -1385,10 +1309,7 @@ function DetectionWorkspace() {
                 selectedId={selectedId}
                 onSelect={id => {
                   const d = detections.find(x => x.id === id);
-                  if (d) {
-                    setSelectedDetection(d);
-                    if (d.pid_page) setCurrentPage(d.pid_page);
-                  }
+                  if (d) setSelectedDetection(d);
                 }}
                 page={currentPage || 1}
                 totalPages={maxPage}

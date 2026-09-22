@@ -24,19 +24,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
+    const body = await request.json();
     const existing = await db.query('SELECT * FROM legends WHERE id=$1', [id]);
     if (existing.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     const cur = existing.rows[0];
-
-    // Built-in legends are read-only
-    if (cur.is_builtin) {
-      return NextResponse.json(
-        { error: 'Built-in standard legends cannot be modified. Create a custom legend instead.' },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
     const name = body.name ?? cur.name;
     const description = body.description !== undefined ? body.description : cur.description;
     const status = body.status ?? cur.status;
@@ -56,17 +47,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const existing = await db.query('SELECT is_builtin FROM legends WHERE id=$1', [id]);
-    if (existing.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    // Built-in legends cannot be deleted
-    if (existing.rows[0].is_builtin) {
-      return NextResponse.json(
-        { error: 'Built-in standard legends cannot be deleted.' },
-        { status: 403 }
-      );
-    }
-
     await db.query('DELETE FROM legends WHERE id = $1', [id]);
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
