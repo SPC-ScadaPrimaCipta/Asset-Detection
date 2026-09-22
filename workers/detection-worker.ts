@@ -384,7 +384,9 @@ export const worker = new Worker(
               detectionId,
               jobId,
               doc.id,
-              d.assetTag ?? null,
+              // Normalize tag: remove spaces around hyphens (e.g. "JB - 03" → "JB-03"),
+              // trim leading/trailing whitespace, collapse internal spaces.
+              d.assetTag ? d.assetTag.trim().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ') : null,
               d.assetType,
               (d as Record<string, unknown>).equipmentClass ?? null,
               persistedDescription,
