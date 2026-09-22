@@ -1135,9 +1135,24 @@ function DetectionWorkspace() {
     });
   }, [projectId]);
 
+  // Auto-load last completed job when document is selected
+  useEffect(() => {
+    if (!documentId) { setCurrentJobId(null); setDetections([]); return; }
+    fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
+      .then(r => r.json())
+      .then(d => {
+        const jobs = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : []);
+        const lastJob = jobs[0];
+        if (lastJob && lastJob.status === 'COMPLETED') {
+          setCurrentJobId(lastJob.id);
+        }
+      })
+      .catch(() => {/* non-fatal */});
+  }, [documentId]);
+
   const loadDetections = useCallback(async () => {
     if (!currentJobId) return;
-    const r = await fetch(`/api/detections?job_id=${currentJobId}&limit=200`);
+    const r = await fetch(`/api/detections?job_id=${currentJobId}&limit=500`);
     const d = await r.json();
     setDetections(Array.isArray(d.data) ? d.data : []);
   }, [currentJobId]);
@@ -1164,6 +1179,8 @@ function DetectionWorkspace() {
   // Periodic refresh of detections while job running
   useEffect(() => {
     if (!currentJobId) return;
+    // Immediate load when job becomes known
+    loadDetections();
     const t = setInterval(loadDetections, 3000);
     return () => clearInterval(t);
   }, [currentJobId, loadDetections]);
