@@ -1138,27 +1138,23 @@ function DetectionWorkspace() {
   // Auto-load last completed job (with detections) when document is selected
   useEffect(() => {
     if (!documentId) { setCurrentJobId(null); setDetections([]); return; }
-    fetch(`/api/detection/jobs?document_id=${documentId}&limit=20`)
+    // Load most recent completed job for status display
+    fetch(`/api/detection/jobs?document_id=${documentId}&limit=1&status=COMPLETED`)
       .then(r => r.json())
       .then(d => {
         const jobs = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : []);
-        // Prefer most recent job with detections > 0; fall back to any COMPLETED job
-        const withDetections = jobs.find((j: { status: string; stats?: { total: number } }) =>
-          j.status === 'COMPLETED' && (j.stats?.total ?? 0) > 0
-        );
-        const anyCompleted = jobs.find((j: { status: string }) => j.status === 'COMPLETED');
-        const best = withDetections ?? anyCompleted;
-        if (best) setCurrentJobId(best.id);
+        if (jobs[0]) setCurrentJobId(jobs[0].id);
       })
-      .catch(() => {/* non-fatal */});
+      .catch(() => {});
   }, [documentId]);
 
   const loadDetections = useCallback(async () => {
-    if (!currentJobId) return;
-    const r = await fetch(`/api/detections?job_id=${currentJobId}&limit=500`);
+    if (!documentId) return;
+    // Query by document_id — works regardless of which job produced the detections
+    const r = await fetch(`/api/detections?document_id=${documentId}&limit=500`);
     const d = await r.json();
     setDetections(Array.isArray(d.data) ? d.data : []);
-  }, [currentJobId]);
+  }, [documentId]);
 
   const handleRunDetection = async () => {
     if (!documentId) return;
@@ -1179,14 +1175,13 @@ function DetectionWorkspace() {
     await loadDetections();
   }, [loadDetections]);
 
-  // Periodic refresh of detections while job running
+  // Load detections when document selected; poll while job is running
   useEffect(() => {
-    if (!currentJobId) return;
-    // Immediate load when job becomes known
+    if (!documentId) return;
     loadDetections();
-    const t = setInterval(loadDetections, 3000);
+    const t = setInterval(loadDetections, 5000);
     return () => clearInterval(t);
-  }, [currentJobId, loadDetections]);
+  }, [documentId, loadDetections]);
 
   const handleConfirm = async (id: string) => {
     await fetch(`/api/detections/${id}/confirm`, { method: 'POST' });
