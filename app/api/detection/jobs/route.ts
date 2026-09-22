@@ -93,6 +93,18 @@ export async function POST(request: NextRequest) {
   const { document_id, legend_id, project_id } = await request.json();
   if (!document_id) return NextResponse.json({ error: "document_id required" }, { status: 400 });
   const id = uuidv4();
+
+  // Cleanup: delete DETECTED/PENDING detections from previous jobs for this document.
+  // Confirmed (APPROVED) and Rejected detections are preserved — user already reviewed those.
+  // This prevents 473-detection inflation from 20+ repeated runs on the same document.
+  await db.query(
+    `DELETE FROM detections
+     WHERE document_id = $1
+       AND review_status = 'PENDING'
+       AND detection_status = 'DETECTED'`,
+    [document_id]
+  );
+
   await db.query("INSERT INTO detection_jobs (id, document_id, legend_id, project_id, status, progress_pct) VALUES ($1,$2,$3,$4,'PENDING',0)", [id, document_id, legend_id ?? null, project_id ?? null]);
   // Use singleton queue — avoids creating a new Redis connection per request
   const { enqueueDetectionJob } = await import('@/lib/queue');
