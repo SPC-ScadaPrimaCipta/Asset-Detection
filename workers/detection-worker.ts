@@ -226,7 +226,7 @@ export const worker = new Worker(
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
-          return 0;
+          return -1;  // -1 = AI error (distinct from 0 = AI returned empty detections)
         }
 
         const validated = associateTagsToSymbols(detections, tagPatterns);
@@ -435,6 +435,7 @@ export const worker = new Worker(
       // Process pages in batches of PAGE_BATCH_SIZE.
       // Cancelled check runs between batches (not mid-batch).
       let totalPagesProcessed = 0;
+      let totalAiErrors = 0;  // track pages that failed due to AI error (not 0-detection pages)
       for (let batchStart = 1; batchStart <= pageCount; batchStart += PAGE_BATCH_SIZE) {
         // Check for cancellation between batches
         const cur = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
@@ -447,13 +448,20 @@ export const worker = new Worker(
         const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
 
         log(`processing page batch [${batchStart}-${batchEnd}]`);
-        await Promise.all(batchPages.map(p => processOnePage(p)));
+        const batchResults = await Promise.all(batchPages.map(p => processOnePage(p)));
+        // processOnePage returns -1 on AI error, 0 on empty detection, N on success
+        totalAiErrors += batchResults.filter(r => r < 0).length;
         totalPagesProcessed += batchPages.length;
 
         await db.query("UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2", [
           Math.round(5 + (totalPagesProcessed / pageCount) * 90),
           jobId,
         ]);
+      }
+
+      // If every page failed with AI error → mark job FAILED so user knows to retry
+      if (totalAiErrors === pageCount) {
+        throw new Error(`All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`);
       }
 
       // F7: Post-job entity resolution
