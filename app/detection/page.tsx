@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
@@ -26,6 +26,8 @@ interface Detection {
   service: string | null; location: string | null;
   unit: string | null; area: string | null;
   legend_id: string | null; legend_symbol_id: string | null;
+  detection_source: string | null;
+  validation_status: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -102,6 +104,15 @@ const legendItemStyle: React.CSSProperties = {
   color: 'var(--foreground-muted)',
 };
 
+// M3: Normalize asset type casing — Title Case, trim whitespace, collapse internal spaces
+function normalizeType(t: string): string {
+  return t
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function confBadge(c: number | null) {
   if (c === null) return <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>—</span>;
   const pct = Math.round(c * 100);
@@ -110,7 +121,20 @@ function confBadge(c: number | null) {
     : c >= 0.70
     ? { background: 'var(--warning-soft)', color: 'var(--warning)' }
     : { background: 'var(--danger-soft)', color: 'var(--danger)' };
-  return <span style={{ ...badgeBase, ...style }}>{pct}%</span>;
+  // M2: warn low confidence
+  const warn = c < 0.70 ? ' ⚠' : '';
+  return <span style={{ ...badgeBase, ...style }}>{pct}%{warn}</span>;
+}
+
+// M5: Source indicator badge — LEGEND-confirmed vs VISION-only
+function sourceBadge(source: string | null) {
+  if (!source) return null;
+  const isLegend = source === 'LEGEND' || source === 'CACHE' || source === 'COMPANY_KB' || source === 'ISA' || source === 'ISO';
+  const style: React.CSSProperties = isLegend
+    ? { background: 'rgba(0,120,80,0.10)', color: 'var(--success)', border: '1px solid rgba(0,120,80,0.20)' }
+    : { background: 'rgba(180,120,0,0.10)', color: 'var(--warning)', border: '1px solid rgba(180,120,0,0.20)' };
+  const label = isLegend ? '✓ Legend' : '~ Vision';
+  return <span style={{ ...badgeBase, fontSize: '10px', ...style }}>{label}</span>;
 }
 
 function statusBadge(ds: string, rs: string) {
@@ -933,25 +957,46 @@ function DetectionsTable({
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<'tag' | 'type' | 'page' | 'conf' | 'status'>('tag');
   const [sortAsc, setSortAsc] = useState(true);
+  // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
+  const [hideDupes, setHideDupes] = useState(true);
   const PAGE_SIZE = 15;
 
-  const filtered = detections.filter(d => {
-    const tag = d.asset_tag ?? '';
-    const type = d.asset_type ?? '';
-    if (q && !tag.toLowerCase().includes(q.toLowerCase()) && !type.toLowerCase().includes(q.toLowerCase())) return false;
-    if (status) {
-      const matchStatus = status === 'CONFIRMED'
-        ? d.review_status === 'APPROVED'
-        : status === 'REJECTED'
-        ? d.review_status === 'REJECTED'
-        : d.detection_status === status;
-      if (!matchStatus) return false;
+  // M1: Build dedup map — for each normalized key keep highest-confidence detection
+  const dedupMap = useMemo(() => {
+    const map = new Map<string, Detection>();
+    const countMap = new Map<string, number>();
+    for (const d of detections) {
+      const key = `${(d.asset_tag ?? '').toUpperCase().trim()}|${normalizeType(d.asset_type)}`;
+      countMap.set(key, (countMap.get(key) ?? 0) + 1);
+      const existing = map.get(key);
+      if (!existing || (d.confidence ?? 0) > (existing.confidence ?? 0)) {
+        map.set(key, d);
+      }
     }
-    if (conf === 'high' && (d.confidence ?? 0) < 0.95) return false;
-    if (conf === 'medium' && ((d.confidence ?? 0) < 0.80 || (d.confidence ?? 0) >= 0.95)) return false;
-    if (conf === 'low' && (d.confidence ?? 0) >= 0.80) return false;
-    return true;
-  });
+    return { map, countMap };
+  }, [detections]);
+
+  const filtered = (() => {
+    // M1: Apply dedup first if enabled
+    const base = hideDupes ? Array.from(dedupMap.map.values()) : detections;
+    return base.filter(d => {
+      const tag = d.asset_tag ?? '';
+      const type = normalizeType(d.asset_type);
+      if (q && !tag.toLowerCase().includes(q.toLowerCase()) && !type.toLowerCase().includes(q.toLowerCase())) return false;
+      if (status) {
+        const matchStatus = status === 'CONFIRMED'
+          ? d.review_status === 'APPROVED'
+          : status === 'REJECTED'
+          ? d.review_status === 'REJECTED'
+          : d.detection_status === status;
+        if (!matchStatus) return false;
+      }
+      if (conf === 'high' && (d.confidence ?? 0) < 0.95) return false;
+      if (conf === 'medium' && ((d.confidence ?? 0) < 0.80 || (d.confidence ?? 0) >= 0.95)) return false;
+      if (conf === 'low' && (d.confidence ?? 0) >= 0.80) return false;
+      return true;
+    });
+  })();
 
   const sorted = [...filtered].sort((a, b) => {
     let cmp = 0;
@@ -1022,7 +1067,15 @@ function DetectionsTable({
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--foreground-subtle)', alignSelf: 'center' }}>{sorted.length} result{sorted.length !== 1 ? 's' : ''}</span>
+        {/* M1: Dedup toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--foreground-muted)', cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={hideDupes} onChange={e => { setHideDupes(e.target.checked); setPage(1); }} style={{ cursor: 'pointer' }} />
+          Hide duplicates
+        </label>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--foreground-subtle)', alignSelf: 'center' }}>
+          {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+          {hideDupes && detections.length !== filtered.length ? ` (${detections.length} total)` : ''}
+        </span>
       </div>
 
       {/* Table */}
@@ -1056,12 +1109,32 @@ function DetectionsTable({
                   onMouseLeave={e => { if (d.id !== selectedId) e.currentTarget.style.background = 'transparent'; }}
                 >
                   <td style={{ ...cellBase, color: 'var(--foreground-subtle)' }}>{(page - 1) * PAGE_SIZE + i + 1}</td>
-                  <td style={{ ...cellBase, fontWeight: '500', color: 'var(--foreground)', fontFamily: 'var(--font-geist-mono, monospace)' }}>
-                    {d.asset_tag ?? <span style={{ color: 'var(--foreground-subtle)', fontStyle: 'italic' }}>—</span>}
+                  {/* M4: No-tag indicator */}
+                  <td style={{ ...cellBase, fontWeight: '500', fontFamily: 'var(--font-geist-mono, monospace)' }}>
+                    {d.asset_tag
+                      ? <span style={{ color: 'var(--foreground)' }}>{d.asset_tag}</span>
+                      : <span style={{ color: 'var(--foreground-subtle)', fontStyle: 'italic', fontSize: '11px', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: '4px', border: '1px dashed var(--border)' }}>no tag</span>
+                    }
                   </td>
-                  <td style={{ ...cellBase, color: 'var(--foreground)' }}>{d.asset_type}</td>
+                  {/* M3: Normalized type + source badge */}
+                  <td style={{ ...cellBase, color: 'var(--foreground)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span>{normalizeType(d.asset_type)}</span>
+                      {sourceBadge(d.detection_source)}
+                    </div>
+                  </td>
                   <td style={{ ...cellBase, color: 'var(--foreground-muted)' }}>{d.pid_page ?? '—'}</td>
-                  <td style={cellBase}>{confBadge(d.confidence)}</td>
+                  <td style={cellBase}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {confBadge(d.confidence)}
+                      {/* M1: Show duplicate count */}
+                      {(() => {
+                        const key = `${(d.asset_tag ?? '').toUpperCase().trim()}|${normalizeType(d.asset_type)}`;
+                        const cnt = dedupMap.countMap.get(key) ?? 1;
+                        return cnt > 1 ? <span style={{ fontSize: '10px', color: 'var(--warning)', fontWeight: '500' }}>{cnt}× dup</span> : null;
+                      })()}
+                    </div>
+                  </td>
                   <td style={cellBase}>{statusBadge(d.detection_status, d.review_status)}</td>
                 </tr>
               ))
