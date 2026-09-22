@@ -37,6 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       pidNumber: a.pid_number as string | null,
       pidPage: a.pid_page as number | null,
       service: a.service as string | null,
+      mainEquipment: (a.main_equipment as string | null) ?? null,
       location: a.location as string | null,
       unit: a.unit as string | null,
       area: a.area as string | null,

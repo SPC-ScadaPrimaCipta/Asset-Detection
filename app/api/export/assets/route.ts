@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
       pidNumber: r.pid_number as string | null,
       pidPage: r.pid_page as number | null,
       service: r.service as string | null,
+      mainEquipment: (r.main_equipment as string | null) ?? null,
       location: r.location as string | null,
       unit: r.unit as string | null,
       area: r.area as string | null,

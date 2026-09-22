@@ -15,13 +15,22 @@ export const DetectionSchema = z.object({
   description:    z.string().nullable().optional().default(null),
   equipmentClass: z.string().nullable().optional().default(null),
   service:        z.string().nullable().optional().default(null),
+  // G1/G5: mainEquipment added — previously missing, causing Gemini output to be stripped by Zod.
+  // Prompt instructs Gemini to return null unless explicitly visible on drawing.
+  mainEquipment:  z.string().nullable().optional().default(null),
   location:       z.string().nullable().optional().default(null),
   unit:           z.string().nullable().optional().default(null),
   area:           z.string().nullable().optional().default(null),
   confidence:     z.number().min(0).max(1),
   bbox:           BBoxSchema,
   legendSymbol:   z.string().nullable().optional().default(null),
-  evidence:       z.array(z.string()).min(1),
+  evidence:       z.array(z.string()).default([]).transform(
+    // M6: evidence:[] from AI must NOT discard the detection — supply a fallback.
+    // min(1) was previously enforced here, causing Gemini detections with empty evidence
+    // to fail Zod validation and silently drop the entire page detection result.
+    // Now: empty → ['VISION_DETECTION'] sentinel. Rule validator appends real evidence later.
+    arr => arr.length > 0 ? arr : ['VISION_DETECTION']
+  ),
 });
 
 export const PageDetectionSchema = z.object({

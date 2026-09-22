@@ -10,6 +10,9 @@
     "worker": "tsx --env-file=.env.local workers/detection-worker.ts",
     "worker:legacy": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register workers/detection-worker.ts",
     "migrate": "node scripts/migrate.cjs",
+    "migrate:standards": "tsx --env-file=.env.local scripts/migrate-standards.ts",
+    "migrate:knowledge": "tsx --env-file=.env.local scripts/migrate-knowledge.ts",
+    "seed:standards": "tsx --env-file=.env.local scripts/seed-standards.ts",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "cleanup": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register scripts/cleanup-storage.ts"

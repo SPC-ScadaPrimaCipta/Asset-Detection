@@ -17,6 +17,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, { status: 400 });
 
   const { id: legendId } = await params;
+
+  // Block modification of built-in legends
+  const legendRow = await db.query('SELECT is_builtin FROM legends WHERE id=$1', [legendId]);
+  if (legendRow.rows[0]?.is_builtin) {
+    return NextResponse.json(
+      { error: 'Built-in standard legends cannot be modified. Create a custom legend instead.' },
+      { status: 403 }
+    );
+  }
+
   const id = uuidv4();
   const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
 

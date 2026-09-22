@@ -10,6 +10,7 @@ const makeDetection = (overrides: Partial<Detection> = {}): Detection => ({
   description: null,
   equipmentClass: null,
   service: null,
+  mainEquipment: null,
   location: null,
   unit: null,
   area: null,

@@ -8,6 +8,8 @@ export interface ExportAsset {
   pidNumber: string | null;
   pidPage: number | null;
   service: string | null;
+  // Fix C: mainEquipment added — was in DB (detections + assets) but missing from Excel output
+  mainEquipment: string | null;
   location: string | null;
   unit: string | null;
   area: string | null;
@@ -49,6 +51,7 @@ export async function buildAssetRegisterWorkbook(
     { header: "P\u0026ID Number", key: "pidNumber", width: 18 },
     { header: "P\u0026ID Page", key: "pidPage", width: 12 },
     { header: "Service", key: "service", width: 14 },
+    { header: "Main Equipment", key: "mainEquipment", width: 20 },
     { header: "Location", key: "location", width: 14 },
     { header: "Unit", key: "unit", width: 10 },
     { header: "Area", key: "area", width: 10 },
@@ -63,7 +66,7 @@ export async function buildAssetRegisterWorkbook(
   headerRow.alignment = { vertical: "middle", horizontal: "center" };
   headerRow.height = 22;
   ws.views = [{ state: "frozen", ySplit: 1 }];
-  ws.autoFilter = { from: "A1", to: "O1" };
+  ws.autoFilter = { from: "A1", to: "P1" };
 
   filtered.forEach((a, i) => {
     ws.addRow({
@@ -75,6 +78,7 @@ export async function buildAssetRegisterWorkbook(
       pidNumber: a.pidNumber ?? "",
       pidPage: a.pidPage ?? "",
       service: a.service ?? "",
+      mainEquipment: a.mainEquipment ?? "",
       location: a.location ?? "",
       unit: a.unit ?? "",
       area: a.area ?? "",

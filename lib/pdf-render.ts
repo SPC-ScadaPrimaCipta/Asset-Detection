@@ -22,7 +22,13 @@ export async function getPdfPageCountFromBuffer(buffer: Buffer): Promise<number>
 }
 
 /**
- * Render a single PDF page to PNG using mupdf (via ESM child process).
+ * Render a single PDF page to PNG using mupdf in-process.
+ *
+ * Previously used child_process.execFile per page (spawn Node.js subprocess + stdin/stdout
+ * base64 serialization = ~300-500ms overhead per page). Now calls mupdf directly in the
+ * worker process — eliminates subprocess spawn cost entirely.
+ *
+ * Falls back to child_process if direct mupdf import fails (e.g. platform mismatch).
  *
  * @param buffer     - Full PDF buffer
  * @param pageNumber - 1-based page number
@@ -34,29 +40,56 @@ export async function renderPageToPng(
   pageNumber: number,
   scale = 4.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
-  const payload = JSON.stringify({
-    pdf: buffer.toString("base64"),
-    page: pageNumber,
-    scale,
-  });
+  try {
+    // Direct in-process mupdf — no subprocess spawn overhead
+    const mupdf = await import("mupdf" as string);
+    const { Document, Matrix, ColorSpace } = mupdf;
 
-  const stdout = await new Promise<string>((resolve, reject) => {
-    const child = execFile("node", [RENDER_SCRIPT], { maxBuffer: 100 * 1024 * 1024 });
-    let out = "";
-    let err = "";
-    child.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
-    child.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
-    child.on("close", (code) => {
-      if (code !== 0 && !out) reject(new Error(`render-page exited ${code}: ${err}`));
-      else resolve(out);
+    const doc = Document.openDocument(buffer, "application/pdf");
+    const pageCount = doc.countPages();
+
+    if (pageNumber < 1 || pageNumber > pageCount) {
+      throw new Error(`Page ${pageNumber} out of range (${pageCount} pages)`);
+    }
+
+    const page = doc.loadPage(pageNumber - 1);
+    const matrix = Matrix.scale(scale, scale);
+    const pixmap = page.toPixmap(matrix, ColorSpace.DeviceRGB, false);
+    const png = Buffer.from(pixmap.asPNG());
+
+    return { png, width: pixmap.w, height: pixmap.h };
+  } catch (inProcessErr) {
+    // Fallback: child_process (preserves backward compat if direct import fails)
+    const errMsg = inProcessErr instanceof Error ? inProcessErr.message : String(inProcessErr);
+    // Re-throw range errors immediately — no point falling back
+    if (errMsg.includes('out of range')) throw inProcessErr;
+
+    console.warn(`[pdf-render] direct mupdf failed, falling back to subprocess: ${errMsg.slice(0, 200)}`);
+
+    const payload = JSON.stringify({
+      pdf: buffer.toString("base64"),
+      page: pageNumber,
+      scale,
     });
-    child.stdin?.write(payload);
-    child.stdin?.end();
-  });
 
-  const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
-  if (result.error) throw new Error(result.error);
-  return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = execFile("node", [RENDER_SCRIPT], { maxBuffer: 100 * 1024 * 1024 });
+      let out = "";
+      let err = "";
+      child.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+      child.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
+      child.on("close", (code) => {
+        if (code !== 0 && !out) reject(new Error(`render-page exited ${code}: ${err}`));
+        else resolve(out);
+      });
+      child.stdin?.write(payload);
+      child.stdin?.end();
+    });
+
+    const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
+    if (result.error) throw new Error(result.error);
+    return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
+  }
 }
 
 /**
@@ -73,7 +106,7 @@ export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
       try {
         const page = doc.loadPage(i);
         const structured = page.toStructuredText("preserve-whitespace");
-        pages.push(structured.asText().slice(0, 4000));
+        pages.push(structured.asText().slice(0, 12000));
       } catch {
         pages.push("");
       }

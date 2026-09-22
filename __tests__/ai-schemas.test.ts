@@ -11,9 +11,15 @@ describe('BBoxSchema', () => {
     expect(BBoxSchema.safeParse({ x: 0, y: -1, width: 50, height: 60 }).success).toBe(false);
   });
 
-  it('rejects zero width/height', () => {
-    expect(BBoxSchema.safeParse({ x: 0, y: 0, width: 0, height: 60 }).success).toBe(false);
-    expect(BBoxSchema.safeParse({ x: 0, y: 0, width: 50, height: 0 }).success).toBe(false);
+  it('M6: BBox width/height=0 coerced to min 1 (not rejected)', () => {
+    // BBoxSchema uses transform(v => Math.max(1, Math.round(v))) — zero becomes 1, not error.
+    // calibrateConfidence catches degenerate bbox (width<=1) separately and caps confidence.
+    const r1 = BBoxSchema.safeParse({ x: 0, y: 0, width: 0, height: 60 });
+    expect(r1.success).toBe(true);
+    if (r1.success) expect(r1.data.width).toBe(1);
+    const r2 = BBoxSchema.safeParse({ x: 0, y: 0, width: 50, height: 0 });
+    expect(r2.success).toBe(true);
+    if (r2.success) expect(r2.data.height).toBe(1);
   });
 });
 
@@ -47,9 +53,14 @@ describe('DetectionSchema', () => {
     expect(r.success).toBe(false);
   });
 
-  it('rejects empty evidence', () => {
+  it('M6: empty evidence accepted and transformed to VISION_DETECTION sentinel', () => {
+    // M6 fix: evidence:[] no longer kills the detection (was min(1)).
+    // Empty array → transformed to ['VISION_DETECTION'] so detection enters pipeline.
     const r = DetectionSchema.safeParse({ ...validDetection, evidence: [] });
-    expect(r.success).toBe(false);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.evidence).toEqual(['VISION_DETECTION']);
+    }
   });
 
   it('rejects empty assetType', () => {
