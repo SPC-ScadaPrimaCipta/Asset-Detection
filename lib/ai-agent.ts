@@ -106,13 +106,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
 
 // Only models confirmed to exist in Gemini API
 const KNOWN_GOOD_FALLBACK_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
+  'gemini-2.0-flash',       // most stable, always try first
   'gemini-2.0-flash-lite',
-  'gemini-1.5-pro',
   'gemini-1.5-flash',
+  'gemini-1.5-pro',
   'gemini-1.5-flash-8b',
+  'gemini-2.5-flash',       // newer — may not be available on all keys
+  'gemini-2.5-pro',
 ];
 
 export async function runDetectionAgent(input: DetectionJobInput): Promise<ResolvedPageDetection> {
@@ -409,7 +409,7 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock
       return parsed.data;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404|503|unavailable/i.test(msg);
+      const shouldFallback = /429|quota|rate.limit|not.found|no.longer.available|404|503|unavailable|invalid.*model|model.*not.*found|unknown.*model|does.*not.*exist|INVALID_ARGUMENT.*model/i.test(msg);
       console.warn(`[gemini] model=${modelName} failed: ${msg.slice(0, 200)}`);
       if (shouldFallback) {
         lastError = e;
