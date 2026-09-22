@@ -18,14 +18,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id: legendId } = await params;
 
-  // Block modification of built-in legends
-  const legendRow = await db.query('SELECT is_builtin FROM legends WHERE id=$1', [legendId]);
-  if (legendRow.rows[0]?.is_builtin) {
-    return NextResponse.json(
-      { error: 'Built-in standard legends cannot be modified. Create a custom legend instead.' },
-      { status: 403 }
-    );
-  }
+  // Block modification of built-in legends (tolerant: skip if column not migrated yet)
+  try {
+    const legendRow = await db.query('SELECT is_builtin FROM legends WHERE id=$1', [legendId]);
+    if (legendRow.rows[0]?.is_builtin) {
+      return NextResponse.json(
+        { error: 'Built-in standard legends cannot be modified. Create a custom legend instead.' },
+        { status: 403 }
+      );
+    }
+  } catch { /* is_builtin column missing — allow create */ }
 
   const id = uuidv4();
   const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
