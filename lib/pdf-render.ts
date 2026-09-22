@@ -57,7 +57,7 @@ export async function renderPageToPng(
     const pixmap = page.toPixmap(matrix, ColorSpace.DeviceRGB, false);
     const png = Buffer.from(pixmap.asPNG());
 
-    return { png, width: pixmap.w, height: pixmap.h };
+    return { png, width: pixmap.getWidth(), height: pixmap.getHeight() };
   } catch (inProcessErr) {
     // Fallback: child_process (preserves backward compat if direct import fails)
     const errMsg = inProcessErr instanceof Error ? inProcessErr.message : String(inProcessErr);

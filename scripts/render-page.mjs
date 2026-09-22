@@ -31,8 +31,8 @@ process.stdin.on('end', async () => {
 
     process.stdout.write(JSON.stringify({
       png: Buffer.from(png).toString('base64'),
-      width: pixmap.w,
-      height: pixmap.h,
+      width: pixmap.getWidth(),
+      height: pixmap.getHeight(),
     }));
   } catch (e) {
     process.stdout.write(JSON.stringify({ error: String(e) }));
