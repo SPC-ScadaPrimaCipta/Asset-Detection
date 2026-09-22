@@ -105,13 +105,16 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
 }
 
 // Only models confirmed to exist in Gemini API
+// gemini-3.6-flash is the current recommended model (replaces deprecated 2.x series)
 const KNOWN_GOOD_FALLBACK_MODELS = [
-  'gemini-2.0-flash',       // most stable, always try first
+  'gemini-3.6-flash',       // current recommended — replaces gemini-2.0-flash
+  'gemini-2.5-flash-preview-04-17', // preview alias still active on some keys
+  'gemini-2.0-flash',       // deprecated — may return 404, kept for older keys
   'gemini-2.0-flash-lite',
   'gemini-1.5-flash',
   'gemini-1.5-pro',
   'gemini-1.5-flash-8b',
-  'gemini-2.5-flash',       // newer — may not be available on all keys
+  'gemini-2.5-flash',
   'gemini-2.5-pro',
 ];
 
