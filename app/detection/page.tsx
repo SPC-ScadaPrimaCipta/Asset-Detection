@@ -1135,17 +1135,20 @@ function DetectionWorkspace() {
     });
   }, [projectId]);
 
-  // Auto-load last completed job when document is selected
+  // Auto-load last completed job (with detections) when document is selected
   useEffect(() => {
     if (!documentId) { setCurrentJobId(null); setDetections([]); return; }
-    fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
+    fetch(`/api/detection/jobs?document_id=${documentId}&limit=20`)
       .then(r => r.json())
       .then(d => {
         const jobs = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : []);
-        const lastJob = jobs[0];
-        if (lastJob && lastJob.status === 'COMPLETED') {
-          setCurrentJobId(lastJob.id);
-        }
+        // Prefer most recent job with detections > 0; fall back to any COMPLETED job
+        const withDetections = jobs.find((j: { status: string; stats?: { total: number } }) =>
+          j.status === 'COMPLETED' && (j.stats?.total ?? 0) > 0
+        );
+        const anyCompleted = jobs.find((j: { status: string }) => j.status === 'COMPLETED');
+        const best = withDetections ?? anyCompleted;
+        if (best) setCurrentJobId(best.id);
       })
       .catch(() => {/* non-fatal */});
   }, [documentId]);

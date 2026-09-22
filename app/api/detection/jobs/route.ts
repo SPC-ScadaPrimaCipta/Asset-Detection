@@ -43,10 +43,10 @@ export async function GET(request: NextRequest) {
      LEFT JOIN LATERAL (
        SELECT
          COUNT(*)                                          AS total,
-         COUNT(*) FILTER (WHERE d.review_status = 'confirmed') AS confirmed,
-         COUNT(*) FILTER (WHERE d.review_status = 'pending')   AS pending,
-         COUNT(*) FILTER (WHERE d.review_status = 'rejected')  AS rejected,
-         COUNT(*) FILTER (WHERE d.status        = 'detected')  AS detected
+         COUNT(*) FILTER (WHERE d.review_status = 'APPROVED')  AS confirmed,
+         COUNT(*) FILTER (WHERE d.review_status = 'PENDING')   AS pending,
+         COUNT(*) FILTER (WHERE d.review_status = 'REJECTED')  AS rejected,
+         COUNT(*) FILTER (WHERE d.detection_status = 'DETECTED')  AS detected
        FROM detections d
        WHERE d.job_id = j.id
      ) s ON true
