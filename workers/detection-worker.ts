@@ -201,6 +201,24 @@ export const worker = new Worker(
         }
 
         try {
+          // Cap legend sent to AI per page: max 80 symbols.
+          // Prioritize: symbols with tag_pattern first (most useful for detection),
+          // then by symbol name length (shorter = more likely real equipment vs piping detail).
+          // 197 symbols causes context overflow on thinking models → empty detections.
+          const MAX_LEGEND_PER_PAGE = parseInt(process.env.MAX_LEGEND_PER_PAGE ?? '80', 10);
+          const cappedLegend = legendSymbols.length > MAX_LEGEND_PER_PAGE
+            ? [
+                // First: symbols with tag patterns (highest detection value)
+                ...legendSymbols.filter((s: Record<string, unknown>) => s.tag_pattern),
+                // Then: remaining symbols sorted by name length (shorter = more likely primary equipment)
+                ...legendSymbols
+                  .filter((s: Record<string, unknown>) => !s.tag_pattern)
+                  .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+                    String(a.symbol_name ?? a.asset_type).length - String(b.symbol_name ?? b.asset_type).length
+                  ),
+              ].slice(0, MAX_LEGEND_PER_PAGE)
+            : legendSymbols;
+
           const result = await runDetectionAgent({
             page,
             pageImageBase64,
@@ -209,7 +227,7 @@ export const worker = new Worker(
               ? buf.toString("base64")
               : undefined,
             legendId: effectiveLegendId ?? "",
-            legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
+            legendSymbols: cappedLegend as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
             ocrText: ocrPages[page - 1] ?? "",
             pngWidth: pngDimensions?.width,
             pngHeight: pngDimensions?.height,
@@ -436,8 +454,14 @@ export const worker = new Worker(
 
       // Process pages in batches of PAGE_BATCH_SIZE.
       // Cancelled check runs between batches (not mid-batch).
+      // Pages that fail AI detection are retried up to PAGE_RETRY_MAX times with backoff.
+      const PAGE_RETRY_MAX = parseInt(process.env.PAGE_RETRY_MAX ?? '2', 10);
+      const PAGE_RETRY_DELAY_MS = parseInt(process.env.PAGE_RETRY_DELAY_MS ?? '3000', 10);
+
       let totalPagesProcessed = 0;
-      let totalAiErrors = 0;  // track pages that failed due to AI error (not 0-detection pages)
+      let totalAiErrors = 0;
+      const failedPages: number[] = [];
+
       for (let batchStart = 1; batchStart <= pageCount; batchStart += PAGE_BATCH_SIZE) {
         // Check for cancellation between batches
         const cur = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
@@ -450,7 +474,26 @@ export const worker = new Worker(
         const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
 
         log(`processing page batch [${batchStart}-${batchEnd}]`);
-        const batchResults = await Promise.all(batchPages.map(p => processOnePage(p)));
+
+        // Process each page with retry on AI error
+        const batchResults = await Promise.all(batchPages.map(async (p) => {
+          let result = await processOnePage(p);
+          if (result < 0) {
+            // AI error — retry with backoff
+            for (let attempt = 1; attempt <= PAGE_RETRY_MAX; attempt++) {
+              log(`page ${p} retry attempt ${attempt}/${PAGE_RETRY_MAX}`);
+              await new Promise(r => setTimeout(r, PAGE_RETRY_DELAY_MS * attempt));
+              result = await processOnePage(p);
+              if (result >= 0) {
+                log(`page ${p} retry succeeded on attempt ${attempt}`);
+                break;
+              }
+            }
+            if (result < 0) failedPages.push(p);
+          }
+          return result;
+        }));
+
         // processOnePage returns -1 on AI error, 0 on empty detection, N on success
         totalAiErrors += batchResults.filter(r => r < 0).length;
         totalPagesProcessed += batchPages.length;
@@ -464,6 +507,15 @@ export const worker = new Worker(
       // If every page failed with AI error → mark job FAILED so user knows to retry
       if (totalAiErrors === pageCount) {
         throw new Error(`All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`);
+      }
+
+      // Partial failure — log which pages failed but continue to COMPLETED
+      if (failedPages.length > 0) {
+        log(`WARNING: ${failedPages.length} page(s) failed after retries: [${failedPages.join(', ')}]`);
+        await db.query(
+          "UPDATE detection_jobs SET error_detail=$1 WHERE id=$2",
+          [`Partial completion: page(s) [${failedPages.join(', ')}] failed AI detection after ${PAGE_RETRY_MAX} retries — other pages completed. Re-run detection to retry failed pages.`, jobId]
+        );
       }
 
       // F7: Post-job entity resolution

@@ -789,11 +789,14 @@ function PidViewer({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Only the selected detection's bbox is shown — everything else stays hidden
+  // Only the selected detection's bbox is shown — everything else stays hidden.
+  // Also require pid_page matches current viewer page (or pid_page is null) so
+  // bbox only renders when the right page image is displayed.
   const visible = selectedId
     ? detections.filter(
         (d) =>
           d.id === selectedId &&
+          (d.pid_page === page || d.pid_page === null) &&
           d.detection_status !== "REJECTED" &&
           d.review_status !== "REJECTED" &&
           d.bbox_x !== null &&
@@ -957,9 +960,11 @@ function PidViewer({
           }}
         >
           <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-            {visible.length > 0
-              ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
-              : "Bbox hidden — select an asset to show"}
+            {imgLoading && selectedId
+              ? "⏳ Loading page image…"
+              : visible.length > 0
+                ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
+                : "Bbox hidden — select an asset to show"}
           </span>
           {/* Fullscreen toggle */}
           <button
@@ -2569,7 +2574,7 @@ function DetectionWorkspace() {
             <div style={{ flex: 1, minHeight: 640 }}>
               <PidViewer
                 documentId={documentId}
-                detections={pageDetections}
+                detections={detections}
                 selectedId={selectedId}
                 onSelect={(id) => {
                   const d = detections.find((x) => x.id === id);

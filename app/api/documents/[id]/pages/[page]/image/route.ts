@@ -6,9 +6,9 @@ import { renderPageToPng } from '@/lib/pdf-render';
 // Extend route timeout — PDF rendering via child_process can take 3-10s for large P&IDs
 export const maxDuration = 60;
 
-// Render scale: 2.0 ≈ 144dpi — good balance between quality and response size for viewer use.
-// Worker uses 3.0 for AI analysis; viewer only needs 2.0 for display.
-const VIEWER_SCALE = 2.0;
+// Render scale: 3.0 ≈ 216dpi — sharper display for P&ID detail while keeping response size manageable.
+// Worker uses 4.0 for AI analysis; viewer uses 3.0 for display.
+const VIEWER_SCALE = 3.0;
 
 export async function GET(
   _req: NextRequest,

@@ -362,12 +362,22 @@ IMPORTANT: If OCR tag differs from what you visually read, keep the visually-con
 
   if (input.pageImageBase64) {
     mediaPart = { inlineData: { mimeType: 'image/png', data: input.pageImageBase64 } };
-    const dimInfo = (input.pngWidth && input.pngHeight)
-      ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
+    const w = input.pngWidth;
+    const h = input.pngHeight;
+    const dimInfo = (w && h)
+      ? `Image dimensions: ${w} x ${h} pixels.`
       : 'Image rendered at high resolution.';
+    // Build a concrete normalization example using actual image dimensions
+    const bboxExample = (w && h)
+      ? `BBOX NORMALIZATION (REQUIRED):
+  Use 0-1000 normalized space. Formula: x_norm = round((x_pixel / ${w}) × 1000), y_norm = round((y_pixel / ${h}) × 1000)
+  Example: symbol at pixel (${Math.round(w*0.25)}, ${Math.round(h*0.2)}), size ${Math.round(w*0.05)}×${Math.round(h*0.06)}px
+    → bbox: {"x": 250, "y": 200, "width": ${Math.round(w*0.05/w*1000)}, "height": ${Math.round(h*0.06/h*1000)}}
+  WRONG: returning raw pixel values like {"x": ${Math.round(w*0.25)}, ...} — these will be rejected.`
+      : `BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) × 1000.`;
     contextText = `This is page ${input.page} of a P&ID document, rendered as a PNG image.
 ${dimInfo}${drawingTypeBlock}
-BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) * 1000.
+${bboxExample}
 Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock}`;
   } else if (input.fileUri) {
     mediaPart = { fileData: { mimeType: 'application/pdf', fileUri: input.fileUri } };

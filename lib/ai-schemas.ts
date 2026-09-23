@@ -1,12 +1,47 @@
 import { z } from "zod";
 
 // BBox: 0-1000 normalized coordinate space.
-// Accept float from AI (some models return 123.4), round at DB persist time.
+// Gemini sometimes returns raw pixel coordinates instead of normalized 0-1000 values.
+// Auto-detect: if any coordinate or dimension value > 1000, treat entire bbox as pixel
+// coords and normalize proportionally. This prevents valid detections being silently
+// dropped when Gemini ignores the normalization instruction.
+function normalizeBBoxValues(raw: { x: number; y: number; width: number; height: number }) {
+  const { x, y, width, height } = raw;
+  const maxExtent = Math.max(x + width, y + height, 1);
+  if (maxExtent <= 1000) {
+    // Already normalized — clamp to valid range
+    return {
+      x:      Math.max(0, x),
+      y:      Math.max(0, y),
+      width:  Math.max(1, width),
+      height: Math.max(1, height),
+    };
+  }
+  // Pixel coordinates detected — normalize to 0-1000 using max extent as reference.
+  // Proportional accuracy preserved even if we don't know exact image dimensions.
+  const scale = 1000 / maxExtent;
+  return {
+    x:      Math.max(0, Math.round(x      * scale)),
+    y:      Math.max(0, Math.round(y      * scale)),
+    width:  Math.max(1, Math.round(width  * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
 export const BBoxSchema = z.object({
-  x:      z.number().min(0).max(1000).transform(v => Math.round(v)),
-  y:      z.number().min(0).max(1000).transform(v => Math.round(v)),
-  width:  z.number().min(0).max(1000).transform(v => Math.max(1, Math.round(v))),
-  height: z.number().min(0).max(1000).transform(v => Math.max(1, Math.round(v))),
+  x:      z.number(),
+  y:      z.number(),
+  width:  z.number(),
+  height: z.number(),
+}).transform(raw => {
+  const n = normalizeBBoxValues(raw);
+  // Final clamp: nothing escapes valid 0-1000 space after normalization
+  return {
+    x:      Math.min(999, n.x),
+    y:      Math.min(999, n.y),
+    width:  Math.min(1000 - n.x, n.width),
+    height: Math.min(1000 - n.y, n.height),
+  };
 });
 
 export const DetectionSchema = z.object({
