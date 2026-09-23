@@ -656,7 +656,7 @@ export default function LegendReviewPage() {
                             }
                           }}>
                           <rect x={rx - 2} y={ry - 2} width={w + 4} height={h + 4} fill="transparent" />
-                          <rect x={rx} y={ry} width={rw} height={rh} fill="#fbbf24" fillOpacity={isSel ? 0.55 : 0.32} stroke={color} strokeWidth={isSel ? 1.8 : 1} strokeDasharray={isSel ? undefined : '5 3'} rx={1} />
+                          <rect x={rx} y={ry} width={rw} height={rh} fill="#fbbf24" fillOpacity={isSel ? 0.2 : 0.15} stroke={color} strokeWidth={isSel ? 2.2 : 1} strokeDasharray={isSel ? undefined : '5 3'} rx={1} />
                           <rect x={rx} y={ry > 14 ? ry - 12 : ry + rh + 1} width={Math.min(90, Math.max(w, 62))} height={11} rx={3} fill={color} opacity={0.95} />
                           <text x={rx + 3} y={(ry > 14 ? ry - 12 : ry + rh + 1) + 8} fill="#fff" fontSize={7} fontFamily="ui-monospace,monospace" fontWeight={isSel ? 700 : 500}>{label}</text>
                           {/* Resize handles — 4 corners + 4 edges, only on selected bbox */}

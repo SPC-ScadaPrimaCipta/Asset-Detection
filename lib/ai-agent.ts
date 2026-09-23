@@ -115,7 +115,16 @@ const KNOWN_GOOD_FALLBACK_MODELS = [
 
 export async function runDetectionAgent(input: DetectionJobInput): Promise<ResolvedPageDetection> {
   const cfg = await getAiConfig();
-  const prompt = buildSymbolDetectorPrompt(input.legendSymbols);
+  // Phase 3: derive knownTags hint dari OCR + reference examples dari legend.
+  // Best-effort, tidak menggagalkan detection jika OCR kosong.
+  const ocrHintTags = (input.ocrText ?? '').toUpperCase().match(/\b[A-Z]{1,6}-(?:[A-Z]{1,6}-\d{1,5}[A-Z]{0,2}|\d{1,5}[A-Z]{0,2})\b/g) ?? [];
+  const knownTags = Array.from(new Set(ocrHintTags)).slice(0, 40);
+  const referenceExamples = (input.legendSymbols ?? []).slice(0, 5).map(s => ({
+    asset_type: s.asset_type,
+    symbol_name: s.symbol_name ?? null,
+    tag_pattern: s.tag_pattern ?? null,
+  }));
+  const prompt = buildSymbolDetectorPrompt(input.legendSymbols, { knownTags, referenceExamples });
 
   // Step 1: Vision detection
   let rawDetections: Detection[];
@@ -143,14 +152,12 @@ export async function runDetectionAgent(input: DetectionJobInput): Promise<Resol
     let symbolEmbedding: number[] | null = null;
     let symbolFeatures: SymbolFeatures | null = null;
 
-    // M15: Skip feature extraction for clearly high-confidence detections.
-    // Rationale: if AI returned >= 0.92 confidence AND legend/cache will likely confirm,
-    // spending a Gemini call per symbol adds latency without improving accuracy.
-    // Feature extraction still runs for uncertain detections (< 0.92) where
-    // embedding similarity search can differentiate between similar symbols.
+    // M15 (Phase 3: threshold 0.92 → 0.96): hanya skip feature extraction
+    // untuk deteksi sangat yakin. Embedding tetap jalan untuk mayoritas
+    // deteksi agar vector search bisa membedakan simbol mirip.
     // SKIP_FEATURE_EXTRACTION env var (default false) disables entirely if needed.
     const skipFeatures = process.env.SKIP_FEATURE_EXTRACTION === 'true'
-      || d.confidence >= 0.92;
+      || d.confidence >= 0.96;
 
     if (!skipFeatures && input.pageImageBase64 && input.pngWidth && input.pngHeight) {
       try {
@@ -346,6 +353,20 @@ async function runWithGemini(input: DetectionJobInput, prompt: string, preferred
   let mediaPart: Part;
   let contextText: string;
 
+  // Phase 2: guard Gemini inline ~20MB limit. PNG 5.0 skala A3 ≈ 15-20MB raw
+  // (≈20-27MB base64). Jika inline terlalu besar dan fileUri tersedia,
+  // pakai fileUri saja agar tidak 413. Caller (worker) sudah upload fallback.
+  let effectiveBase64 = input.pageImageBase64;
+  if (effectiveBase64 && input.fileUri) {
+    try {
+      const rawBytes = Buffer.byteLength(effectiveBase64, 'base64');
+      if (rawBytes > 18 * 1024 * 1024) {
+        console.warn(`[gemini] page=${input.page} inline ${(rawBytes / 1048576).toFixed(1)}MB > 18MB — using fileUri fallback`);
+        effectiveBase64 = undefined;
+      }
+    } catch { /* byteLength gagal → pakai inline apa adanya */ }
+  }
+
   // M3: Build OCR supporting evidence block — sent to Gemini as additional context.
   // OCR is supporting evidence, NOT authoritative. Gemini must compare OCR vs visual.
   // Truncate to 8000 chars (well within Gemini context; OCR per page usually <4000 chars).
@@ -360,24 +381,14 @@ IMPORTANT: If OCR tag differs from what you visually read, keep the visually-con
     ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
     : '';
 
-  if (input.pageImageBase64) {
-    mediaPart = { inlineData: { mimeType: 'image/png', data: input.pageImageBase64 } };
-    const w = input.pngWidth;
-    const h = input.pngHeight;
-    const dimInfo = (w && h)
-      ? `Image dimensions: ${w} x ${h} pixels.`
+  if (effectiveBase64) {
+    mediaPart = { inlineData: { mimeType: 'image/png', data: effectiveBase64 } };
+    const dimInfo = (input.pngWidth && input.pngHeight)
+      ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
       : 'Image rendered at high resolution.';
-    // Build a concrete normalization example using actual image dimensions
-    const bboxExample = (w && h)
-      ? `BBOX NORMALIZATION (REQUIRED):
-  Use 0-1000 normalized space. Formula: x_norm = round((x_pixel / ${w}) × 1000), y_norm = round((y_pixel / ${h}) × 1000)
-  Example: symbol at pixel (${Math.round(w*0.25)}, ${Math.round(h*0.2)}), size ${Math.round(w*0.05)}×${Math.round(h*0.06)}px
-    → bbox: {"x": 250, "y": 200, "width": ${Math.round(w*0.05/w*1000)}, "height": ${Math.round(h*0.06/h*1000)}}
-  WRONG: returning raw pixel values like {"x": ${Math.round(w*0.25)}, ...} — these will be rejected.`
-      : `BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) × 1000.`;
     contextText = `This is page ${input.page} of a P&ID document, rendered as a PNG image.
 ${dimInfo}${drawingTypeBlock}
-${bboxExample}
+BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) * 1000.
 Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock}`;
   } else if (input.fileUri) {
     mediaPart = { fileData: { mimeType: 'application/pdf', fileUri: input.fileUri } };
@@ -408,7 +419,12 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock
       const result = await model.generateContent([{ text: prompt }, { text: contextText }, mediaPart]);
       const raw = result.response.text();
       const json = extractJson(raw) as Record<string, unknown>;
-      const parsed = PageDetectionSchema.safeParse(json.page !== undefined ? json : { ...json, page: input.page });
+      // P2: sanitasi per-item dulu — deteksi rusak di-drop, sisanya tetap divalidasi
+      const sanitized = sanitizePageJson(
+        json.page !== undefined ? json : { ...json, page: input.page },
+        input.page
+      );
+      const parsed = PageDetectionSchema.safeParse(sanitized);
       if (!parsed.success) {
         throw new Error(`Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`);
       }
@@ -470,7 +486,12 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
 
   const text = completion.choices[0].message.content || '{}';
   const json = extractJson(text) as Record<string, unknown>;
-  const parsed = PageDetectionSchema.safeParse(json.page !== undefined ? json : { ...json, page: input.page });
+  // P2: sanitasi per-item dulu — deteksi rusak di-drop, sisanya tetap divalidasi
+  const sanitized = sanitizePageJson(
+    json.page !== undefined ? json : { ...json, page: input.page },
+    input.page
+  );
+  const parsed = PageDetectionSchema.safeParse(sanitized);
   if (!parsed.success) throw new Error(`Schema validation failed: ${JSON.stringify(parsed.error.flatten())}`);
   parsed.data.page = input.page;
   return parsed.data;
@@ -532,6 +553,45 @@ export function calibrateConfidence(detections: ResolvedDetection[], ocrText?: s
     }
     return d;
   });
+}
+
+/**
+ * P2: Sanitasi output Gemini sebelum validasi Zod.
+ * Gemini kadang mengembalikan deteksi dengan field angka hilang (undefined) —
+ * mis. bbox parsial atau confidence tidak ada. Sebelumnya SATU deteksi rusak
+ * menggagalkan SELURUH halaman (page AI error, 0 deteksi tersimpan).
+ * Sekarang: deteksi rusak di-drop per-item (dengan warn), deteksi valid tetap
+ * diproses. Aturan:
+ *   - assetType wajib string non-empty → tanpanya drop
+ *   - bbox wajib 4 angka finite → tanpanya drop (tidak bisa ditampilkan)
+ *   - confidence hilang/invalid → default 0.5 (turun ke NEEDS_REVIEW via kalibrasi)
+ *   - evidence non-array → []
+ */
+export function sanitizePageJson(
+  json: Record<string, unknown>,
+  fallbackPage: number
+): { page: number; detections: Record<string, unknown>[] } {
+  const page = typeof json.page === 'number' && Number.isFinite(json.page) ? json.page : fallbackPage;
+  const rawList = Array.isArray(json.detections) ? json.detections : [];
+  const clean: Record<string, unknown>[] = [];
+  let dropped = 0;
+  for (const item of rawList) {
+    if (typeof item !== 'object' || item === null) { dropped++; continue; }
+    const d = { ...(item as Record<string, unknown>) };
+    if (typeof d.assetType !== 'string' || !d.assetType.trim()) { dropped++; continue; }
+    const b = d.bbox as Record<string, unknown> | null | undefined;
+    const nums = b ? [b.x, b.y, b.width, b.height].map(Number) : [];
+    if (!b || nums.length !== 4 || nums.some((n) => !Number.isFinite(n))) { dropped++; continue; }
+    d.bbox = { x: nums[0], y: nums[1], width: nums[2], height: nums[3] };
+    const c = Number(d.confidence);
+    d.confidence = Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : 0.5;
+    if (!Array.isArray(d.evidence)) d.evidence = [];
+    clean.push(d);
+  }
+  if (dropped > 0) {
+    console.warn(`[sanitize] page=${page} dropped ${dropped} malformed detection(s), kept ${clean.length}`);
+  }
+  return { page, detections: clean };
 }
 
 /**

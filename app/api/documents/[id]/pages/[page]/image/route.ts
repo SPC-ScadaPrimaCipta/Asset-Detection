@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getFile } from '@/lib/storage';
+import { getFile, saveFile, fileExists } from '@/lib/storage';
 import { renderPageToPng } from '@/lib/pdf-render';
 
 // Extend route timeout — PDF rendering via child_process can take 3-10s for large P&IDs
@@ -9,6 +9,16 @@ export const maxDuration = 60;
 // Render scale: 3.0 ≈ 216dpi — sharper display for P&ID detail while keeping response size manageable.
 // Worker uses 4.0 for AI analysis; viewer uses 3.0 for display.
 const VIEWER_SCALE = 3.0;
+
+function pngHeaders(pngBuf: Buffer, cacheHit: boolean) {
+  return {
+    'Content-Type': 'image/png',
+    // Cache 1 hour in browser, 24 hours in CDN/shared cache — PDF pages are immutable
+    'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600',
+    'Content-Length': String(pngBuf.length),
+    'X-Render-Cache': cacheHit ? 'HIT' : 'MISS',
+  };
+}
 
 export async function GET(
   _req: NextRequest,
@@ -37,17 +47,31 @@ export async function GET(
     }
 
     const buf = await getFile(file_path) as unknown as Buffer;
+
+    // Disk cache: halaman PDF immutable → render sekali, sajikan file sesudahnya.
+    // Penting saat worker detection jalan bersamaan (render 5.0 berebut CPU).
+    const cacheName = `viewer-${id}-p${pageNumber}-s${VIEWER_SCALE}.png`;
+    try {
+      if (await fileExists(cacheName)) {
+        const cached = await getFile(cacheName) as unknown as Buffer;
+        return new NextResponse(new Uint8Array(cached), {
+          status: 200,
+          headers: pngHeaders(cached, true),
+        });
+      }
+    } catch {
+      /* cache read gagal → render ulang */
+    }
+
     const result = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
     const pngBuf = result.png;
 
+    // Simpan cache best-effort (jangan gagalkan response)
+    saveFile(cacheName, pngBuf).catch(() => {});
+
     return new NextResponse(new Uint8Array(pngBuf), {
       status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        // Cache 1 hour in browser, 24 hours in CDN/shared cache — PDF pages are immutable
-        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600',
-        'Content-Length': String(pngBuf.length),
-      },
+      headers: pngHeaders(pngBuf, false),
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

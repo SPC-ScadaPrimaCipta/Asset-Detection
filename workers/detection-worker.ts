@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
 import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
-import { associateTagsToSymbols } from "@/lib/spatial";
+import { associateTagsToSymbols, applyNMS } from "@/lib/spatial";
 import { renderPageToPng, extractPdfTextByPage } from "@/lib/pdf-render";
 import { getAiConfig } from "@/lib/ai-config";
 import { env } from "@/lib/env";
@@ -164,9 +164,11 @@ export const worker = new Worker(
       }
 
       // PAGE_BATCH_SIZE: number of pages to process concurrently.
-      // Default 3 — enough to overlap Gemini Vision latency without hammering rate limits.
-      // Configurable via PAGE_BATCH_SIZE env var.
-      const PAGE_BATCH_SIZE = parseInt(process.env.PAGE_BATCH_SIZE ?? '3', 10);
+      // Phase 2: default 2 saat PDF_RENDER_SCALE >= 5.0 (mitigasi OOM 25MP/page).
+      // Configurable via PAGE_BATCH_SIZE env var (explicit env selalu menang).
+      const _scale = parseFloat(process.env.PDF_RENDER_SCALE ?? '5.0');
+      const _defaultBatch = _scale >= 5.0 ? 2 : 3;
+      const PAGE_BATCH_SIZE = parseInt(process.env.PAGE_BATCH_SIZE ?? String(_defaultBatch), 10);
 
       // processOnePage: encapsulates all per-page work (render → detect → OCR → persist).
       // Returns number of detections persisted, or 0 on skip.
@@ -179,12 +181,12 @@ export const worker = new Worker(
         let pageImageBase64: string | undefined;
         let pngDimensions: { width: number; height: number } | undefined;
         try {
-          // M1: PDF_RENDER_SCALE configurable. Default 4.0 (≈288 DPI).
-          // Increase to 5.0+ (≈360 DPI) for P&IDs with very small 6-8pt text.
+          // M1: PDF_RENDER_SCALE configurable. Phase 2 default 5.0 (≈360 DPI).
+          // P&ID tag 6pt jadi jelas bagi Gemini; cost +40% disetujui user.
+          // Jika PNG >18MB, ai-agent otomatis fallback ke fileUri (lihat runWithGemini).
           // WARNING: higher scale = larger PNG = more memory + larger Gemini payload.
-          // Gemini inline image limit ~20MB base64. At 4.0 an A3 P&ID ≈ 8-12MB.
-          // At 6.0 it can exceed 20MB and trigger Gemini rejection.
-          const PDF_RENDER_SCALE = parseFloat(process.env.PDF_RENDER_SCALE ?? '4.0');
+          // Gemini inline image limit ~20MB base64. At 5.0 an A3 P&ID ≈ 15-20MB.
+          const PDF_RENDER_SCALE = parseFloat(process.env.PDF_RENDER_SCALE ?? '5.0');
           const { png, width, height } = await renderPageToPng(buf, page, PDF_RENDER_SCALE);
           pageImageBase64 = png.toString("base64");
           pngDimensions = { width, height };
@@ -344,8 +346,25 @@ export const worker = new Worker(
           }
         })();
 
+        // Phase 4: NMS pre-persist — merge box tumpang tindih + tag sama.
+        // Mencegah inflasi duplikat & bbox "melenceng jauh". Threshold via
+        // NMS_IOU_THRESHOLD (default 0.5). Hanya merge jika tag sama persis.
+        const NMS_IOU = parseFloat(process.env.NMS_IOU_THRESHOLD ?? '0.5');
+        const nmsInput = resolvedWithOcr.map((d) => ({
+          ...d,
+          bbox: { x: d.bbox.x, y: d.bbox.y, width: d.bbox.width, height: d.bbox.height },
+        }));
+        const deduped = applyNMS(nmsInput, Number.isFinite(NMS_IOU) ? NMS_IOU : 0.5);
+        if (deduped.length !== resolvedWithOcr.length) {
+          log(`page ${page} NMS merged ${resolvedWithOcr.length - deduped.length} overlapping duplicate(s)`, {
+            page,
+            before: resolvedWithOcr.length,
+            after: deduped.length,
+          });
+        }
+
         // Persist detections for this page
-        for (const d of resolvedWithOcr) {
+        for (const d of deduped) {
           const legendSym = d.legendSymbol
             ? legendSymbols.find(
                 (s: Record<string, unknown>) =>
@@ -449,7 +468,7 @@ export const worker = new Worker(
           }
         }
 
-        return resolvedWithOcr.length;
+        return deduped.length;
       }
 
       // Process pages in batches of PAGE_BATCH_SIZE.

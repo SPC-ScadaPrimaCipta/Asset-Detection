@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-09-23T02:12:17.269Z",
+  "ground_truth_count": null,
+  "detection_count": 6,
+  "matched_pairs": null,
+  "tag_accuracy": null,
+  "type_accuracy": null,
+  "service_accuracy": null,
+  "main_equipment_accuracy": null,
+  "description_accuracy": null,
+  "duplicate_rate": 0,
+  "needs_review_rate": 0,
+  "conflict_rate": 0,
+  "missing_tag_rate": 0,
+  "missing_service_rate": 1,
+  "missing_main_equipment_rate": 1,
+  "missing_description_rate": 0.3333333333333333,
+  "false_positive_count": null,
+  "false_negative_count": null,
+  "confidence_distribution": {
+    "high_gte_95": 5,
+    "medium_80_94": 1,
+    "review_lt_80": 0
+  }
+}
