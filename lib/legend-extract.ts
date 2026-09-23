@@ -1,5 +1,6 @@
 import { getAiConfig } from '@/lib/ai-config';
 import { getGeminiClient } from '@/lib/gemini';
+import OpenAI from 'openai';
 
 export interface ParsedSymbol {
   asset_type: string; symbol_name: string | null; tag_pattern: string | null;
@@ -7,7 +8,7 @@ export interface ParsedSymbol {
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
 }
 
-const FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
 
 async function getModelWithFallback() {
   const cfg = await getAiConfig();
@@ -64,9 +65,56 @@ Rules:
 - Do NOT invent symbols. Do NOT include title blocks, revision tables, or the "ISSUED FOR DESIGN" stamp.
 - Return valid JSON, no markdown, no explanation.`;
 
+/**
+ * DeepSeek reparse prompt — text-only, no image.
+ * Used when provider=deepseek or as fallback when Gemini image analysis fails.
+ * Accepts OCR text extracted from legend page and re-structures it into ParsedSymbol format.
+ */
+const DEEPSEEK_REPARSE_PROMPT = `You are a P&ID legend parser. You will receive OCR text extracted from a P&ID legend sheet.
+
+Your task: parse the OCR text and extract every equipment symbol entry.
+
+For each symbol entry found in the OCR text:
+- name: the symbol label (e.g. "CENTRIFUGAL PUMP", "GATE VALVE", "VESSEL")
+- assetType: canonical type from this list: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|other
+- tagPattern: tag pattern if present (e.g. "P-###", "V-###"), else null
+- description: short description if present, else null
+- aliases: alternative spellings/abbreviations if present, else []
+
+Return JSON ONLY — no markdown, no explanation:
+{"symbols":[{"name":"...","assetType":"...","tagPattern":"P-### or null","description":"string or null","aliases":[]}]}
+
+Rules:
+- Parse everything that looks like an equipment symbol entry.
+- Do NOT invent entries not present in the OCR text.
+- If OCR text is unclear, extract best-effort.
+- Return valid JSON only.`;
+
+function mapRawToSymbol(s: Record<string, unknown>): ParsedSymbol {
+  const { x, y, w, h } = extractBbox(s);
+  return {
+    asset_type: String((s.assetType ?? (s as any).asset_type ?? 'Unknown')).slice(0, 120),
+    symbol_name: ((s.name as string) ?? ((s as any).symbolName as string) ?? ((s as any).symbol_name as string) ?? null) as string | null,
+    tag_pattern: ((s.tagPattern as string) ?? ((s as any).tag_pattern as string) ?? null) as string | null,
+    description: ((s.description as string) ?? null) as string | null,
+    aliases: Array.isArray(s.aliases) ? s.aliases as string[] : Array.isArray((s as any).alias) ? (s as any).alias as string[] : [],
+    bbox_x: x, bbox_y: y, bbox_w: w, bbox_h: h,
+  };
+}
+
+/**
+ * Extract legend symbols from a rendered PNG page using Gemini Vision.
+ * Falls back across gemini-3.6-flash → gemini-2.5-flash.
+ */
 export async function extractLegendSymbolsFromPng(pngBase64: string, page: number): Promise<ParsedSymbol[]> {
   const { client, candidates, cfg } = await getModelWithFallback();
-  if (cfg.provider === 'deepseek') throw new Error('DeepSeek cannot analyse images — switch provider to Gemini in Settings');
+
+  // DeepSeek cannot analyze images — no base64 image understanding.
+  // Caller should use extractLegendSymbolsFromOcr() with OCR text instead.
+  if (cfg.provider === 'deepseek') {
+    throw new Error('DeepSeek cannot analyse images — use extractLegendSymbolsFromOcr() with OCR text, or switch provider to Gemini in Settings');
+  }
+
   const imgPart = { inlineData: { mimeType: 'image/png', data: pngBase64 } };
   let lastErr: unknown;
   for (const modelName of candidates) {
@@ -82,18 +130,7 @@ export async function extractLegendSymbolsFromPng(pngBase64: string, page: numbe
         if (!retryable) { console.warn(`[legend-extract] page ${page} 0 symbols from ${modelName}, trying next`); continue; }
         throw lastErr;
       }
-      return raw.map((s): ParsedSymbol => {
-        const sym = s as Record<string, unknown>;
-        const { x, y, w, h } = extractBbox(sym);
-        return {
-          asset_type: String((sym.assetType ?? (sym as any).asset_type ?? 'Unknown')).slice(0, 120),
-          symbol_name: (sym.name as string ?? (sym as any).symbolName as string ?? (sym as any).symbol_name as string ?? null) as string | null,
-          tag_pattern: (sym.tagPattern as string ?? (sym as any).tag_pattern as string ?? null) as string | null,
-          description: (sym.description as string ?? null) as string | null,
-          aliases: Array.isArray(sym.aliases) ? sym.aliases as string[] : Array.isArray((sym as any).alias) ? (sym as any).alias as string[] : [],
-          bbox_x: x, bbox_y: y, bbox_w: w, bbox_h: h,
-        };
-      });
+      return raw.map((s) => mapRawToSymbol(s as Record<string, unknown>));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const retryable = /429|quota|rate|overloaded|high demand|503|not.found|404|fetch/i.test(msg);
@@ -104,4 +141,84 @@ export async function extractLegendSymbolsFromPng(pngBase64: string, page: numbe
     }
   }
   throw lastErr ?? new Error('All models failed');
+}
+
+/**
+ * Reparse legend symbols from OCR text using DeepSeek (text-only).
+ * Used when:
+ *   - provider = deepseek (no image support)
+ *   - Gemini image extraction failed and OCR text is available as fallback
+ *   - User explicitly requests reparse with DeepSeek
+ *
+ * @param ocrText  OCR text extracted from legend page(s)
+ * @param page     page number (for logging)
+ */
+export async function extractLegendSymbolsFromOcr(ocrText: string, page: number): Promise<ParsedSymbol[]> {
+  const cfg = await getAiConfig();
+
+  if (cfg.provider === 'deepseek' && cfg.deepseekKey) {
+    return extractLegendFromOcrWithDeepSeek(ocrText, page, cfg.deepseekKey, cfg.deepseekModel ?? 'deepseek-chat');
+  }
+
+  // Gemini text-only fallback — use same model chain but text-only content
+  const { client, candidates } = await getModelWithFallback();
+  let lastErr: unknown;
+  for (const modelName of candidates) {
+    try {
+      const model = client.getGenerativeModel({ model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: 'application/json' } });
+      const r = await model.generateContent([
+        { text: DEEPSEEK_REPARSE_PROMPT },
+        { text: `OCR TEXT FROM PAGE ${page}:\n${ocrText.slice(0, 12000)}` },
+      ]);
+      const text = r.response.text();
+      const j = parseJsonResponse(text) as { symbols?: unknown[] };
+      const raw: unknown[] = Array.isArray(j.symbols) ? j.symbols : [];
+      if (raw.length === 0) { lastErr = new Error(`Model ${modelName} returned 0 symbols from OCR`); continue; }
+      console.log(`[legend-extract] OCR reparse page ${page} via Gemini ${modelName}: ${raw.length} symbols`);
+      return raw.map((s) => mapRawToSymbol(s as Record<string, unknown>));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[legend-extract] OCR reparse page ${page} model ${modelName} failed: ${msg.slice(0, 300)}`);
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('All models failed for OCR reparse');
+}
+
+/**
+ * DeepSeek text-only legend extraction.
+ * DeepSeek-chat handles structured JSON extraction from OCR text well.
+ */
+async function extractLegendFromOcrWithDeepSeek(
+  ocrText: string,
+  page: number,
+  apiKey: string,
+  model: string,
+): Promise<ParsedSymbol[]> {
+  const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' });
+
+  const completion = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: DEEPSEEK_REPARSE_PROMPT },
+      {
+        role: 'user',
+        content: `OCR TEXT FROM LEGEND PAGE ${page}:\n${ocrText.slice(0, 12000)}`,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.1,
+    max_tokens: 8192,
+  });
+
+  const text = completion.choices[0].message.content ?? '{}';
+  const j = parseJsonResponse(text) as { symbols?: unknown[] };
+  const raw: unknown[] = Array.isArray(j.symbols) ? j.symbols : [];
+
+  if (raw.length === 0) {
+    throw new Error(`DeepSeek returned 0 symbols from OCR text (page ${page})`);
+  }
+
+  console.log(`[legend-extract] DeepSeek OCR reparse page ${page}: ${raw.length} symbols`);
+  return raw.map((s) => mapRawToSymbol(s as Record<string, unknown>));
 }
