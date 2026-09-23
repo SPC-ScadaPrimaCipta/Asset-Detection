@@ -6,8 +6,9 @@ const config: Config = {
   roots: ['<rootDir>/__tests__'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
-    // uuid v9+ ships dist-node as ESM. Jest (CommonJS mode) needs the CJS build.
-    '^uuid$': '<rootDir>/node_modules/uuid/dist/cjs/index.js',
+    // uuid v14 ships pure ESM (unparseable by Jest CJS mode).
+    // Accuracy tests are pure-function (never call uuidv4 at runtime) → stub.
+    '^uuid$': '<rootDir>/__tests__/uuid-stub.cjs',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

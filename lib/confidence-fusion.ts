@@ -31,6 +31,27 @@ export const DEFAULT_WEIGHTS: FusionWeights = {
   vision: 0.05,
 };
 
+/**
+ * Phase 4: env override untuk tuning tanpa ubah kode.
+ * Contoh: FUSION_WEIGHTS_JSON='{"legend":0.5,"vision":0.05,...}'
+ * Nilai dinormalisasi ulang di fuseConfidence, jadi cukup proporsional.
+ */
+export function getFusionWeights(): FusionWeights {
+  const raw = process.env.FUSION_WEIGHTS_JSON;
+  if (!raw) return DEFAULT_WEIGHTS;
+  try {
+    const p = JSON.parse(raw) as Partial<FusionWeights>;
+    const w: FusionWeights = { ...DEFAULT_WEIGHTS };
+    (Object.keys(DEFAULT_WEIGHTS) as (keyof FusionWeights)[]).forEach((k) => {
+      const v = p[k];
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) w[k] = v;
+    });
+    return w;
+  } catch {
+    return DEFAULT_WEIGHTS;
+  }
+}
+
 export interface EvidenceScores {
   legend: number | null;    // 0-1, null = not applicable
   company: number | null;

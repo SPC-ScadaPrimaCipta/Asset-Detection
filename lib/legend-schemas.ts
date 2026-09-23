@@ -13,6 +13,8 @@ export const LegendSymbolSchema = z.object({
   bbox_w: z.number().int().nullable().optional().default(null),
   bbox_h: z.number().int().nullable().optional().default(null),
   pid_page: z.number().int().nullable().optional().default(null),
+  reference_image_url: z.string().max(500).nullable().optional().default(null),
+  reference_crop_hash: z.string().max(128).nullable().optional().default(null),
 });
 
 export const LegendSchema = z.object({
@@ -23,3 +25,19 @@ export const LegendSchema = z.object({
 
 export type LegendSymbolInput = z.infer<typeof LegendSymbolSchema>;
 export type LegendInput = z.infer<typeof LegendSchema>;
+
+// ─── Tag pattern validation (Phase 1: cegah pattern salah ketik masuk DB) ────
+// Format valid: PREFIX-### / PREFIX-*** dengan PREFIX 1-6 huruf, contoh:
+//   P-###, V-###, FIC-###, PSV-###, XV-***, E-###
+// Mengembalikan null jika valid, atau pesan error jika tidak valid.
+// null/empty pattern diizinkan (simbol tanpa tag) → return null.
+export function validateTagPattern(pattern: string | null | undefined): string | null {
+  if (pattern == null || String(pattern).trim() === '') return null;
+  const p = String(pattern).trim().toUpperCase();
+  if (p.length > 60) return 'Tag pattern too long (max 60 chars)';
+  // Pola: 1-6 huruf, dash, 1-6 campuran #/*/digit, opsional suffix huruf
+  if (!/^[A-Z]{1,6}-[\#\*\d]{1,6}[A-Z]{0,2}$/.test(p)) {
+    return 'Invalid tag pattern — expected format like P-###, FIC-###, XV-***';
+  }
+  return null;
+}

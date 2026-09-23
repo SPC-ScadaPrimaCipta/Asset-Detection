@@ -1,4 +1,24 @@
 const { Pool } = require('pg');
+const { existsSync } = require('fs');
+const { join } = require('path');
+
+// Load .env.local so `npm run migrate` uses the same DATABASE_URL as the app.
+// (dotenv is a direct dependency; fallback to manual parse if unavailable.)
+(function loadEnv() {
+  try {
+    require('dotenv').config({ path: join(__dirname, '..', '.env.local') });
+  } catch {
+    try {
+      const f = join(__dirname, '..', '.env.local');
+      if (existsSync(f)) {
+        require('fs').readFileSync(f, 'utf-8').split('\n').forEach((line) => {
+          const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+          if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+        });
+      }
+    } catch { /* env fallback: use built-in default connStr */ }
+  }
+})();
 
 async function migrate() {
   const connStr = process.env.DATABASE_URL || 'postgresql://postgres@127.0.0.1:5433/asset_detection';
@@ -91,6 +111,87 @@ async function migrate() {
       `);
     }
     console.log('  003: legend_symbols bbox/pid_page OK');
+
+    // Migration 005: legend_symbols reference image (few-shot detection)
+    await p.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legend_symbols' AND column_name='reference_image_url'
+        ) THEN
+          ALTER TABLE legend_symbols ADD COLUMN reference_image_url TEXT;
+          RAISE NOTICE 'Added legend_symbols.reference_image_url';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legend_symbols' AND column_name='reference_crop_hash'
+        ) THEN
+          ALTER TABLE legend_symbols ADD COLUMN reference_crop_hash TEXT;
+          RAISE NOTICE 'Added legend_symbols.reference_crop_hash';
+        END IF;
+      END $$
+    `);
+    await p.query('CREATE INDEX IF NOT EXISTS idx_legend_symbols_ref_hash ON legend_symbols(reference_crop_hash)');
+    await p.query('CREATE INDEX IF NOT EXISTS idx_legend_symbols_legend_status ON legend_symbols(legend_id, status)');
+    console.log('  005: legend_symbols reference_image_url/reference_crop_hash OK');
+
+    // Migration 006: builtin standard legends (ISA 5.1 / ISO 10628-2)
+    await p.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legends' AND column_name='is_builtin'
+        ) THEN
+          ALTER TABLE legends ADD COLUMN is_builtin BOOLEAN NOT NULL DEFAULT FALSE;
+          RAISE NOTICE 'Added legends.is_builtin';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legends' AND column_name='standard_code'
+        ) THEN
+          ALTER TABLE legends ADD COLUMN standard_code TEXT;
+          RAISE NOTICE 'Added legends.standard_code';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legend_symbols' AND column_name='standard_code'
+        ) THEN
+          ALTER TABLE legend_symbols ADD COLUMN standard_code TEXT;
+          RAISE NOTICE 'Added legend_symbols.standard_code';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legend_symbols' AND column_name='isa_function_code'
+        ) THEN
+          ALTER TABLE legend_symbols ADD COLUMN isa_function_code TEXT;
+          RAISE NOTICE 'Added legend_symbols.isa_function_code';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='legend_symbols' AND column_name='iso_category'
+        ) THEN
+          ALTER TABLE legend_symbols ADD COLUMN iso_category TEXT;
+          RAISE NOTICE 'Added legend_symbols.iso_category';
+        END IF;
+      END $$
+    `);
+    await p.query('CREATE INDEX IF NOT EXISTS idx_legends_is_builtin ON legends(is_builtin)');
+    await p.query('CREATE INDEX IF NOT EXISTS idx_legends_standard_code ON legends(standard_code)');
+    await p.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='rule_engine_rules' AND column_name='is_builtin'
+        ) THEN
+          ALTER TABLE rule_engine_rules ADD COLUMN is_builtin BOOLEAN NOT NULL DEFAULT FALSE;
+          RAISE NOTICE 'Added rule_engine_rules.is_builtin';
+        END IF;
+      END $$
+    `);
+    console.log('  006: legends/legend_symbols builtin standard columns OK');
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

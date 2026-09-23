@@ -237,6 +237,7 @@ function ManualAddModal({
   documentId,
   legendId,
   jobId,
+  initialBbox,
 }: {
   open: boolean;
   onClose: () => void;
@@ -244,6 +245,7 @@ function ManualAddModal({
   documentId: string;
   legendId: string;
   jobId: string | null;
+  initialBbox?: { x: number; y: number; w: number; h: number } | null;
 }) {
   const [assetType, setAssetType] = useState("");
   const [assetTag, setAssetTag] = useState("");
@@ -257,20 +259,21 @@ function ManualAddModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Reset form when modal opens
+  // Reset form when modal opens — prefill bbox dari hasil draw di viewer
   useEffect(() => {
     if (open) {
       setAssetType("");
       setAssetTag("");
       setDescription("");
       setPidPage("");
-      setBboxX("0");
-      setBboxY("0");
-      setBboxW("100");
-      setBboxH("100");
+      setBboxX(String(initialBbox?.x ?? 0));
+      setBboxY(String(initialBbox?.y ?? 0));
+      setBboxW(String(initialBbox?.w ?? 100));
+      setBboxH(String(initialBbox?.h ?? 100));
       setError("");
       setSubmitting(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;
@@ -740,6 +743,10 @@ function PidViewer({
   page,
   totalPages,
   onPageChange,
+  onBboxChange,
+  drawMode,
+  onDrawComplete,
+  onDrawCancel,
 }: {
   documentId: string;
   detections: Detection[];
@@ -748,6 +755,10 @@ function PidViewer({
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
+  onBboxChange?: (id: string, bbox: { x: number; y: number; w: number; h: number }) => void;
+  drawMode?: boolean;
+  onDrawComplete?: (bbox: { x: number; y: number; w: number; h: number }) => void;
+  onDrawCancel?: () => void;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -762,6 +773,31 @@ function PidViewer({
   const [imgLoading, setImgLoading] = useState(!!documentId);
   const [imgError, setImgError] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  // ── BBox drag/scale meniru halaman legend (review/page.tsx) ──────────────
+  // dragBbox dalam koordinat 0-1000 (SVG viewBox linear dengan natural px,
+  // jadi 0-1000 bisa dipakai langsung untuk math lalu dirender ulang).
+  // Editing & draw dinonaktifkan saat rotation !== 0 (sumbu tidak valid).
+  const suppressClickRef = useRef(false);
+  const [dragBbox, setDragBbox] = useState<null | {
+    id: string;
+    x: number; y: number; w: number; h: number;
+    startX: number; startY: number;
+    origX: number; origY: number; origW: number; origH: number;
+    mode: string;
+  }>(null);
+  const [bboxSavedFlash, setBboxSavedFlash] = useState(false);
+  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Draw-new-box state (koordinat SVG px = natural px)
+  const [drawStart, setDrawStart] = useState<{ sx: number; sy: number } | null>(null);
+  const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // Reset drag/draw saat ganti seleksi / halaman / dokumen / mode
+  useEffect(() => {
+    setDragBbox(null);
+    setDrawStart(null);
+    setDrawRect(null);
+  }, [selectedId, page, documentId, drawMode]);
 
   const imgSrc = documentId
     ? `/api/documents/${documentId}/pages/${page}/image`
@@ -774,20 +810,38 @@ function PidViewer({
     setImgError(false);
   }, [documentId, page]);
 
+  // Prefetch halaman tetangga agar navigasi ◀/▶ instan (browser cache 1 jam)
+  useEffect(() => {
+    if (!documentId) return;
+    for (const p of [page - 1, page + 1]) {
+      if (p < 1 || p > totalPages) continue;
+      const img = new Image();
+      img.src = `/api/documents/${documentId}/pages/${p}/image`;
+    }
+  }, [documentId, page, totalPages]);
+
   // Reset pan/zoom/rotation when page changes
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [page]);
 
-  // ESC exits fullscreen
+  // ESC exits fullscreen / cancels draw mode
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFullscreen(false);
+      if (e.key === "Escape") {
+        if (drawMode) {
+          setDrawStart(null);
+          setDrawRect(null);
+          onDrawCancel?.();
+        } else {
+          setFullscreen(false);
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [drawMode, onDrawCancel]);
 
   // Only the selected detection's bbox is shown — everything else stays hidden
   const visible = selectedId
@@ -818,16 +872,71 @@ function PidViewer({
     return () => el.removeEventListener("wheel", onWheel);
   }, [fullscreen]);
 
+  // Konversi client px → koordinat SVG (natural px). SVG viewBox = natural,
+  // jadi rect (displayed, sudah termasuk zoom/pan) diskalakan linear.
+  const clientToSvg = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    const nat = imgNatural;
+    if (!svg || !nat) return null;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return {
+      sx: ((clientX - rect.left) / rect.width) * nat.w,
+      sy: ((clientY - rect.top) / rect.height) * nat.h,
+    };
+  };
+  const clampNum = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Draw mode: mousedown di area kosong mulai gambar kotak baru
+    if (drawMode && rotation === 0) {
+      if ((e.target as HTMLElement).closest("[data-bbox]")) return;
+      const p = clientToSvg(e.clientX, e.clientY);
+      if (!p) return;
+      e.stopPropagation();
+      setDrawStart(p);
+      setDrawRect({ x: p.sx, y: p.sy, w: 0, h: 0 });
+      return;
+    }
     if ((e.target as HTMLElement).closest("[data-bbox]")) return;
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (drawStart) {
+      const p = clientToSvg(e.clientX, e.clientY);
+      if (!p || !imgNatural) return;
+      const x = clampNum(Math.min(drawStart.sx, p.sx), 0, imgNatural.w);
+      const y = clampNum(Math.min(drawStart.sy, p.sy), 0, imgNatural.h);
+      const w = clampNum(Math.abs(p.sx - drawStart.sx), 0, imgNatural.w - x);
+      const h = clampNum(Math.abs(p.sy - drawStart.sy), 0, imgNatural.h - y);
+      setDrawRect({ x, y, w, h });
+      return;
+    }
     if (!dragging) return;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
-  const handleMouseUp = () => setDragging(false);
+  const handleMouseUp = () => {
+    // Selesaikan draw → normalisasi ke 0-1000, panggil parent untuk konfirmasi
+    if (drawStart && drawRect && imgNatural) {
+      const nx = Math.round((drawRect.x / imgNatural.w) * 1000);
+      const ny = Math.round((drawRect.y / imgNatural.h) * 1000);
+      const nw = Math.round((drawRect.w / imgNatural.w) * 1000);
+      const nh = Math.round((drawRect.h / imgNatural.h) * 1000);
+      setDrawStart(null);
+      setDrawRect(null);
+      if (nw >= 10 && nh >= 10) {
+        onDrawComplete?.({
+          x: clampNum(nx, 0, 1000 - nw),
+          y: clampNum(ny, 0, 1000 - nh),
+          w: Math.min(nw, 1000),
+          h: Math.min(nh, 1000),
+        });
+      }
+      return;
+    }
+    setDragging(false);
+  };
 
   const rotate = () => setRotation((r) => (r + 90) % 360);
   const resetView = () => {
@@ -835,6 +944,93 @@ function PidViewer({
     setPan({ x: 0, y: 0 });
     setRotation(0);
   };
+
+  // ── BBox drag/resize meniru legend: 1 handler di <g>, mode dari ─────────
+  // data-handle ("e|w|n|s|ne|nw|se|sw") atau "move". Math dalam 0-1000.
+  const beginBboxDrag = (
+    e: React.MouseEvent,
+    id: string,
+    mode: string,
+    orig: { x: number; y: number; w: number; h: number },
+  ) => {
+    if (rotation !== 0 || !onBboxChange) return; // sumbu tidak valid saat dirotasi
+    e.stopPropagation();
+    e.preventDefault();
+    suppressClickRef.current = false;
+    setDragBbox({
+      id,
+      ...orig,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: orig.x, origY: orig.y, origW: orig.w, origH: orig.h,
+      mode,
+    });
+  };
+
+  // Window listeners meniru legend: mousemove update dragBbox, mouseup autosave.
+  useEffect(() => {
+    if (!dragBbox) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onMove = (e: MouseEvent) => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      // client px → 0-1000 (rect sudah termasuk zoom/pan transform)
+      const ndx = ((e.clientX - dragBbox.startX) / rect.width) * 1000;
+      const ndy = ((e.clientY - dragBbox.startY) / rect.height) * 1000;
+      if (Math.abs(e.clientX - dragBbox.startX) > 3 || Math.abs(e.clientY - dragBbox.startY) > 3) {
+        suppressClickRef.current = true;
+      }
+      const o = dragBbox;
+      if (o.mode === 'move') {
+        const nx = clampNum(o.origX + ndx, 0, 1000 - o.origW);
+        const ny = clampNum(o.origY + ndy, 0, 1000 - o.origH);
+        setDragBbox((p) => (p ? { ...p, x: Math.round(nx), y: Math.round(ny) } : p));
+      } else {
+        // Resize — mode kombinasi e/w/n/s (mis. 'e', 'nw', 'se')
+        const m: string = o.mode;
+        const right = o.origX + o.origW;
+        const bottom = o.origY + o.origH;
+        let nx = o.origX, ny = o.origY, nw = o.origW, nh = o.origH;
+        if (m.includes('e')) nw = clampNum(o.origW + ndx, 10, 1000 - o.origX);
+        if (m.includes('s')) nh = clampNum(o.origH + ndy, 10, 1000 - o.origY);
+        if (m.includes('w')) { nx = clampNum(o.origX + ndx, 0, right - 10); nw = right - nx; }
+        if (m.includes('n')) { ny = clampNum(o.origY + ndy, 0, bottom - 10); nh = bottom - ny; }
+        setDragBbox((p) => (p ? { ...p, x: Math.round(nx), y: Math.round(ny), w: Math.round(nw), h: Math.round(nh) } : p));
+      }
+    };
+    const onUp = async () => {
+      const cur = dragBbox;
+      setDragBbox(null);
+      if (!cur || !onBboxChange) return;
+      const d = detections.find((x) => x.id === cur.id);
+      const norm = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
+      if (
+        d &&
+        (norm.x !== (d.bbox_x ?? 0) ||
+          norm.y !== (d.bbox_y ?? 0) ||
+          norm.w !== (d.bbox_w ?? 0) ||
+          norm.h !== (d.bbox_h ?? 0))
+      ) {
+        try {
+          await onBboxChange(cur.id, norm);
+          setBboxSavedFlash(true);
+          if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+          savedFlashTimer.current = setTimeout(() => setBboxSavedFlash(false), 2500);
+        } catch {
+          /* parent menampilkan error via reload; abaikan di sini */
+        }
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    // Re-bind saat dragBbox berubah (pola legend) agar closure selalu baca state terbaru.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragBbox]);
 
   // Build CSS transform: rotation applied first, then zoom+pan
   const imgTransform = `rotate(${rotation}deg)`;
@@ -948,6 +1144,23 @@ function PidViewer({
           Reset
         </button>
 
+        {/* Phase 5/legend-style: autosave saat mouseup — indikator sukses */}
+        {bboxSavedFlash && selectedId && (
+          <span style={{ fontSize: "11px", color: "var(--success)", fontWeight: "600" }}>
+            ✓ BBox saved
+          </span>
+        )}
+        {drawMode && (
+          <span style={{ fontSize: "11px", color: "var(--info)", fontWeight: "600" }}>
+            ⊞ Draw mode — drag di gambar untuk buat kotak (Esc batal)
+          </span>
+        )}
+        {(selectedId || drawMode) && rotation !== 0 && (
+          <span style={{ fontSize: "11px", color: "var(--warning)" }}>
+            Reset rotation ke 0° untuk edit bbox
+          </span>
+        )}
+
         <div
           style={{
             marginLeft: "auto",
@@ -1015,7 +1228,7 @@ function PidViewer({
           userSelect: "none",
           flex: 1,
           minHeight: fullscreen ? "calc(100vh - 80px)" : 600,
-          cursor: dragging ? "grabbing" : "grab",
+          cursor: drawMode ? "crosshair" : dragging ? "grabbing" : "grab",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -1088,9 +1301,10 @@ function PidViewer({
                   draggable={false}
                 />
 
-                {/* SVG bbox overlay */}
+                {/* SVG bbox overlay — Phase 5: selected bbox bisa drag + resize */}
                 {imgNatural && !imgError && (
                   <svg
+                    ref={svgRef}
                     viewBox={`0 0 ${imgNatural.w} ${imgNatural.h}`}
                     style={{
                       position: "absolute",
@@ -1102,11 +1316,19 @@ function PidViewer({
                     }}
                   >
                     {visible.map((d) => {
-                      const x = ((d.bbox_x ?? 0) / 1000) * imgNatural.w;
-                      const y = ((d.bbox_y ?? 0) / 1000) * imgNatural.h;
-                      const w = ((d.bbox_w ?? 50) / 1000) * imgNatural.w;
-                      const h = ((d.bbox_h ?? 50) / 1000) * imgNatural.h;
+                      const isSel = d.id === selectedId;
+                      // Drag aktif (legend-style): pakai dragBbox, bukan nilai DB
+                      const drag = dragBbox && dragBbox.id === d.id ? dragBbox : null;
+                      const nx = drag ? drag.x : (d.bbox_x ?? 0);
+                      const ny = drag ? drag.y : (d.bbox_y ?? 0);
+                      const nw = drag ? drag.w : (d.bbox_w ?? 50);
+                      const nh = drag ? drag.h : (d.bbox_h ?? 50);
+                      const x = (nx / 1000) * imgNatural.w;
+                      const y = (ny / 1000) * imgNatural.h;
+                      const w = (nw / 1000) * imgNatural.w;
+                      const h = (nh / 1000) * imgNatural.h;
                       const selected = d.id === selectedId;
+                      const editable = isSel && rotation === 0 && !!onBboxChange;
                       const color =
                         d.review_status === "APPROVED"
                           ? getComputedStyle(document.documentElement)
@@ -1125,12 +1347,46 @@ function PidViewer({
                                   .trim();
                       const labelW = Math.max(w, 80);
                       const labelY = y > 22 ? y - 22 : y + h + 4;
+                      // Handle resize 8-titik (koordinat pixel SVG)
+                      const hs = Math.max(10, imgNatural.w * 0.008);
+                      const hh = hs / 2;
+                      const handles: Array<{ mode: string; cx: number; cy: number; cursor: string }> = editable
+                        ? [
+                            { mode: "nw", cx: x, cy: y, cursor: "nwse-resize" },
+                            { mode: "n", cx: x + w / 2, cy: y, cursor: "ns-resize" },
+                            { mode: "ne", cx: x + w, cy: y, cursor: "nesw-resize" },
+                            { mode: "e", cx: x + w, cy: y + h / 2, cursor: "ew-resize" },
+                            { mode: "se", cx: x + w, cy: y + h, cursor: "nwse-resize" },
+                            { mode: "s", cx: x + w / 2, cy: y + h, cursor: "ns-resize" },
+                            { mode: "sw", cx: x, cy: y + h, cursor: "nesw-resize" },
+                            { mode: "w", cx: x, cy: y + h / 2, cursor: "ew-resize" },
+                          ]
+                        : [];
+                      const effNorm = { x: nx, y: ny, w: nw, h: nh };
                       return (
                         <g
                           key={d.id}
                           data-bbox="true"
-                          onClick={() => onSelect(d.id)}
-                          style={{ pointerEvents: "all", cursor: "pointer" }}
+                          onClick={() => {
+                            // Abaikan klik yang merupakan akhir dari drag (pola legend)
+                            if (suppressClickRef.current) {
+                              suppressClickRef.current = false;
+                              return;
+                            }
+                            onSelect(d.id);
+                          }}
+                          onMouseDown={(e) => {
+                            // 1 handler meniru legend: baca data-handle dari target
+                            if (!editable) return;
+                            e.stopPropagation();
+                            const handle = (e.target as Element).getAttribute?.("data-handle");
+                            if (handle) {
+                              beginBboxDrag(e, d.id, handle, effNorm);
+                            } else if (isSel) {
+                              beginBboxDrag(e, d.id, "move", effNorm);
+                            }
+                          }}
+                          style={{ pointerEvents: "all", cursor: editable ? "move" : "pointer" }}
                         >
                           <rect
                             x={x}
@@ -1151,6 +1407,22 @@ function PidViewer({
                             rx={3}
                             opacity={selected ? 1 : 0.85}
                           />
+                          {/* Resize handles — drag untuk scale bbox manual */}
+                          {handles.map((hd) => (
+                            <rect
+                              key={hd.mode}
+                              data-handle={hd.mode}
+                              x={hd.cx - hh}
+                              y={hd.cy - hh}
+                              width={hs}
+                              height={hs}
+                              fill="white"
+                              stroke={color}
+                              strokeWidth={2}
+                              rx={2}
+                              style={{ cursor: hd.cursor }}
+                            />
+                          ))}
                           <rect
                             x={x}
                             y={labelY}
@@ -1173,6 +1445,21 @@ function PidViewer({
                         </g>
                       );
                     })}
+                    {/* Preview kotak baru saat draw mode */}
+                    {drawMode && drawRect && imgNatural && (
+                      <rect
+                        x={drawRect.x}
+                        y={drawRect.y}
+                        width={Math.max(drawRect.w, 2)}
+                        height={Math.max(drawRect.h, 2)}
+                        fill="rgba(59,130,246,0.15)"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        strokeDasharray="8 4"
+                        rx={3}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
                   </svg>
                 )}
               </div>
@@ -1332,7 +1619,9 @@ function PidViewer({
           Confirmed
         </span>
         <span style={{ marginLeft: "auto", color: "var(--foreground-subtle)" }}>
-          Scroll to zoom · Drag to pan · Select asset in table to show bbox
+          {drawMode
+            ? "Draw mode: drag di gambar untuk buat kotak · Esc batal"
+            : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
         </span>
       </div>
     </>
@@ -2183,6 +2472,10 @@ function DetectionWorkspace() {
   );
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
+  // Draw-to-add: tekan Add Assets Manually → mode draw di viewer → konfirmasi kotak → modal
+  const [drawMode, setDrawMode] = useState(false);
+  const [pendingDrawBbox, setPendingDrawBbox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [confirmingDraw, setConfirmingDraw] = useState(false);
 
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
@@ -2330,6 +2623,29 @@ function DetectionWorkspace() {
     );
   };
 
+  // Phase 5: persist koreksi bbox manual dari PidViewer (drag/resize)
+  const handleBboxChange = async (
+    id: string,
+    bbox: { x: number; y: number; w: number; h: number },
+  ) => {
+    await fetch(`/api/detections/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bbox_x: bbox.x,
+        bbox_y: bbox.y,
+        bbox_w: bbox.w,
+        bbox_h: bbox.h,
+      }),
+    });
+    await loadDetections();
+    setSelectedDetection((prev) =>
+      prev?.id === id
+        ? { ...prev, bbox_x: bbox.x, bbox_y: bbox.y, bbox_w: bbox.w, bbox_h: bbox.h }
+        : prev,
+    );
+  };
+
   const selectedId = selectedDetection?.id ?? null;
 
   return (
@@ -2345,11 +2661,16 @@ function DetectionWorkspace() {
       {/* Manual Add Modal */}
       <ManualAddModal
         open={showManualAdd}
-        onClose={() => setShowManualAdd(false)}
+        onClose={() => {
+          setShowManualAdd(false);
+          setPendingDrawBbox(null);
+          setConfirmingDraw(false);
+        }}
         onSave={loadDetections}
         documentId={documentId}
         legendId={legendId}
         jobId={currentJobId}
+        initialBbox={pendingDrawBbox}
       />
 
       {/* Header */}
@@ -2477,17 +2798,28 @@ function DetectionWorkspace() {
             {running ? "Starting…" : "Run Detection"}
           </button>
 
-          {/* Manual Add button */}
+          {/* Manual Add button — masuk draw mode di viewer (bukan langsung modal) */}
           <button
-            onClick={() => setShowManualAdd(true)}
+            onClick={() => {
+              if (drawMode) {
+                setDrawMode(false);
+              } else {
+                setDrawMode(true);
+                setConfirmingDraw(false);
+                setPendingDrawBbox(null);
+                setSelectedDetection(null);
+              }
+            }}
             disabled={!documentId}
             style={
               !documentId
                 ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed" }
-                : buttonStyle
+                : drawMode
+                  ? { ...primaryButtonStyle }
+                  : buttonStyle
             }
           >
-            + Add Asset Manually
+            {drawMode ? "✕ Cancel Drawing" : "+ Add Asset Manually"}
           </button>
         </div>
       </div>
@@ -2566,6 +2898,65 @@ function DetectionWorkspace() {
                 />
               </div>
             )}
+            {/* Confirm bar: tampil setelah user selesai gambar kotak */}
+            {confirmingDraw && pendingDrawBbox && (
+              <div
+                style={{
+                  ...cardStyle,
+                  flexShrink: 0,
+                  padding: "12px 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  border: "1px solid var(--info)",
+                }}
+              >
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--foreground)" }}>
+                  Use this box?
+                </span>
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--foreground-muted)",
+                    fontFamily: "var(--font-geist-mono, monospace)",
+                  }}
+                >
+                  x={pendingDrawBbox.x} y={pendingDrawBbox.y} w={pendingDrawBbox.w} h={pendingDrawBbox.h}
+                </span>
+                <span style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={() => {
+                      setConfirmingDraw(false);
+                      setShowManualAdd(true);
+                    }}
+                    style={{ ...primaryButtonStyle, padding: "6px 14px", fontSize: "12px" }}
+                  >
+                    Use this box
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPendingDrawBbox(null);
+                      setConfirmingDraw(false);
+                      setDrawMode(true);
+                    }}
+                    style={{ ...buttonStyle, padding: "6px 14px", fontSize: "12px" }}
+                  >
+                    Redraw
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPendingDrawBbox(null);
+                      setConfirmingDraw(false);
+                      setDrawMode(false);
+                    }}
+                    style={{ ...buttonStyle, padding: "6px 14px", fontSize: "12px" }}
+                  >
+                    Cancel
+                  </button>
+                </span>
+              </div>
+            )}
             <div style={{ flex: 1, minHeight: 640 }}>
               <PidViewer
                 documentId={documentId}
@@ -2578,6 +2969,14 @@ function DetectionWorkspace() {
                 page={currentPage || 1}
                 totalPages={maxPage}
                 onPageChange={setCurrentPage}
+                onBboxChange={handleBboxChange}
+                drawMode={drawMode}
+                onDrawComplete={(rect) => {
+                  setPendingDrawBbox(rect);
+                  setConfirmingDraw(true);
+                  setDrawMode(false);
+                }}
+                onDrawCancel={() => setDrawMode(false)}
               />
             </div>
           </div>

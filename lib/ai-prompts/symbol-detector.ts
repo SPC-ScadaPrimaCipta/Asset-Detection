@@ -11,7 +11,10 @@ export function buildSymbolDetectorPrompt(legendSymbols: Array<{
   description?: string | null;
   aliases?: string[] | null;
   standard_code?: string | null;
-}>): string {
+}>, opts?: {
+  knownTags?: string[];
+  referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+}): string {
   const hasLegend = legendSymbols.length > 0;
 
   const legendRef = hasLegend
@@ -34,13 +37,19 @@ ${legendRef}
 
 IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.
 ` : `No legend provided. Use your knowledge of ISA 5.1 and ISO 10628-2 P&ID standards.`}
-
+${opts?.referenceExamples?.length ? `CONFIRMED REFERENCE EXAMPLES (few-shot — symbols already approved from this legend):
+${opts.referenceExamples.slice(0, 5).map(s => `• ${s.symbol_name ?? s.asset_type}${s.tag_pattern ? ` [${s.tag_pattern}]` : ''} (${s.asset_type})`).join('\n')}
+Prefer these names when the symbol matches.
+` : ''}${opts?.knownTags?.length ? `KNOWN TAGS on this project (prefer exact match when visible):
+${opts.knownTags.slice(0, 40).join(', ')}
+` : ''}
 ━━━ STEP 1: READ ALL TEXT FIRST ━━━
 Before detecting symbols, read EVERY alphanumeric tag visible on this drawing.
 Tags follow patterns like: PDT-11, PSV-101, H-001, JB-03, LCP, MCFA, PI-101, FT-201.
 Tags are typically: 2-6 uppercase letters + hyphen + 2-4 digits.
 Read tags even if text is small, rotated, or partially obscured.
 Write down mentally all tags you see before assigning them to symbols.
+On dense pages (>20 symbols): list tags first, then assign — do NOT skip trailing rows.
 
 ━━━ STEP 2: DETECT ALL SYMBOLS ━━━
 Scan systematically top-left → bottom-right.
@@ -116,5 +125,24 @@ Return ONLY valid JSON — no markdown, no explanation:
       "evidence": ["Circle with DP symbol matches Pressure Differential Transmitter", "Tag PDT-11 visible directly below symbol"]
     }
   ]
+}`;
+}
+
+/**
+ * Phase 3: Pass-1 tag-listing prompt for dense pages (2-pass detection).
+ * Pass 1 returns ONLY the tag list; Pass 2 (buildSymbolDetectorPrompt with
+ * knownTags) assigns tags to symbols. Aktif via DETECTION_TWO_PASS=true
+ * atau otomatis untuk halaman padat (diputuskan di ai-agent/worker).
+ */
+export function buildTagListPrompt(): string {
+  return `You are a P&ID tag reader. Read EVERY alphanumeric asset tag visible on this P&ID page image.
+
+Tags follow patterns like: PDT-11, PSV-101, H-001, JB-03, PI-101, FT-201, FIC-201A.
+Tags are typically 1-6 uppercase letters + hyphen + 1-5 digits + optional 1-2 letter suffix.
+Ignore pipe sizes (6", DN150), line numbers, and title-block text.
+
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "tags": ["PDT-11", "H-001", "JB-03"]
 }`;
 }

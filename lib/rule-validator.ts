@@ -22,7 +22,7 @@ import { searchSimilar, type SimilarityMatch } from '@/lib/vector-repository';
 import { evaluateRules } from '@/lib/rule-engine';
 import {
   fuseConfidence, computeOcrScore, embeddingSimilarityToScore,
-  ruleResultToScore, DEFAULT_WEIGHTS, type EvidenceScores,
+  ruleResultToScore, DEFAULT_WEIGHTS, getFusionWeights, type EvidenceScores,
 } from '@/lib/confidence-fusion';
 import { DetectionAudit } from '@/lib/detection-audit';
 import { getNegativePenalty } from '@/lib/learning/negative-learning';
@@ -86,7 +86,7 @@ export interface RuleValidationResult {
   legendSymbol?: LegendSymbol;
 }
 
-const EMBEDDING_SKIP_THRESHOLD = 0.95;  // similarity >= this → skip Vision
+const EMBEDDING_SKIP_THRESHOLD = parseFloat(process.env.EMBEDDING_SKIP_THRESHOLD ?? '0.88');
 // M10: CONFIDENCE_THRESHOLD configurable via env.
 // Default 0.60 (was 0.65). Rationale: for fresh projects with no KB/cache/embedding,
 // Vision is the only source. Gemini valid detections often score 0.60-0.64 for symbols
@@ -142,16 +142,32 @@ function findInLegend(
     );
     if (byAlias) return byAlias;
 
-    // Fuzzy: prefer MOST SPECIFIC match (shortest asset_type that contains assetType,
-    // or shortest assetType substring that matches). Avoids "Valve" → "Control Valve" when
-    // "Ball Valve" is a better fit for a type containing "ball".
+    // Fuzzy: Phase 4 — pilih match dengan Levenshtein distance terkecil
+    // (bukan asset_type terpendek). Mencegah "Valve" → "Control Valve"
+    // saat "Ball Valve" lebih dekat secara string ke hasil Vision.
     const fuzzyMatches = symbols.filter(
       s => s.asset_type.toLowerCase().includes(assetType.toLowerCase()) ||
            assetType.toLowerCase().includes(s.asset_type.toLowerCase())
     );
     if (fuzzyMatches.length > 0) {
-      // Sort by length ascending — shorter = more specific match (fewer extra words)
-      fuzzyMatches.sort((a, b) => a.asset_type.length - b.asset_type.length);
+      const lev = (a: string, b: string): number => {
+        const la = a.length, lb = b.length;
+        const dp: number[] = Array.from({ length: lb + 1 }, (_, i) => i);
+        for (let i = 1; i <= la; i++) {
+          let prev = dp[0];
+          dp[0] = i;
+          for (let j = 1; j <= lb; j++) {
+            const tmp = dp[j];
+            dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+            prev = tmp;
+          }
+        }
+        return dp[lb];
+      };
+      const target = assetType.toLowerCase();
+      fuzzyMatches.sort((a, b) =>
+        lev(a.asset_type.toLowerCase(), target) - lev(b.asset_type.toLowerCase(), target)
+      );
       return fuzzyMatches[0];
     }
   }
@@ -243,7 +259,7 @@ function buildFusion(opts: {
     rules: opts.rulesScore ?? null,
     vision: opts.visionScore ?? null,
   };
-  return fuseConfidence(scores, DEFAULT_WEIGHTS);
+  return fuseConfidence(scores, getFusionWeights());
 }
 
 // ── Main pipeline ────────────────────────────────────────────────────────────
