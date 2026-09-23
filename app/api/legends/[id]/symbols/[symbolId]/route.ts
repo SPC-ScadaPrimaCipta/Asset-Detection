@@ -24,20 +24,21 @@ export async function PUT(
 
   const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
 
-  await db.query(
-    `UPDATE legend_symbols SET
-      asset_type = $1, symbol_name = $2, tag_pattern = $3, description = $4,
-      aliases = $5, status = $6, bbox_x = $7, bbox_y = $8, bbox_w = $9, bbox_h = $10, pid_page = $11
-    WHERE id = $12 AND legend_id = $13`,
-    [asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, symbolId, legendId]
-  );
+  try {
+    await db.query(
+      `UPDATE legend_symbols SET
+        asset_type = $1, symbol_name = $2, tag_pattern = $3, description = $4,
+        aliases = $5::text[], status = $6, bbox_x = $7, bbox_y = $8, bbox_w = $9, bbox_h = $10, pid_page = $11
+      WHERE id = $12 AND legend_id = $13`,
+      [asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, symbolId, legendId]
+    );
 
-  // Audit entry
-  await db.query('INSERT INTO legend_symbol_edits (symbol_id, legend_id, action, new_values) VALUES ($1, $2, $3, $4)',
-    [symbolId, legendId, 'UPDATE', JSON.stringify(parsed.data)]);
-
-  const res = await db.query('SELECT * FROM legend_symbols WHERE id = $1', [symbolId]);
-  return NextResponse.json(res.rows[0]);
+    const res = await db.query('SELECT * FROM legend_symbols WHERE id = $1', [symbolId]);
+    return NextResponse.json(res.rows[0]);
+  } catch (err: any) {
+    console.error('[PUT symbol]', err);
+    return NextResponse.json({ error: err.message ?? 'Database error' }, { status: 500 });
+  }
 }
 
 export async function DELETE(

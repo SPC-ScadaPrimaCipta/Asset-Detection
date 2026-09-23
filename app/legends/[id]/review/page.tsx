@@ -47,6 +47,7 @@ export default function LegendReviewPage() {
   const [showCards, setShowCards] = useState(true);
   const [showAllBboxes, setShowAllBboxes] = useState(false);
   const [symPage, setSymPage] = useState(1);
+  const [symSearch, setSymSearch] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<LegendSymbol>>({});
@@ -54,6 +55,14 @@ export default function LegendReviewPage() {
   const [reparsing, setReparsing] = useState(false);
   const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState('');
+
+  // ── Manual draw-to-add symbol ──────────────────────────────────────────────
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawState, setDrawState] = useState<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addModalBbox, setAddModalBbox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [addForm, setAddForm] = useState({ assetType: '', symbolName: '', tagPattern: '', description: '' });
+  const [addSaving, setAddSaving] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
@@ -180,13 +189,56 @@ export default function LegendReviewPage() {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
+    if (drawMode) {
+      // Draw mode — capture start point relative to contentRef in CSS coords
+      const content = contentRef.current; if (!content || !viewport) return;
+      const rect = content.getBoundingClientRect();
+      const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
+      // BoundingClientRect already accounts for the CSS transform (scale+translate),
+      // so dividing by the rendered size gives us true fractional position.
+      const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      const sx = fx * cssW; const sy = fy * cssH;
+      setDrawState({ startX: sx, startY: sy, x: sx, y: sy, w: 0, h: 0 });
+      return;
+    }
     stopZoomAnim();
     const V = viewRef.current;
     targetRef.current = { zoom: V.zoom, pan: { ...V.pan } };
     setDragging(true); setDragStart({ x: e.clientX - V.pan.x, y: e.clientY - V.pan.y });
   };
-  const handleMouseMove = (e: React.MouseEvent) => { if (!dragging) return; const np = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }; viewRef.current.pan = np; targetRef.current.pan = np; setPan(np); };
-  const handleMouseUp = () => setDragging(false);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (drawMode && drawState) {
+      const content = contentRef.current; if (!content || !viewport) return;
+      const rect = content.getBoundingClientRect();
+      const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
+      const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      const ex = fx * cssW; const ey = fy * cssH;
+      setDrawState(prev => prev ? { ...prev, x: Math.min(prev.startX, ex), y: Math.min(prev.startY, ey), w: Math.abs(ex - prev.startX), h: Math.abs(ey - prev.startY) } : null);
+      return;
+    }
+    if (!dragging) return; const np = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }; viewRef.current.pan = np; targetRef.current.pan = np; setPan(np);
+  };
+  const handleMouseUp = () => {
+    if (drawMode && drawState) {
+      const { x, y, w, h } = drawState;
+      setDrawState(null);
+      if (w > 5 && h > 5 && viewport) {
+        const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
+        const bx = Math.round((x / cssW) * 1000);
+        const by = Math.round((y / cssH) * 1000);
+        const bw = Math.round((w / cssW) * 1000);
+        const bh = Math.round((h / cssH) * 1000);
+        setAddModalBbox({ x: bx, y: by, w: bw, h: bh });
+        setAddForm({ assetType: '', symbolName: '', tagPattern: '', description: '' });
+        setAddModalOpen(true);
+        setDrawMode(false);
+      }
+      return;
+    }
+    setDragging(false);
+  };
 
   // drag bbox move/resize
   useEffect(() => {
@@ -294,15 +346,45 @@ export default function LegendReviewPage() {
   }, [symbols.length, symPage]);
 
   const persistSymbol = async (sym: LegendSymbol, patch: Partial<LegendSymbol>) => {
-    const payload = { asset_type: patch.asset_type ?? sym.asset_type, symbol_name: patch.symbol_name !== undefined ? patch.symbol_name : sym.symbol_name, tag_pattern: patch.tag_pattern !== undefined ? patch.tag_pattern : sym.tag_pattern, description: patch.description !== undefined ? patch.description : sym.description, aliases: (patch as any).aliases ?? sym.aliases, status: patch.status ?? sym.status, bbox_x: patch.bbox_x !== undefined ? patch.bbox_x : sym.bbox_x, bbox_y: patch.bbox_y !== undefined ? patch.bbox_y : sym.bbox_y, bbox_w: patch.bbox_w !== undefined ? patch.bbox_w : sym.bbox_w, bbox_h: patch.bbox_h !== undefined ? patch.bbox_h : sym.bbox_h, pid_page: patch.pid_page !== undefined ? patch.pid_page : sym.pid_page };
+    // normalize aliases — DB may return string/JSON
+    const rawAliases = (patch as any).aliases ?? sym.aliases;
+    let aliases: string[] = [];
+    if (Array.isArray(rawAliases)) aliases = rawAliases.map(String);
+    else if (typeof rawAliases === 'string') { try { const p = JSON.parse(rawAliases); aliases = Array.isArray(p) ? p.map(String) : []; } catch { aliases = []; } }
+
+    // normalize bbox to int
+    const toInt = (v: unknown) => { const n = parseInt(String(v ?? ''), 10); return isNaN(n) ? null : n; };
+
+    const payload = {
+      asset_type: patch.asset_type ?? sym.asset_type,
+      symbol_name: patch.symbol_name !== undefined ? patch.symbol_name : sym.symbol_name,
+      tag_pattern: patch.tag_pattern !== undefined ? patch.tag_pattern : sym.tag_pattern,
+      description: patch.description !== undefined ? patch.description : sym.description,
+      aliases,
+      status: patch.status ?? sym.status,
+      bbox_x: toInt(patch.bbox_x !== undefined ? patch.bbox_x : sym.bbox_x),
+      bbox_y: toInt(patch.bbox_y !== undefined ? patch.bbox_y : sym.bbox_y),
+      bbox_w: toInt(patch.bbox_w !== undefined ? patch.bbox_w : sym.bbox_w),
+      bbox_h: toInt(patch.bbox_h !== undefined ? patch.bbox_h : sym.bbox_h),
+      pid_page: toInt(patch.pid_page !== undefined ? patch.pid_page : sym.pid_page),
+    };
     const res = await fetch(`/api/legends/${legendId}/symbols/${sym.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('Save failed');
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as any).error || `Save failed (${res.status})`); }
     const updated = await res.json() as LegendSymbol;
     setSymbols(prev => prev.map(s => s.id === updated.id ? updated : s));
   };
 
   const handleApprove = async (id: string) => { const s = symbols.find(x => x.id === id); if (s) try { await persistSymbol(s, { status: 'ACTIVE' }); } catch (e: any) { setError(e.message); } };
   const handleReject = async (id: string) => { const s = symbols.find(x => x.id === id); if (s) try { await persistSymbol(s, { status: 'REJECTED' }); } catch (e: any) { setError(e.message); } };
+  const handleDeleteSymbol = async (id: string) => {
+    if (!confirm('Delete this symbol permanently?')) return;
+    try {
+      const res = await fetch(`/api/legends/${legendId}/symbols/${id}`, { method: 'DELETE' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as any).error || 'Delete failed'); }
+      setSymbols(prev => prev.filter(s => s.id !== id));
+      if (selectedId === id) setSelectedId(null);
+    } catch (e: any) { setError(e.message); }
+  };
 
   const handleReparse = async () => {
     setReparsing(true); setError('');
@@ -315,9 +397,31 @@ export default function LegendReviewPage() {
   const handleSaveEdit = async () => {
     if (!editForm.asset_type?.trim()) { setError('Asset type required'); return; }
     try {
-      const payload = { asset_type: editForm.asset_type.trim(), symbol_name: editForm.symbol_name?.trim() || null, tag_pattern: editForm.tag_pattern?.trim() || null, description: editForm.description?.trim() || null, aliases: (editForm as any).aliases || [], bbox_x: editForm.bbox_x ?? null, bbox_y: editForm.bbox_y ?? null, bbox_w: editForm.bbox_w ?? null, bbox_h: editForm.bbox_h ?? null, pid_page: editForm.pid_page ?? null, status: (editForm as any).status || 'ACTIVE' };
+      // normalize aliases — DB may return string/object
+      let aliases: string[] = [];
+      const rawAliases = (editForm as any).aliases;
+      if (Array.isArray(rawAliases)) aliases = rawAliases.map(String);
+      else if (typeof rawAliases === 'string') { try { const p = JSON.parse(rawAliases); aliases = Array.isArray(p) ? p.map(String) : []; } catch { aliases = []; } }
+
+      // normalize bbox — input values may be strings
+      const toInt = (v: unknown) => { const n = parseInt(String(v ?? ''), 10); return isNaN(n) ? null : n; };
+
+      const payload = {
+        asset_type: editForm.asset_type.trim(),
+        symbol_name: editForm.symbol_name?.trim() || null,
+        tag_pattern: editForm.tag_pattern?.trim() || null,
+        description: editForm.description?.trim() || null,
+        aliases,
+        status: (editForm as any).status || 'ACTIVE',
+        bbox_x: toInt(editForm.bbox_x),
+        bbox_y: toInt(editForm.bbox_y),
+        bbox_w: toInt(editForm.bbox_w),
+        bbox_h: toInt(editForm.bbox_h),
+        pid_page: toInt(editForm.pid_page),
+      };
       const r = await fetch(`/api/legends/${legendId}/symbols/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!r.ok) throw new Error('Save failed'); const u = await r.json() as LegendSymbol;
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error((d as any).error || `Save failed (${r.status})`); }
+      const u = await r.json() as LegendSymbol;
       setSymbols(prev => prev.map(s => s.id === u.id ? u : s)); setEditingId(null);
     } catch (e: any) { setError(e.message); }
   };
@@ -346,14 +450,116 @@ export default function LegendReviewPage() {
     try { const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE' }) }); if (!r.ok) throw new Error(); router.push(`/legends/${legendId}`); } catch { setError('Finalize failed'); } finally { setFinalizing(false); }
   };
 
+  // ── Add Symbol modal save handler ────────────────────────────────────────
+  const handleAddSymbolSave = async () => {
+    if (addSaving) return; // guard against double-click / StrictMode double-invoke
+    if (!addForm.assetType.trim()) { setError('Asset Type is required'); return; }
+    setAddSaving(true);
+    try {
+      const body = {
+        asset_type: addForm.assetType.trim(),
+        symbol_name: addForm.symbolName.trim() || null,
+        tag_pattern: addForm.tagPattern.trim() || null,
+        description: addForm.description.trim() || null,
+        aliases: [],
+        status: 'ACTIVE',
+        bbox_x: addModalBbox?.x ?? null,
+        bbox_y: addModalBbox?.y ?? null,
+        bbox_w: addModalBbox?.w ?? null,
+        bbox_h: addModalBbox?.h ?? null,
+        pid_page: currentPage,
+      };
+      const res = await fetch(`/api/legends/${legendId}/symbols`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as any).error || `Error ${res.status}`); }
+      const created = await res.json() as LegendSymbol;
+      setSymbols(prev => {
+        const next = [...prev, created];
+        // Jump sidebar to last page so new symbol is visible
+        setSymPage(Math.ceil(next.length / SYMS_PER_PAGE));
+        return next;
+      });
+      setSelectedId(created.id);
+      setShowAllBboxes(true); // show all bboxes so the new one is visible on the viewer
+      setAddModalOpen(false); setAddModalBbox(null);
+      setAddForm({ assetType: '', symbolName: '', tagPattern: '', description: '' });
+    } catch (e: any) { setError(e.message || 'Save failed'); }
+    finally { setAddSaving(false); }
+  };
+
   if (loading) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-subtle)' }}>Loading…</div>;
   if (!legend) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-muted)' }}>Legend not found</div>;
 
-  const totalSymPages = Math.max(1, Math.ceil(symbols.length / SYMS_PER_PAGE));
-  const pagedSymbols = symbols.slice((symPage - 1) * SYMS_PER_PAGE, symPage * SYMS_PER_PAGE);
+  const filteredSymbols = symSearch.trim()
+    ? symbols.filter(s => {
+        const q = symSearch.toLowerCase();
+        return (
+          s.asset_type.toLowerCase().includes(q) ||
+          (s.symbol_name ?? '').toLowerCase().includes(q) ||
+          (s.tag_pattern ?? '').toLowerCase().includes(q) ||
+          (s.description ?? '').toLowerCase().includes(q)
+        );
+      })
+    : symbols;
+  const totalSymPages = Math.max(1, Math.ceil(filteredSymbols.length / SYMS_PER_PAGE));
+  const pagedSymbols = filteredSymbols.slice((symPage - 1) * SYMS_PER_PAGE, symPage * SYMS_PER_PAGE);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 24px)', overflow: 'hidden' }}>
+      {/* ── Add Symbol Modal ──────────────────────────────────────────────── */}
+      {addModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) { setAddModalOpen(false); setAddModalBbox(null); } }}>
+          <div style={{ ...cardStyle, padding: 24, width: 380, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>Add Symbol Manually</h2>
+              <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--foreground-muted)', lineHeight: 1 }}>×</button>
+            </div>
+            {addModalBbox && (
+              <p style={{ fontSize: 11, color: 'var(--foreground-muted)', background: 'var(--surface-muted)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', marginBottom: 12 }}>
+                Bbox: x={addModalBbox.x} y={addModalBbox.y} w={addModalBbox.w} h={addModalBbox.h} · Page {currentPage}
+              </p>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>
+                  Asset Type <span style={{ color: 'var(--danger)' }}>*</span>
+                </span>
+                <input autoFocus value={addForm.assetType} onChange={e => setAddForm(p => ({ ...p, assetType: e.target.value }))}
+                  placeholder="e.g. PUMP, VALVE, VESSEL"
+                  style={{ padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Symbol Name</span>
+                <input value={addForm.symbolName} onChange={e => setAddForm(p => ({ ...p, symbolName: e.target.value }))}
+                  placeholder="e.g. Centrifugal Pump"
+                  style={{ padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Tag Pattern</span>
+                <input value={addForm.tagPattern} onChange={e => setAddForm(p => ({ ...p, tagPattern: e.target.value }))}
+                  placeholder="e.g. P-###"
+                  style={{ padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Description</span>
+                <textarea value={addForm.description} onChange={e => setAddForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="Optional description…" rows={2}
+                  style={{ padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13, resize: 'none', fontFamily: 'inherit' }} />
+              </label>
+              <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+                <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }}
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={handleAddSymbolSave} disabled={addSaving || !addForm.assetType.trim()}
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: addSaving || !addForm.assetType.trim() ? 'not-allowed' : 'pointer', opacity: addSaving || !addForm.assetType.trim() ? 0.55 : 1 }}>
+                  {addSaving ? 'Saving…' : 'Save Symbol'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header — compact */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
@@ -362,6 +568,11 @@ export default function LegendReviewPage() {
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
           <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1 }}>{reparsing ? 'Re-parsing…' : '↺ Re-parse'}</button>
+          <button
+            onClick={() => setDrawMode(v => !v)}
+            title={drawMode ? 'Cancel draw mode' : 'Drag on the PDF to mark a new symbol area'}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
+          >{drawMode ? '✕ Cancel' : '✏ Add Symbol'}</button>
           <button
             onClick={() => setShowAllBboxes(v => !v)}
             title={showAllBboxes ? 'Switch to single-select mode' : 'Show all symbol bounding boxes at once'}
@@ -411,7 +622,7 @@ export default function LegendReviewPage() {
           <div
             ref={viewerRef}
             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
-            style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: dragging ? 'grabbing' : 'grab', padding: 6 }}
+            style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: drawMode ? 'crosshair' : dragging ? 'grabbing' : 'grab', padding: 6 }}
           >
             <div ref={contentRef} style={{ position: 'relative', transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, transformOrigin: 'top left', boxShadow: '0 1px 8px rgba(0,0,0,0.12)', flexShrink: 0, willChange: 'transform' }}>
               <canvas ref={canvasRef} style={{ background: '#fff', display: 'block', width: viewport ? viewport.w / (renderScale || 1) : 0, height: viewport ? viewport.h / (renderScale || 1) : 0 }} />
@@ -423,7 +634,7 @@ export default function LegendReviewPage() {
                       const isSel = sym.id === selectedId;
                       const x = (sym.bbox_x! / 1000) * cssW; const y = (sym.bbox_y! / 1000) * cssH;
                       const w = (sym.bbox_w! / 1000) * cssW; const h = (sym.bbox_h! / 1000) * cssH;
-                      const color = sym.status === 'REJECTED' ? 'var(--danger)' : isSel ? '#f59e0b' : 'var(--success)';
+                      const color = sym.status === 'REJECTED' ? 'var(--success)' : 'var(--success)';
                       const rx = dragBbox?.id === sym.id ? dragBbox.x : x; const ry = dragBbox?.id === sym.id ? dragBbox.y : y;
                       const rw = dragBbox?.id === sym.id ? dragBbox.w : w; const rh = dragBbox?.id === sym.id ? dragBbox.h : h;
                       const label = (sym.symbol_name || sym.asset_type).slice(0, 16);
@@ -459,7 +670,7 @@ export default function LegendReviewPage() {
                             { m: 'l', hx: rx, hy: ry + rh / 2, c: 'ew-resize', t: 'Resize left edge' },
                             { m: 'r', hx: rx + rw, hy: ry + rh / 2, c: 'ew-resize', t: 'Resize right edge' },
                           ].map(h => (
-                            <rect key={h.m} data-handle={h.m} x={h.hx - 5} y={h.hy - 5} width={10} height={10}
+                            <rect key={h.m} data-handle={h.m} x={h.hx - 3} y={h.hy - 3} width={6} height={6}
                               fill="#fff" stroke={color} strokeWidth={1.5} rx={1.5} style={{ cursor: h.c }}>
                               <title>{h.t}</title>
                             </rect>
@@ -467,9 +678,24 @@ export default function LegendReviewPage() {
                         </g>
                       );
                     })}
+                    {/* Live draw rect — shown while user drags in draw mode */}
+                    {drawMode && drawState && drawState.w > 2 && drawState.h > 2 && (
+                      <rect
+                        x={drawState.x} y={drawState.y}
+                        width={drawState.w} height={drawState.h}
+                        fill="rgba(0,90,200,0.12)" stroke="#005ab4" strokeWidth={1.5}
+                        strokeDasharray="6 3" rx={2}
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    )}
                   </svg>
                 );
-              })()}
+            })()}
+            {drawMode && (
+              <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 10 }}>
+                ✏ Drag to mark symbol area
+              </div>
+            )}
             </div>
           </div>
         </div>
@@ -477,13 +703,32 @@ export default function LegendReviewPage() {
         {/* Symbols — paginated, no page scroll */}
         {showCards && (
           <aside style={{ ...cardStyle, width: 300, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
-            <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>Symbols</span>
-              <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: 999 }}>{symbols.length}</span>
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>Symbols</span>
+                <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: 999 }}>
+                  {symSearch.trim() ? `${filteredSymbols.length} / ${symbols.length}` : symbols.length}
+                </span>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={symSearch}
+                  onChange={e => { setSymSearch(e.target.value); setSymPage(1); }}
+                  placeholder="Search symbols…"
+                  style={{ width: '100%', padding: '5px 26px 5px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 12, boxSizing: 'border-box' }}
+                />
+                {symSearch && (
+                  <button onClick={() => { setSymSearch(''); setSymPage(1); }}
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1, padding: 0 }}>×</button>
+                )}
+              </div>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {pagedSymbols.length === 0 ? (
-                <p style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 24 }}>No symbols on this page.</p>
+                <p style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 24 }}>
+                  {symSearch.trim() ? `No symbols match "${symSearch}"` : 'No symbols on this page.'}
+                </p>
               ) : pagedSymbols.map(sym => (
                 <div key={sym.id} ref={el => { cardRefs.current[sym.id] = el; }} onClick={() => { const n = sym.id === selectedId ? null : sym.id; setSelectedId(n); if (n && sym.pid_page && sym.pid_page !== currentPage) setCurrentPage(sym.pid_page); }}
                   style={{ ...cardStyle, padding: '8px 9px', cursor: 'pointer', borderColor: sym.id === selectedId ? 'var(--accent)' : 'var(--border)', boxShadow: sym.id === selectedId ? '0 0 0 2px var(--accent-soft)' : undefined, background: sym.status === 'REJECTED' ? 'var(--danger-soft)' : sym.status === 'ACTIVE' ? 'var(--success-soft)' : 'var(--warning-soft)', opacity: sym.status === 'REJECTED' ? 0.75 : 1 }}>
@@ -494,10 +739,12 @@ export default function LegendReviewPage() {
                   {sym.symbol_name && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.symbol_name}</div>}
                   {sym.tag_pattern && <div style={{ fontSize: 10, fontFamily: 'ui-monospace,monospace', color: 'var(--foreground-subtle)', marginBottom: 6 }}>Tag: {sym.tag_pattern}</div>}
                   <div style={{ display: 'flex', gap: 4 }}>
-                    {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '4px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Approve</button>}
-                    <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: sym.status === 'DRAFT' ? 1 : undefined, flexGrow: sym.status !== 'DRAFT' ? 1 : undefined, padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
-                    {sym.status !== 'REJECTED' ? <button onClick={e => { e.stopPropagation(); handleReject(sym.id); }} style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, cursor: 'pointer' }}>✕</button>
-                      : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '4px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer' }}>Restore</button>}
+                    {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Approve</button>}
+                    <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: 2, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {sym.status !== 'REJECTED'
+                      ? <button onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>✕</button>
+                      : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer' }}>Restore</button>}
+                    <button onClick={e => { e.stopPropagation(); handleDeleteSymbol(sym.id); }} title="Delete permanently" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 12, cursor: 'pointer' }}>🗑</button>
                   </div>
                 </div>
               ))}

@@ -237,6 +237,8 @@ function ManualAddModal({
   documentId,
   legendId,
   jobId,
+  initialBbox,
+  initialPage,
 }: {
   open: boolean;
   onClose: () => void;
@@ -244,6 +246,8 @@ function ManualAddModal({
   documentId: string;
   legendId: string;
   jobId: string | null;
+  initialBbox?: { x: number; y: number; width: number; height: number } | null;
+  initialPage?: number | null;
 }) {
   const [assetType, setAssetType] = useState("");
   const [assetTag, setAssetTag] = useState("");
@@ -257,21 +261,21 @@ function ManualAddModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Reset form when modal opens
+  // Reset form when modal opens — pre-fill bbox/page when coming from draw mode
   useEffect(() => {
     if (open) {
       setAssetType("");
       setAssetTag("");
       setDescription("");
-      setPidPage("");
-      setBboxX("0");
-      setBboxY("0");
-      setBboxW("100");
-      setBboxH("100");
+      setPidPage(initialPage != null ? String(initialPage) : "");
+      setBboxX(initialBbox != null ? String(initialBbox.x) : "0");
+      setBboxY(initialBbox != null ? String(initialBbox.y) : "0");
+      setBboxW(initialBbox != null ? String(initialBbox.width) : "100");
+      setBboxH(initialBbox != null ? String(initialBbox.height) : "100");
       setError("");
       setSubmitting(false);
     }
-  }, [open]);
+  }, [open, initialBbox, initialPage]);
 
   if (!open) return null;
 
@@ -740,6 +744,8 @@ function PidViewer({
   page,
   totalPages,
   onPageChange,
+  drawMode,
+  onDrawComplete,
 }: {
   documentId: string;
   detections: Detection[];
@@ -748,6 +754,8 @@ function PidViewer({
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
+  drawMode?: boolean;
+  onDrawComplete?: (bbox: { x: number; y: number; width: number; height: number }) => void;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -762,6 +770,12 @@ function PidViewer({
   const [imgLoading, setImgLoading] = useState(!!documentId);
   const [imgError, setImgError] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Draw-bbox state — active when drawMode=true
+  const [drawing, setDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const imgSrc = documentId
     ? `/api/documents/${documentId}/pages/${page}/image`
@@ -821,16 +835,57 @@ function PidViewer({
     return () => el.removeEventListener("wheel", onWheel);
   }, [fullscreen]);
 
+  // Convert mouse clientX/Y → normalized 0-1000 coords relative to displayed image
+  const getImageCoords = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const img = imgRef.current;
+    if (!img) return null;
+    const rect = img.getBoundingClientRect();
+    const rx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const ry = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    return { x: Math.round(rx * 1000), y: Math.round(ry * 1000) };
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (drawMode) {
+      // Draw mode — start drawing bbox
+      const coords = getImageCoords(e.clientX, e.clientY);
+      if (!coords) return;
+      setDrawing(true);
+      setDrawStart(coords);
+      setDrawRect(null);
+      return;
+    }
     if ((e.target as HTMLElement).closest("[data-bbox]")) return;
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (drawMode && drawing && drawStart) {
+      const coords = getImageCoords(e.clientX, e.clientY);
+      if (!coords) return;
+      const x = Math.min(drawStart.x, coords.x);
+      const y = Math.min(drawStart.y, coords.y);
+      const w = Math.abs(coords.x - drawStart.x);
+      const h = Math.abs(coords.y - drawStart.y);
+      setDrawRect({ x, y, w, h });
+      return;
+    }
     if (!dragging) return;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
-  const handleMouseUp = () => setDragging(false);
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (drawMode && drawing && drawRect) {
+      setDrawing(false);
+      // Only fire callback if bbox is big enough (min 5 units)
+      if (drawRect.w >= 5 && drawRect.h >= 5 && onDrawComplete) {
+        onDrawComplete({ x: drawRect.x, y: drawRect.y, width: drawRect.w, height: drawRect.h });
+      }
+      setDrawRect(null);
+      setDrawStart(null);
+      return;
+    }
+    setDragging(false);
+  };
 
   const rotate = () => setRotation((r) => (r + 90) % 360);
   const resetView = () => {
@@ -959,13 +1014,29 @@ function PidViewer({
             gap: "8px",
           }}
         >
-          <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-            {imgLoading && selectedId
-              ? "⏳ Loading page image…"
-              : visible.length > 0
-                ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
-                : "Bbox hidden — select an asset to show"}
-          </span>
+          {drawMode ? (
+            <span
+              style={{
+                fontSize: "12px",
+                color: "var(--primary)",
+                fontWeight: "600",
+                background: "rgba(0,90,180,0.10)",
+                border: "1px solid var(--primary)",
+                borderRadius: "var(--radius-sm)",
+                padding: "2px 8px",
+              }}
+            >
+              ✏ Draw mode — drag on image to place asset
+            </span>
+          ) : (
+            <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
+              {imgLoading && selectedId
+                ? "⏳ Loading page image…"
+                : visible.length > 0
+                  ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
+                  : "Bbox hidden — select an asset to show"}
+            </span>
+          )}
           {/* Fullscreen toggle */}
           <button
             onClick={() => setFullscreen((f) => !f)}
@@ -1020,7 +1091,7 @@ function PidViewer({
           userSelect: "none",
           flex: 1,
           minHeight: fullscreen ? "calc(100vh - 80px)" : 600,
-          cursor: dragging ? "grabbing" : "grab",
+          cursor: drawMode ? "crosshair" : dragging ? "grabbing" : "grab",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -1178,6 +1249,21 @@ function PidViewer({
                         </g>
                       );
                     })}
+
+                    {/* Draw-mode live rectangle */}
+                    {drawMode && drawing && drawRect && (
+                      <rect
+                        x={(drawRect.x / 1000) * imgNatural.w}
+                        y={(drawRect.y / 1000) * imgNatural.h}
+                        width={(drawRect.w / 1000) * imgNatural.w}
+                        height={(drawRect.h / 1000) * imgNatural.h}
+                        fill="rgba(0,90,200,0.10)"
+                        stroke="#005ab4"
+                        strokeWidth={2}
+                        strokeDasharray="6 3"
+                        rx={3}
+                      />
+                    )}
                   </svg>
                 )}
               </div>
@@ -2188,6 +2274,9 @@ function DetectionWorkspace() {
   );
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
+  // Draw-mode: user clicks this to draw a bbox on the P&ID image
+  const [drawMode, setDrawMode] = useState(false);
+  const [pendingBbox, setPendingBbox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
@@ -2350,11 +2439,13 @@ function DetectionWorkspace() {
       {/* Manual Add Modal */}
       <ManualAddModal
         open={showManualAdd}
-        onClose={() => setShowManualAdd(false)}
+        onClose={() => { setShowManualAdd(false); setPendingBbox(null); }}
         onSave={loadDetections}
         documentId={documentId}
         legendId={legendId}
         jobId={currentJobId}
+        initialBbox={pendingBbox}
+        initialPage={currentPage}
       />
 
       {/* Header */}
@@ -2482,17 +2573,29 @@ function DetectionWorkspace() {
             {running ? "Starting…" : "Run Detection"}
           </button>
 
-          {/* Manual Add button */}
+          {/* ✏ Draw & Add Manual — toggle draw mode on P&ID viewer */}
           <button
-            onClick={() => setShowManualAdd(true)}
+            onClick={() => {
+              if (!documentId) return;
+              setDrawMode((v) => !v);
+              // Ensure workspace is visible even before any detections
+            }}
             disabled={!documentId}
+            title={drawMode ? "Cancel draw mode" : "Click then drag on the P&ID image to place a manual asset"}
             style={
               !documentId
                 ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed" }
-                : buttonStyle
+                : drawMode
+                  ? {
+                      ...buttonStyle,
+                      background: "var(--primary)",
+                      color: "var(--surface)",
+                      border: "1px solid var(--primary)",
+                    }
+                  : buttonStyle
             }
           >
-            + Add Asset Manually
+            {drawMode ? "✕ Cancel Draw" : "✏ Add Manual"}
           </button>
         </div>
       </div>
@@ -2550,7 +2653,7 @@ function DetectionWorkspace() {
       )}
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
-      {detections.length > 0 || currentJobId ? (
+      {detections.length > 0 || currentJobId || drawMode ? (
         <div style={{ display: "flex", gap: "12px", flex: 1, minHeight: 700 }}>
           {/* Left: Viewer — takes most of the width (~75%) */}
           <div
@@ -2583,6 +2686,12 @@ function DetectionWorkspace() {
                 page={currentPage || 1}
                 totalPages={maxPage}
                 onPageChange={setCurrentPage}
+                drawMode={drawMode}
+                onDrawComplete={(bbox) => {
+                  setDrawMode(false);
+                  setPendingBbox(bbox);
+                  setShowManualAdd(true);
+                }}
               />
             </div>
           </div>
