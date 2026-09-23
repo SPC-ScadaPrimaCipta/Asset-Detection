@@ -45,6 +45,7 @@ export default function LegendReviewPage() {
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showCards, setShowCards] = useState(true);
+  const [showAllBboxes, setShowAllBboxes] = useState(false);
   const [symPage, setSymPage] = useState(1);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -361,6 +362,11 @@ export default function LegendReviewPage() {
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
           <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1 }}>{reparsing ? 'Re-parsing…' : '↺ Re-parse'}</button>
+          <button
+            onClick={() => setShowAllBboxes(v => !v)}
+            title={showAllBboxes ? 'Switch to single-select mode' : 'Show all symbol bounding boxes at once'}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`, background: showAllBboxes ? 'var(--primary)' : 'var(--surface)', color: showAllBboxes ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
+          >{showAllBboxes ? '⊞ All (on)' : '⊞ Show All'}</button>
           <button onClick={handleApproveAll} disabled={approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1 }}>{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}</button>
           <button onClick={handleFinalize} disabled={finalizing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: finalizing ? 0.6 : 1 }}>{finalizing ? 'Finalizing…' : 'Finalize & Activate'}</button>
         </div>
@@ -413,7 +419,7 @@ export default function LegendReviewPage() {
                 const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
                 return (
                   <svg viewBox={`0 0 ${cssW} ${cssH}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null && s.id === selectedId).map(sym => {
+                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null && (showAllBboxes || s.id === selectedId)).map(sym => {
                       const isSel = sym.id === selectedId;
                       const x = (sym.bbox_x! / 1000) * cssW; const y = (sym.bbox_y! / 1000) * cssH;
                       const w = (sym.bbox_w! / 1000) * cssW; const h = (sym.bbox_h! / 1000) * cssH;
