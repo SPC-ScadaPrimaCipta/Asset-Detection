@@ -7,7 +7,7 @@ export interface ParsedSymbol {
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
 }
 
-const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+const FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
 
 async function getModelWithFallback() {
   const cfg = await getAiConfig();

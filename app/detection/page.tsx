@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { Lightning, CheckCircle, XCircle, PencilSimple, FloppyDisk, FileXls, PlusCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1723,7 +1724,7 @@ function AssetDetail({
     flex: 1,
     padding: "6px 8px",
     borderRadius: "var(--radius-sm)",
-    background: "var(--info)",
+    background: "#002B4E",
     color: "white",
     fontSize: "12px",
     fontWeight: "600",
@@ -1962,24 +1963,28 @@ function AssetDetail({
             <>
               <button
                 onClick={() => onConfirm(detection.id)}
-                style={successBtn}
+                style={{ ...successBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
               >
+                <CheckCircle size={14} weight="bold" style={{ flexShrink: 0 }} />
                 Confirm
               </button>
               {!editing ? (
-                <button onClick={() => setEditing(true)} style={infoBtn}>
+                <button onClick={() => setEditing(true)} style={{ ...infoBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <PencilSimple size={14} weight="bold" style={{ flexShrink: 0 }} />
                   Edit
                 </button>
               ) : (
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  style={{ ...infoBtn, opacity: saving ? 0.5 : 1 }}
+                  style={{ ...infoBtn, opacity: saving ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                 >
+                  <FloppyDisk size={14} weight="bold" style={{ flexShrink: 0 }} />
                   {saving ? "Saving…" : "Save"}
                 </button>
               )}
-              <button onClick={() => onReject(detection.id)} style={dangerBtn}>
+              <button onClick={() => onReject(detection.id)} style={{ ...dangerBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                <XCircle size={14} weight="bold" style={{ flexShrink: 0 }} />
                 Reject
               </button>
             </>
@@ -2046,7 +2051,7 @@ function DetectionsTable({
   const [sortAsc, setSortAsc] = useState(true);
   // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
   const [hideDupes, setHideDupes] = useState(true);
-  const PAGE_SIZE = 15;
+  const [pageSize, setPageSize] = useState(15);
 
   // M1: Build dedup map — for each normalized key keep highest-confidence detection
   const dedupMap = useMemo(() => {
@@ -2108,8 +2113,8 @@ function DetectionsTable({
     return sortAsc ? cmp : -cmp;
   });
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const slice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const slice = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const toggleSort = (col: "tag" | "type" | "page" | "conf" | "status") => {
     if (sortBy === col) setSortAsc(!sortAsc);
@@ -2328,7 +2333,7 @@ function DetectionsTable({
                   <td
                     style={{ ...cellBase, color: "var(--foreground-subtle)" }}
                   >
-                    {(page - 1) * PAGE_SIZE + i + 1}
+                    {(page - 1) * pageSize + i + 1}
                   </td>
                   {/* M4: No-tag indicator */}
                   <td
@@ -2412,40 +2417,51 @@ function DetectionsTable({
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div
+      <div
+        style={{
+          padding: "8px 16px",
+          borderTop: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          fontSize: "12px",
+          color: "var(--foreground-muted)",
+        }}
+      >
+        <button
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1, display: 'flex', alignItems: 'center' }}
+        >
+          <CaretLeft size={14} weight="bold" />
+        </button>
+        <span>
+          Page {page} / {totalPages}
+        </span>
+        <button
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
           style={{
-            padding: "8px 16px",
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            fontSize: "12px",
-            color: "var(--foreground-muted)",
+            ...toolButtonStyle,
+            opacity: page === totalPages ? 0.4 : 1,
+            display: 'flex',
+            alignItems: 'center',
           }}
         >
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1 }}
+          <CaretRight size={14} weight="bold" />
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: 'var(--foreground-muted)' }}>Show</span>
+          <select
+            value={pageSize}
+            onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+            style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
           >
-            ←
-          </button>
-          <span>
-            Page {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            style={{
-              ...toolButtonStyle,
-              opacity: page === totalPages ? 0.4 : 1,
-            }}
-          >
-            →
-          </button>
+            {[15, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span style={{ color: 'var(--foreground-subtle)' }}>{sorted.length} total</span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -2791,10 +2807,11 @@ function DetectionWorkspace() {
             disabled={running || !documentId}
             style={
               running || !documentId
-                ? { ...primaryButtonStyle, opacity: 0.5, cursor: "not-allowed" }
-                : primaryButtonStyle
+                ? { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', opacity: 0.5, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
+                : { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', display: 'flex', alignItems: 'center', gap: '6px' }
             }
           >
+            <Lightning size={14} weight="fill" style={{ flexShrink: 0 }} />
             {running ? "Starting…" : "Run Detection"}
           </button>
 
@@ -2813,13 +2830,13 @@ function DetectionWorkspace() {
             disabled={!documentId}
             style={
               !documentId
-                ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed" }
+                ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
                 : drawMode
-                  ? { ...primaryButtonStyle }
-                  : buttonStyle
+                  ? { ...primaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }
+                  : { ...buttonStyle, display: 'flex', alignItems: 'center', gap: '6px' }
             }
           >
-            {drawMode ? "✕ Cancel Drawing" : "+ Add Asset Manually"}
+            {drawMode ? "✕ Cancel Drawing" : <><PlusCircle size={14} weight="bold" style={{ flexShrink: 0 }} /> Add Asset Manually</>}
           </button>
         </div>
       </div>

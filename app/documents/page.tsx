@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,6 +138,10 @@ export default function DocumentsPage() {
 
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Pagination
+  const [docPage, setDocPage] = useState(1);
+  const [docPageSize, setDocPageSize] = useState(10);
 
   const fetchDocuments = useCallback(async () => {
     const res = await fetch('/api/documents');
@@ -299,11 +304,10 @@ export default function DocumentsPage() {
             disabled={!canUpload}
             style={{ ...primaryButtonStyle, opacity: !canUpload ? 0.4 : 1, cursor: !canUpload ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
           >
-            {uploading && <Spinner />}
-            {uploading ? 'Uploading…' : 'Upload PDF'}
+            {uploading ? <><span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />Uploading…</> : <><UploadSimple size={15} weight="bold" />Upload PDF</>}
           </button>
           {uploadProgress === 100 && !uploading && (
-            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '500' }}>✓ Upload successful</span>
+            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={14} weight="fill" /> Upload successful</span>
           )}
         </div>
       </div>
@@ -341,7 +345,7 @@ export default function DocumentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {documents.map(doc => (
+                {documents.slice((docPage - 1) * docPageSize, docPage * docPageSize).map(doc => (
                   <tr key={doc.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 150ms ease-out' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
@@ -366,15 +370,16 @@ export default function DocumentsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                         <Link
                           href={`/detection?project_id=${doc.project_id}`}
-                          style={{ fontSize: '12px', fontWeight: '500', color: 'var(--info)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--info-soft)', background: 'var(--info-soft)', textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all 150ms ease-out' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #2D7A3A', background: '#2D7A3A', textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all 150ms ease-out' }}
                         >
-                          Run Detection
+                          <Lightning size={13} weight="fill" /> Run Detection
                         </Link>
                         <button
                           onClick={() => handleDelete(doc)}
                           disabled={deletingId === doc.id}
-                          style={{ fontSize: '12px', fontWeight: '500', color: 'var(--danger)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger-soft)', background: 'var(--danger-soft)', cursor: 'pointer', opacity: deletingId === doc.id ? 0.4 : 1, transition: 'all 150ms ease-out' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', cursor: 'pointer', opacity: deletingId === doc.id ? 0.4 : 1, transition: 'all 150ms ease-out' }}
                         >
+                          <Trash size={13} weight="bold" />
                           {deletingId === doc.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </div>
@@ -385,6 +390,22 @@ export default function DocumentsPage() {
             </table>
           </div>
         )}
+        {/* Pagination — always visible */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
+          <button onClick={() => setDocPage(p => Math.max(1, p - 1))} disabled={docPage === 1} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage === 1 ? 'not-allowed' : 'pointer', opacity: docPage === 1 ? 0.4 : 1, color: 'var(--foreground-muted)' }}><CaretLeft size={12} weight="bold" /> Prev</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
+            <select
+              value={docPageSize}
+              onChange={e => { setDocPageSize(Number(e.target.value)); setDocPage(1); }}
+              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
+            >
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Page <strong>{docPage}</strong> of <strong>{Math.max(1, Math.ceil(documents.length / docPageSize))}</strong> · {documents.length} total</span>
+          </div>
+          <button onClick={() => setDocPage(p => Math.min(Math.ceil(documents.length / docPageSize), p + 1))} disabled={docPage >= Math.ceil(documents.length / docPageSize)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage >= Math.ceil(documents.length / docPageSize) ? 'not-allowed' : 'pointer', opacity: docPage >= Math.ceil(documents.length / docPageSize) ? 0.4 : 1, color: 'var(--foreground-muted)' }}>Next <CaretRight size={12} weight="bold" /></button>
+        </div>
       </div>
     </div>
   );

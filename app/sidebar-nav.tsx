@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const SECTION = 'var(--foreground-subtle)';
-const MUTED = 'var(--foreground-muted)';
-const ACTIVE_BG = 'var(--primary-soft)';
-const ACTIVE_COLOR = 'var(--primary)';
-const HOVER_BG = 'rgba(0, 43, 78, 0.04)'; // primary with 4% opacity
+const SECTION    = 'rgba(255,255,255,0.28)';
+const MUTED      = 'rgba(255,255,255,0.62)';
+const ACTIVE_BG  = 'rgba(0,120,184,0.25)';
+const ACTIVE_COLOR = '#fff';
+const HOVER_BG   = 'rgba(255,255,255,0.07)';
 
 const GROUPS: { label: string; items: { href: string; label: string; icon: string }[] }[] = [
   {
@@ -87,6 +87,7 @@ export default function SidebarNav() {
                       outline: 'none',
                       transition: 'all 150ms ease-out',
                       position: 'relative',
+                      borderLeft: active ? '2px solid #00A9E8' : '2px solid transparent',
                     }}
                     onMouseEnter={(e) => {
                       if (!active) {

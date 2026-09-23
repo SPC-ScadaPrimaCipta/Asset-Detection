@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import * as pdfjsLib from 'pdfjs-dist';
+import { ArrowCounterClockwise, PencilLine, SquaresFour, CheckCircle, SealCheck, PencilSimple, XCircle, Trash, FloppyDisk, X, CaretLeft, CaretRight, Plus, Minus } from '@phosphor-icons/react';
 
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -548,12 +549,12 @@ export default function LegendReviewPage() {
               </label>
               <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
                 <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }}
-                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer' }}>
-                  Cancel
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <X size={13} />Cancel
                 </button>
                 <button onClick={handleAddSymbolSave} disabled={addSaving || !addForm.assetType.trim()}
-                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: addSaving || !addForm.assetType.trim() ? 'not-allowed' : 'pointer', opacity: addSaving || !addForm.assetType.trim() ? 0.55 : 1 }}>
-                  {addSaving ? 'Saving…' : 'Save Symbol'}
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: addSaving || !addForm.assetType.trim() ? 'not-allowed' : 'pointer', opacity: addSaving || !addForm.assetType.trim() ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <FloppyDisk size={13} />{addSaving ? 'Saving…' : 'Save Symbol'}
                 </button>
               </div>
             </div>
@@ -567,19 +568,19 @@ export default function LegendReviewPage() {
           <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-          <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1 }}>{reparsing ? 'Re-parsing…' : '↺ Re-parse'}</button>
+          <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}><ArrowCounterClockwise size={13} />{reparsing ? 'Re-parsing…' : 'Re-parse'}</button>
           <button
             onClick={() => setDrawMode(v => !v)}
             title={drawMode ? 'Cancel draw mode' : 'Drag on the PDF to mark a new symbol area'}
-            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-          >{drawMode ? '✕ Cancel' : '✏ Add Symbol'}</button>
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          ><PencilLine size={13} />{drawMode ? 'Cancel' : 'Add Symbol'}</button>
           <button
             onClick={() => setShowAllBboxes(v => !v)}
             title={showAllBboxes ? 'Switch to single-select mode' : 'Show all symbol bounding boxes at once'}
-            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`, background: showAllBboxes ? 'var(--primary)' : 'var(--surface)', color: showAllBboxes ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-          >{showAllBboxes ? '⊞ All (on)' : '⊞ Show All'}</button>
-          <button onClick={handleApproveAll} disabled={approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1 }}>{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}</button>
-          <button onClick={handleFinalize} disabled={finalizing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: finalizing ? 0.6 : 1 }}>{finalizing ? 'Finalizing…' : 'Finalize & Activate'}</button>
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`, background: showAllBboxes ? 'var(--primary)' : 'var(--surface)', color: showAllBboxes ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          ><SquaresFour size={13} />{showAllBboxes ? 'All (on)' : 'Show All'}</button>
+          <button onClick={handleApproveAll} disabled={approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}><CheckCircle size={13} />{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}</button>
+          <button onClick={handleFinalize} disabled={finalizing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: finalizing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}><SealCheck size={13} />{finalizing ? 'Finalizing…' : 'Finalize & Activate'}</button>
         </div>
       </div>
 
@@ -602,15 +603,15 @@ export default function LegendReviewPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {pdfPages > 1 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === 1 ? 0.4 : 1 }}>◀</button>
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === 1 ? 0.4 : 1, display: 'inline-flex', alignItems: 'center' }}><CaretLeft size={12} /></button>
                   <span style={{ fontSize: 11, width: 36, textAlign: 'center', color: 'var(--foreground-muted)' }}>{currentPage}/{pdfPages}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(pdfPages, p + 1))} disabled={currentPage === pdfPages} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === pdfPages ? 0.4 : 1 }}>▶</button>
+                  <button onClick={() => setCurrentPage(p => Math.min(pdfPages, p + 1))} disabled={currentPage === pdfPages} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === pdfPages ? 0.4 : 1, display: 'inline-flex', alignItems: 'center' }}><CaretRight size={12} /></button>
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <button onClick={() => stepZoom(-1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>−</button>
+                <button onClick={() => stepZoom(-1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Minus size={12} /></button>
                 <span style={{ fontSize: 11, width: 30, textAlign: 'center', color: 'var(--foreground-muted)' }}>{Math.round(zoom * 100)}%</span>
-                <button onClick={() => stepZoom(1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>+</button>
+                <button onClick={() => stepZoom(1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Plus size={12} /></button>
                 <button onClick={() => { const el = viewerRef.current; if (!el) return; const v = el.getBoundingClientRect(); retargetZoom(v.left + v.width / 2, v.top + v.height / 2, fitZoom); }} title="Fit" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊡</button>
                 <button onClick={() => { targetRef.current = { zoom: fitZoom, pan: { x: 0, y: 0 } }; kickZoomAnim(); }} title="Reset" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊙</button>
               </div>
@@ -739,21 +740,21 @@ export default function LegendReviewPage() {
                   {sym.symbol_name && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.symbol_name}</div>}
                   {sym.tag_pattern && <div style={{ fontSize: 10, fontFamily: 'ui-monospace,monospace', color: 'var(--foreground-subtle)', marginBottom: 6 }}>Tag: {sym.tag_pattern}</div>}
                   <div style={{ display: 'flex', gap: 4 }}>
-                    {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Approve</button>}
-                    <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: 2, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><CheckCircle size={12} />Approve</button>}
+                    <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: 2, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid #002B4E', background: '#002B4E', color: '#fff', fontSize: 11, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><PencilSimple size={12} />Edit</button>
                     {sym.status !== 'REJECTED'
-                      ? <button onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>✕</button>
-                      : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer' }}>Restore</button>}
-                    <button onClick={e => { e.stopPropagation(); handleDeleteSymbol(sym.id); }} title="Delete permanently" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 12, cursor: 'pointer' }}>🗑</button>
+                      ? <button onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger)', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}><XCircle size={12} />Reject</button>
+                      : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><ArrowCounterClockwise size={12} />Restore</button>}
+                    <button onClick={e => { e.stopPropagation(); handleDeleteSymbol(sym.id); }} title="Delete permanently" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', color: '#fff', fontSize: 11, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}><Trash size={12} />Delete</button>
                   </div>
                 </div>
               ))}
             </div>
             {/* Pagination — compact */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 8px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)', flexShrink: 0, gap: 6 }}>
-              <button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1 }}>‹ Prev</button>
+              <button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1, display: 'inline-flex', alignItems: 'center', gap: 3 }}><CaretLeft size={12} />Prev</button>
               <span style={{ fontSize: 11, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>{symPage} / {totalSymPages} · {(symPage - 1) * SYMS_PER_PAGE + 1}-{Math.min(symPage * SYMS_PER_PAGE, symbols.length)} of {symbols.length}</span>
-              <button onClick={() => setSymPage(p => Math.min(totalSymPages, p + 1))} disabled={symPage === totalSymPages} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === totalSymPages ? 'not-allowed' : 'pointer', opacity: symPage === totalSymPages ? 0.4 : 1 }}>Next ›</button>
+              <button onClick={() => setSymPage(p => Math.min(totalSymPages, p + 1))} disabled={symPage === totalSymPages} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === totalSymPages ? 'not-allowed' : 'pointer', opacity: symPage === totalSymPages ? 0.4 : 1, display: 'inline-flex', alignItems: 'center', gap: 3 }}>Next<CaretRight size={12} /></button>
             </div>
           </aside>
         )}
@@ -791,8 +792,8 @@ export default function LegendReviewPage() {
               </div>
             </label>
             <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-              <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
-              <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><FloppyDisk size={13} />Save</button>
+              <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><X size={13} />Cancel</button>
             </div>
           </div>
         </div>

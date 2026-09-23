@@ -105,12 +105,9 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
 }
 
 // Models confirmed working — ordered by preference.
-// gemini-3.6-flash = current recommended (replaces deprecated 2.x series).
-// gemini-2.5-flash = valid fallback.
-// All 2.0/1.5 series removed — Google returned 404 for all of them.
 const KNOWN_GOOD_FALLBACK_MODELS = [
-  'gemini-3.6-flash',   // primary — current Google recommended
-  'gemini-2.5-flash',   // fallback — also valid
+  'gemini-2.0-flash',   // primary
+  'gemini-1.5-flash',   // fallback
 ];
 
 export async function runDetectionAgent(input: DetectionJobInput): Promise<ResolvedPageDetection> {
