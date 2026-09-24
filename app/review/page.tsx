@@ -120,7 +120,8 @@ const toolButtonStyle: React.CSSProperties = {
 };
 
 const tableActionBtn: React.CSSProperties = {
-  padding: '4px 8px',
+  padding: '5px 0',
+  width: '76px',
   borderRadius: 'var(--radius-sm)',
   color: 'white',
   fontSize: '12px',
@@ -128,6 +129,11 @@ const tableActionBtn: React.CSSProperties = {
   border: 'none',
   cursor: 'pointer',
   transition: 'all 150ms ease-out',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '4px',
+  flexShrink: 0,
 };
 
 const badgeBase: React.CSSProperties = {
@@ -1169,34 +1175,41 @@ export default function ReviewPage() {
                                 <div style={{ display: 'flex', gap: '4px' }}>
                                   <button
                                     onClick={() => handleConfirm(d.id)}
-                                    style={{ ...tableActionBtn, background: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                    style={{ ...tableActionBtn, background: 'var(--success)' }}
                                     title="Confirm"
                                   >
-                                    <CheckCircle size={13} weight="bold" /> Confirm
+                                    <CheckCircle size={12} weight="bold" /> Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => { handleRowClick(d); }}
+                                    style={{ ...tableActionBtn, background: '#002B4E' }}
+                                    title="Edit"
+                                  >
+                                    <PencilSimple size={12} weight="bold" /> Edit
                                   </button>
                                   <button
                                     onClick={() => handleReject(d.id)}
-                                    style={{ ...tableActionBtn, background: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                    style={{ ...tableActionBtn, background: 'var(--danger)' }}
                                     title="Reject"
                                   >
-                                    <XCircle size={13} weight="bold" /> Reject
+                                    <XCircle size={12} weight="bold" /> Reject
                                   </button>
                                 </div>
                               ) : (
                                 <div style={{ display: 'flex', gap: '4px' }}>
                                   <button
                                     onClick={() => { handleRowClick(d); }}
-                                    style={{ ...tableActionBtn, background: '#002B4E', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                    style={{ ...tableActionBtn, background: '#002B4E' }}
                                     title="Edit"
                                   >
-                                    <PencilSimple size={13} weight="bold" /> Edit
+                                    <PencilSimple size={12} weight="bold" /> Edit
                                   </button>
                                   <button
                                     onClick={() => handleDelete(d.id)}
-                                    style={{ ...tableActionBtn, background: '#A65A55', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                    style={{ ...tableActionBtn, background: '#7C3D3A' }}
                                     title="Delete"
                                   >
-                                    <Trash size={13} weight="bold" /> Delete
+                                    <Trash size={12} weight="bold" /> Delete
                                   </button>
                                 </div>
                               )}

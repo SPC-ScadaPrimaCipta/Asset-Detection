@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { PencilSimple, Trash, FloppyDisk, Plus, X, CaretLeft, CaretRight } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -234,7 +233,7 @@ function EditRow({
             disabled={saving}
             style={primaryButtonStyle}
           >
-            {saving ? <Spinner size={12} /> : <FloppyDisk size={13} weight="bold" />}
+            {saving && <Spinner size={12} />}
             Save
           </button>
           <button
@@ -242,7 +241,6 @@ function EditRow({
             disabled={saving}
             style={secondaryButtonStyle}
           >
-            <X size={13} weight="bold" />
             Cancel
           </button>
         </div>
@@ -304,7 +302,9 @@ function AddSymbolForm({
         onClick={() => setOpen(true)}
         style={{ ...secondaryButtonStyle, width: '100%', justifyContent: 'center' }}
       >
-        <Plus size={13} weight="bold" />
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
         Add Symbol
       </button>
     );
@@ -322,7 +322,7 @@ function AddSymbolForm({
           onClick={() => { setOpen(false); setForm(blankSymbol()); setError(''); }}
           style={{ background: 'transparent', border: 'none', color: 'var(--foreground-muted)', cursor: 'pointer' }}
         >
-          <X size={13} weight="bold" /> Cancel
+          ✕ Cancel
         </button>
       </div>
 
@@ -393,7 +393,7 @@ function AddSymbolForm({
         disabled={saving || !form.asset_type.trim()}
         style={{ ...primaryButtonStyle, width: 'fit-content' }}
       >
-        {saving ? <Spinner /> : <Plus size={13} weight="bold" />}
+        {saving && <Spinner />}
         {saving ? 'Adding…' : 'Add Symbol'}
       </button>
     </form>
@@ -420,10 +420,6 @@ export default function LegendDetailPage() {
   // Symbol row state
   const [editingSymbolId, setEditingSymbolId] = useState<string | null>(null);
   const [deletingSymbolId, setDeletingSymbolId] = useState<string | null>(null);
-
-  // Pagination
-  const [symPage, setSymPage] = useState(1);
-  const [symPageSize, setSymPageSize] = useState(10);
 
   useEffect(() => {
     Promise.all([
@@ -567,7 +563,7 @@ export default function LegendDetailPage() {
               disabled={savingInfo || !editName.trim()}
               style={{ ...primaryButtonStyle, opacity: (savingInfo || !editName.trim()) ? 0.4 : 1, cursor: (savingInfo || !editName.trim()) ? 'not-allowed' : 'pointer' }}
             >
-              {savingInfo ? <Spinner /> : <FloppyDisk size={13} weight="bold" />}
+              {savingInfo && <Spinner />}
               {savingInfo ? 'Saving…' : 'Save Changes'}
             </button>
             {infoSaved && (
@@ -615,7 +611,7 @@ export default function LegendDetailPage() {
                 </tr>
               </thead>
               <tbody style={{ borderBottom: '1px solid var(--border)' }}>
-                {symbols.slice((symPage - 1) * symPageSize, symPage * symPageSize).map(symbol =>
+                {symbols.map(symbol =>
                   editingSymbolId === symbol.id ? (
                     <EditRow
                       key={symbol.id}
@@ -652,17 +648,15 @@ export default function LegendDetailPage() {
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                           <button
                             onClick={() => setEditingSymbolId(symbol.id)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #002B4E', background: '#002B4E', color: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                            style={{ fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
                           >
-                            <PencilSimple size={13} weight="bold" />
                             Edit
                           </button>
                           <button
                             onClick={() => handleDeleteSymbol(symbol)}
                             disabled={deletingSymbolId === symbol.id}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', color: '#fff', cursor: 'pointer', opacity: deletingSymbolId === symbol.id ? 0.4 : 1, fontWeight: 500 }}
+                            style={{ fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger-soft)', background: 'var(--danger-soft)', color: 'var(--danger)', cursor: 'pointer', opacity: deletingSymbolId === symbol.id ? 0.4 : 1 }}
                           >
-                            <Trash size={13} weight="bold" />
                             {deletingSymbolId === symbol.id ? '…' : 'Delete'}
                           </button>
                         </div>
@@ -674,22 +668,6 @@ export default function LegendDetailPage() {
             </table>
           </div>
         )}
-        {/* Pagination */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
-          <button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1 }}><CaretLeft size={13} weight="bold" /> Prev</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
-            <select
-              value={symPageSize}
-              onChange={e => { setSymPageSize(Number(e.target.value)); setSymPage(1); }}
-              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Page <strong>{symPage}</strong> of <strong>{Math.max(1, Math.ceil(symbols.length / symPageSize))}</strong> · {symbols.length} symbols</span>
-          </div>
-          <button onClick={() => setSymPage(p => Math.min(Math.ceil(symbols.length / symPageSize), p + 1))} disabled={symPage >= Math.ceil(symbols.length / symPageSize)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage >= Math.ceil(symbols.length / symPageSize) ? 'not-allowed' : 'pointer', opacity: symPage >= Math.ceil(symbols.length / symPageSize) ? 0.4 : 1 }}>Next <CaretRight size={13} weight="bold" /></button>
-        </div>
       </div>
     </div>
   );

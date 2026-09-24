@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Plus, PencilSimple, Trash, CaretLeft, CaretRight } from '@phosphor-icons/react';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Legend {
   id: string;
@@ -12,10 +13,28 @@ interface Legend {
   symbol_count: number;
 }
 
+// ─── Style constants ──────────────────────────────────────────────────────────
+
 const cardStyle: React.CSSProperties = {
   background: 'var(--surface)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--radius-md)',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--primary)',
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  fontSize: '13px',
+  fontWeight: '500',
+  textDecoration: 'none',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
 };
 
 const thStyle: React.CSSProperties = {
@@ -39,16 +58,7 @@ const badgeBase: React.CSSProperties = {
   fontWeight: '500',
 };
 
-const paginBtn = (disabled: boolean): React.CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 4,
-  padding: '4px 12px', fontSize: '12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--border)',
-  background: 'var(--surface)',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  opacity: disabled ? 0.4 : 1,
-  color: 'var(--foreground-muted)',
-});
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Spinner() {
   return (
@@ -59,20 +69,25 @@ function Spinner() {
   );
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function LegendsPage() {
   const [legends, setLegends] = useState<Legend[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const fetchLegends = useCallback(async () => {
     const res = await fetch('/api/legends');
-    if (res.ok) setLegends(await res.json());
+    if (res.ok) {
+      const data = await res.json();
+      setLegends(data);
+    }
   }, []);
 
-  useEffect(() => { fetchLegends().finally(() => setLoading(false)); }, [fetchLegends]);
+  useEffect(() => {
+    fetchLegends().finally(() => setLoading(false));
+  }, [fetchLegends]);
 
   const handleDelete = async (legend: Legend) => {
     if (!confirm(`Delete legend "${legend.name}"? This will also remove all its symbols.`)) return;
@@ -91,9 +106,6 @@ export default function LegendsPage() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(legends.length / pageSize));
-  const pagedLegends = legends.slice((page - 1) * pageSize, page * pageSize);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
@@ -104,33 +116,44 @@ export default function LegendsPage() {
             Manage symbol legends used during P&amp;ID asset detection.
           </p>
         </div>
-        <Link
-          href="/legends/new"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: '13px', fontWeight: '500', textDecoration: 'none', cursor: 'pointer' }}
-        >
-          <Plus size={15} weight="bold" />
+        <Link href="/legends/new" style={primaryButtonStyle}>
+          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
           New Legend
         </Link>
       </div>
 
+      {/* Error */}
       {error && (
-        <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>{error}</p>
+        <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>
+          {error}
+        </p>
       )}
 
+      {/* Table card */}
       <div style={{ ...cardStyle, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Legends</h2>
-          {!loading && <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>{legends.length} legend{legends.length !== 1 ? 's' : ''}</span>}
+          {!loading && (
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>{legends.length} legend{legends.length !== 1 ? 's' : ''}</span>
+          )}
         </div>
 
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)' }}>
-            <Spinner /><span style={{ marginLeft: '8px', fontSize: '14px' }}>Loading…</span>
+            <Spinner />
+            <span style={{ marginLeft: '8px', fontSize: '14px' }}>Loading…</span>
           </div>
         ) : legends.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center' }}>
+            <svg style={{ width: 40, height: 40, color: 'var(--border-strong)', marginBottom: '12px' }} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            </svg>
             <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>No legends yet. Create one to get started.</p>
-            <Link href="/legends/new" style={{ marginTop: '12px', fontSize: '14px', color: 'var(--accent)', textDecoration: 'none' }}>Create a legend →</Link>
+            <Link href="/legends/new" style={{ marginTop: '12px', fontSize: '14px', color: 'var(--accent)', textDecoration: 'none' }}>
+              Create a legend →
+            </Link>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -145,16 +168,20 @@ export default function LegendsPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagedLegends.map(legend => (
+                {legends.map(legend => (
                   <tr key={legend.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 150ms ease-out' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,43,78,0.04)'; }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                    <td style={tdBase}><span style={{ fontWeight: '500', color: 'var(--foreground)' }}>{legend.name}</span></td>
+                    <td style={tdBase}>
+                      <span style={{ fontWeight: '500', color: 'var(--foreground)' }}>{legend.name}</span>
+                    </td>
                     <td style={{ ...tdBase, color: 'var(--foreground-muted)', maxWidth: 320 }}>
                       <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{legend.description || '—'}</span>
                     </td>
                     <td style={tdBase}>
-                      <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>{legend.symbol_count ?? 0}</span>
+                      <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
+                        {legend.symbol_count ?? 0}
+                      </span>
                     </td>
                     <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
                       {legend.created_at ? new Date(legend.created_at).toLocaleDateString() : '—'}
@@ -163,16 +190,15 @@ export default function LegendsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                         <Link
                           href={`/legends/${legend.id}`}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #002B4E', background: '#002B4E', textDecoration: 'none' }}
+                          style={{ fontSize: '12px', fontWeight: '500', color: 'var(--foreground)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', textDecoration: 'none', transition: 'all 150ms ease-out' }}
                         >
-                          <PencilSimple size={13} weight="bold" /> Edit
+                          Edit
                         </Link>
                         <button
                           onClick={() => handleDelete(legend)}
                           disabled={deletingId === legend.id}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', cursor: 'pointer', opacity: deletingId === legend.id ? 0.4 : 1 }}
+                          style={{ fontSize: '12px', fontWeight: '500', color: 'var(--danger)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger-soft)', background: 'var(--danger-soft)', cursor: 'pointer', opacity: deletingId === legend.id ? 0.4 : 1, transition: 'all 150ms ease-out' }}
                         >
-                          <Trash size={13} weight="bold" />
                           {deletingId === legend.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </div>
@@ -183,29 +209,6 @@ export default function LegendsPage() {
             </table>
           </div>
         )}
-
-        {/* Pagination — always visible */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={paginBtn(page === 1)}>
-            <CaretLeft size={12} weight="bold" /> Prev
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
-            <select
-              value={pageSize}
-              onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>
-              Page <strong>{page}</strong> of <strong>{totalPages}</strong> · {legends.length} total
-            </span>
-          </div>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={paginBtn(page === totalPages)}>
-            Next <CaretRight size={12} weight="bold" />
-          </button>
-        </div>
       </div>
     </div>
   );
