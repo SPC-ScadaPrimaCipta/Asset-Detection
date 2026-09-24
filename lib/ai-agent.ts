@@ -13,6 +13,7 @@
 import OpenAI from 'openai';
 import type { Part } from '@google/generative-ai';
 import { getAiConfig } from '@/lib/ai-config';
+import { resolveGeminiModels } from '@/lib/model-resolver';
 import { buildSymbolDetectorPrompt } from '@/lib/ai-prompts/symbol-detector';
 import { buildRuleValidatorPrompt } from '@/lib/ai-prompts/rule-validator-prompt';
 import { PageDetectionSchema } from '@/lib/ai-schemas';
@@ -104,14 +105,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
   throw last;
 }
 
-// Models confirmed working — ordered by preference.
-// gemini-3.6-flash = current recommended (replaces deprecated 2.x series).
-// gemini-2.5-flash = valid fallback.
-// All 2.0/1.5 series removed — Google returned 404 for all of them.
-const KNOWN_GOOD_FALLBACK_MODELS = [
-  'gemini-3.6-flash',   // primary — current Google recommended
-  'gemini-2.5-flash',   // fallback — also valid
-];
+// Model candidates resolved dynamically from Gemini API at runtime via resolveGeminiModels().
+// No hardcoded list — system auto-discovers valid models for the configured API key.
 
 export async function runDetectionAgent(input: DetectionJobInput): Promise<ResolvedPageDetection> {
   const cfg = await getAiConfig();
@@ -345,10 +340,11 @@ async function runWithGemini(input: DetectionJobInput, prompt: string, preferred
   const { getGeminiClient } = await import('@/lib/gemini');
   const client = await getGeminiClient();
 
-  const FALLBACK_MODELS = [
-    preferredModel,
-    ...KNOWN_GOOD_FALLBACK_MODELS,
-  ].filter((m, i, arr) => arr.indexOf(m) === i);
+  // Auto-discover valid models from Gemini API. preferredModel stays first if valid.
+  const resolvedCandidates = await resolveGeminiModels();
+  const FALLBACK_MODELS = resolvedCandidates.includes(preferredModel)
+    ? resolvedCandidates
+    : [preferredModel, ...resolvedCandidates].filter((m, i, a) => a.indexOf(m) === i);
 
   let mediaPart: Part;
   let contextText: string;

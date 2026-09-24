@@ -1,5 +1,6 @@
 import { getAiConfig } from '@/lib/ai-config';
 import { getGeminiClient } from '@/lib/gemini';
+import { resolveGeminiModels, resolveDeepSeekModels } from '@/lib/model-resolver';
 import OpenAI from 'openai';
 
 export interface ParsedSymbol {
@@ -8,12 +9,10 @@ export interface ParsedSymbol {
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
 }
 
-const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
-
 async function getModelWithFallback() {
   const cfg = await getAiConfig();
   const client = await getGeminiClient();
-  const candidates = [cfg.geminiModel, ...FALLBACK_MODELS].filter((m, i, a) => a.indexOf(m) === i);
+  const candidates = await resolveGeminiModels();
   return { client, candidates, cfg };
 }
 
