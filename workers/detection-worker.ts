@@ -6,7 +6,6 @@ import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
 import { associateTagsToSymbols, applyNMS } from "@/lib/spatial";
 import { renderPageToPng, extractPdfTextByPage } from "@/lib/pdf-render";
-import { getAiConfig } from "@/lib/ai-config";
 import { env } from "@/lib/env";
 import {
   extractTagTokens,
@@ -16,6 +15,15 @@ import {
   buildKnownTagSet,
 } from "@/lib/ocr-candidate";
 import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
+import { persistDetections } from "@/lib/detection/persistence/detection-repository";
+import {
+  legendTagPatterns,
+  loadLegendDefs,
+  processPageDeterministic,
+  type DetStageCounts,
+} from "@/lib/detection/pipeline/deterministic-page";
+import { cvHealth } from "@/lib/detection/cv-client";
+import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
 
 /**
  * Infer drawing type from document filename.
@@ -50,9 +58,8 @@ export const worker = new Worker(
       "UPDATE detection_jobs SET status='PROCESSING', started_at=NOW(), progress_pct=5 WHERE id=$1",
       [jobId]
     );
-    const aiCfg = await getAiConfig();
     const agentRunId = uuidv4();
-    const modelName = aiCfg.provider === "deepseek" ? aiCfg.deepseekModel : aiCfg.geminiModel;
+    const modelName = "phase10-deterministic";
     const promptVersion = "v1";
     // Hoisted — referenced in both try and catch for cleanup
     let geminiFileUri: string | undefined;
@@ -98,28 +105,34 @@ export const worker = new Worker(
 
       const buf = (await getFile(doc.file_path)) as unknown as Buffer;
       const pageCount: number = doc.page_count ?? 1;
+      const phase10Totals: DetStageCounts = {
+        visualCandidates: 0,
+        ocrCandidates: 0,
+        maskedCandidates: 0,
+        splitFragments: 0,
+        reunitedCandidates: 0,
+        refinedCandidates: 0,
+        repairedMatches: 0,
+        legendMatches: 0,
+        finalDetections: 0,
+      };
+      console.log('[Detection] pipeline=phase10');
+      console.log('[Detection] masking=true');
+      console.log('[Detection] lineSplit=true');
+      console.log('[Detection] reunion=true');
+      console.log('[Detection] bboxRefine=true');
+      console.log('[Detection] matchRepair=true');
+      console.log('[Detection] gemini=false');
+      console.log(`[Detection] input pages=${pageCount}`);
 
-      // Speed: run OCR text extraction and Gemini file upload concurrently — independent ops.
+      // Phase 10 uses only the deterministic CV service. OCR is performed by that service.
       let ocrPages: string[] = [];
       let geminiFileUriFallback: string | undefined;
 
       const [ocrResult] = await Promise.allSettled([
         // Op 1: Extract OCR text per page
         extractPdfTextByPage(buf).then(pages => { ocrPages = pages; }),
-
-        // Op 2: Pre-upload PDF to Gemini Files API as fallback (Gemini provider only)
-        (aiCfg.provider !== "deepseek" && aiCfg.geminiKey)
-          ? import("@/lib/gemini").then(({ uploadPdfToGemini }) =>
-              uploadPdfToGemini(buf, doc.filename).then(uploaded => {
-                geminiFileUri = uploaded.fileUri;
-                geminiFileUriFallback = geminiFileUri;
-                log("gemini file uploaded (fallback ready)", { fileUri: geminiFileUri });
-              }).catch((uploadErr: unknown) => {
-                const umsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-                log("gemini file upload failed (will use inline base64 as last fallback)", { error: umsg.slice(0, 200) });
-              })
-            )
-          : Promise.resolve(),
+        Promise.resolve(),
       ]);
       void ocrResult; // allSettled — errors already logged inside each op
 
@@ -132,6 +145,39 @@ export const worker = new Worker(
         }),
         agentRunId,
       ]);
+
+      // LOCAL WIRING (Phase 10 defaults): deterministic CV only.
+      // Health checked once per job; legend defs built once per job (cached).
+      // A missing sidecar is an explicit job failure; it must never switch pipelines.
+      let detAvailable = false;
+      let legendDefs: LegendDefinition[] = [];
+      try {
+        const h = await cvHealth(5000);
+        detAvailable = !!h;
+        log(detAvailable ? "deterministic CV service UP" : "deterministic CV service DOWN — Phase 10 unavailable", {
+          cvVersion: h?.version ?? null,
+        });
+      } catch {
+        detAvailable = false;
+      }
+      if (!detAvailable) throw new Error('Phase 10 CV service unavailable');
+      if (detAvailable && effectiveLegendId) {
+        try {
+          legendDefs = await loadLegendDefs(effectiveLegendId, log, legendSymbols as {
+            id: string; asset_type: string; symbol_name?: string | null;
+            tag_pattern?: string | null; aliases?: string[] | null;
+            reference_image_url?: string | null;
+          }[]);
+        } catch (e: unknown) {
+          log("legend defs failed — matching unavailable", {
+            error: (e instanceof Error ? e.message : String(e)).slice(0, 160),
+          });
+        }
+      }
+      const cvTagPatterns = legendTagPatterns(
+        legendSymbols as { tag_pattern?: string | null }[]
+      );
+      const NULL_THRESHOLD_EARLY = parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50');
 
       // Fix #5: Pre-compute knownTagSet once per job (not per page).
       // Previously the DB query for confirmed tags + company KB ran inside processOnePage,
@@ -177,6 +223,37 @@ export const worker = new Worker(
         const pageStart = Date.now();
         let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"] = [];
 
+        try {
+          const det = await processPageDeterministic({
+            buf, page, jobId, docId: doc.id, filename: doc.filename,
+            effectiveLegendId, legendSymbols, tagPatterns: cvTagPatterns,
+            legendDefs, nullThreshold: NULL_THRESHOLD_EARLY, db, log,
+          });
+          if (det.status !== 'ok' || !det.stageCounts) {
+            throw new Error(`Phase 10 returned ${det.status}`);
+          }
+          for (const key of Object.keys(phase10Totals) as (keyof DetStageCounts)[]) {
+            phase10Totals[key] += det.stageCounts[key];
+          }
+          console.log(`[Detection] visual candidates=${phase10Totals.visualCandidates}`);
+          console.log(`[Detection] OCR candidates=${phase10Totals.ocrCandidates}`);
+          console.log(`[Detection] masked candidates=${phase10Totals.maskedCandidates}`);
+          console.log(`[Detection] split fragments=${phase10Totals.splitFragments}`);
+          console.log(`[Detection] reunited candidates=${phase10Totals.reunitedCandidates}`);
+          console.log(`[Detection] refined candidates=${phase10Totals.refinedCandidates}`);
+          console.log(`[Detection] repaired matches=${phase10Totals.repairedMatches}`);
+          console.log(`[Detection] legend matches=${phase10Totals.legendMatches}`);
+          console.log(`[Detection] final detections=${phase10Totals.finalDetections}`);
+          log(`page ${page}/${pageCount} deterministic detections=${det.count}`, {
+            page, count: det.count, ms: Date.now() - pageStart,
+          });
+          return det.count;
+        } catch (detErr: unknown) {
+          const dmsg = detErr instanceof Error ? detErr.message : String(detErr);
+          log(`page ${page} Phase 10 error`, { page, error: dmsg.slice(0, 200) });
+          throw detErr;
+        }
+
         // Render page to PNG — primary input for Gemini Vision
         let pageImageBase64: string | undefined;
         let pngDimensions: { width: number; height: number } | undefined;
@@ -195,7 +272,7 @@ export const worker = new Worker(
             sizeKB: Math.round(png.length / 1024),
           });
         } catch (renderErr: unknown) {
-          const rmsg = renderErr instanceof Error ? renderErr.message : String(renderErr);
+          const rmsg = `${renderErr}`;
           log(`page ${page} PNG render failed, falling back to fileUri/PDF`, {
             page,
             error: rmsg.slice(0, 200),
@@ -244,7 +321,7 @@ export const worker = new Worker(
             ms: Date.now() - pageStart,
           });
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = `${err}`;
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
           return -1;  // -1 = AI error (distinct from 0 = AI returned empty detections)
         }
@@ -363,110 +440,24 @@ export const worker = new Worker(
           });
         }
 
-        // Persist detections for this page
-        for (const d of deduped) {
-          const legendSym = d.legendSymbol
-            ? legendSymbols.find(
-                (s: Record<string, unknown>) =>
-                  s.asset_type === d.legendSymbol || s.symbol_name === d.legendSymbol
-              )
-            : null;
-          const detectionSource = (d as Record<string, unknown>).detection_source ?? 'VISION';
-          const canonicalFeatures = (d as Record<string, unknown>).canonical_features ?? null;
-          const imageHash = (d as Record<string, unknown>).image_hash ?? null;
-          const symbolEmbedding = (d as Record<string, unknown>).symbol_embedding ?? null;
-          const confidenceBreakdown = (d as Record<string, unknown>).confidence_breakdown ?? null;
-          const validationStatus = (d as Record<string, unknown>).validation_status ?? 'VALID';
-          const mainEquipment = (d as Record<string, unknown>).mainEquipment ?? null;
-          const fieldConfidence = (d as Record<string, unknown>).field_confidence ?? null;
-          const fieldProvenance = (d as Record<string, unknown>).field_provenance ?? null;
-
-          const NULL_THRESHOLD = parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50');
-          type FieldConf = { tag?: number | null; type?: number | null; service?: number | null; mainEquipment?: number | null; description?: number | null };
-          const fc = fieldConfidence as FieldConf | null;
-
-          const persistedService = fc?.service != null && fc.service < NULL_THRESHOLD
-            ? null
-            : ((d as Record<string, unknown>).service as string | null ?? null);
-          const persistedMainEquipment = fc?.mainEquipment != null && fc.mainEquipment < NULL_THRESHOLD
-            ? null
-            : (mainEquipment as string | null);
-          const persistedDescription = fc?.description != null && fc.description < NULL_THRESHOLD
-            ? null
-            : (d.description ?? null);
-
-          const nulledFields: string[] = [];
-          if (persistedService === null && (d as Record<string, unknown>).service) nulledFields.push('service');
-          if (persistedMainEquipment === null && mainEquipment) nulledFields.push('mainEquipment');
-          if (persistedDescription === null && d.description) nulledFields.push('description');
-          const nullEnforcedEvidence = nulledFields.length > 0
-            ? [...d.evidence, `Fields nulled (confidence < ${NULL_THRESHOLD}): ${nulledFields.join(', ')} — insufficient evidence`]
-            : d.evidence;
-
-          const embeddingStr = symbolEmbedding && Array.isArray(symbolEmbedding)
-            ? `[${(symbolEmbedding as number[]).join(',')}]`
-            : null;
-
-          const detectionId = uuidv4();
-          await db.query(
-            `INSERT INTO detections
-               (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
-                service, location, unit, area, pid_number, pid_page,
-                legend_id, legend_symbol_id, confidence,
-                bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status,
-                detection_source, canonical_features, crop_hash, embedding, confidence_breakdown,
-                validation_status, main_equipment, field_confidence, field_provenance)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING',$22,$23,$24,$25::vector,$26,$27,$28,$29,$30)`,
-            [
-              detectionId,
-              jobId,
-              doc.id,
-              // Normalize tag: remove spaces around hyphens (e.g. "JB - 03" → "JB-03"),
-              // trim leading/trailing whitespace, collapse internal spaces.
-              d.assetTag ? d.assetTag.trim().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ') : null,
-              d.assetType,
-              (d as Record<string, unknown>).equipmentClass ?? null,
-              persistedDescription,
-              persistedService,
-              (d as Record<string, unknown>).location ?? null,
-              (d as Record<string, unknown>).unit ?? null,
-              (d as Record<string, unknown>).area ?? null,
-              doc.filename,
-              page,
-              effectiveLegendId ?? null,
-              (legendSym as Record<string, unknown> | undefined)?.id ?? null,
-              d.confidence,
-              Number.isFinite(d.bbox.x) ? d.bbox.x : 0,
-              Number.isFinite(d.bbox.y) ? d.bbox.y : 0,
-              Number.isFinite(d.bbox.width) ? d.bbox.width : 0,
-              Number.isFinite(d.bbox.height) ? d.bbox.height : 0,
-              JSON.stringify(nullEnforcedEvidence),
-              detectionSource,
-              canonicalFeatures,
-              imageHash,
-              embeddingStr,
-              confidenceBreakdown ? JSON.stringify(confidenceBreakdown) : null,
-              validationStatus,
-              persistedMainEquipment,
-              fieldConfidence ? JSON.stringify(fieldConfidence) : null,
-              fieldProvenance ? JSON.stringify(fieldProvenance) : null,
-            ]
-          );
-
-          // F5: Persist audit trail — non-fatal
-          const auditObj = (d as Record<string, unknown>).audit;
-          if (auditObj && typeof (auditObj as Record<string, unknown>).persist === 'function') {
-            const audit = auditObj as { setDetectionId: (id: string) => void; persist: (opts: { finalSource: string; confidenceBreakdown: Record<string, number> | null }) => Promise<void> };
-            audit.setDetectionId(detectionId);
-            audit.persist({
-              finalSource: String(detectionSource),
-              confidenceBreakdown: confidenceBreakdown as Record<string, number> | null,
-            }).catch((auditErr: unknown) => {
-              console.warn(`[audit] persist failed (non-fatal) detection=${detectionId}:`,
-                auditErr instanceof Error ? auditErr.message : auditErr);
-            });
-          }
-        }
+        // Persist detections for this page.
+        // Extracted → lib/detection/persistence/detection-repository.ts (1:1 semantics:
+        // tag normalization, legend resolution, field-confidence gating, dual-write,
+        // audit trail). Worker keeps orchestration only — no duplicate INSERT logic.
+        const NULL_THRESHOLD = parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50');
+        await persistDetections(
+          db,
+          deduped as Parameters<typeof persistDetections>[1],
+          {
+            jobId,
+            docId: doc.id,
+            filename: doc.filename,
+            effectiveLegendId,
+            legendSymbols: legendSymbols as { id: string; asset_type: string; symbol_name?: string | null }[],
+            nullThreshold: NULL_THRESHOLD,
+          },
+          page
+        );
 
         return deduped.length;
       }

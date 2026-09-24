@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const { existsSync } = require('fs');
+const { existsSync, readFileSync } = require('fs');
 const { join } = require('path');
 
 // Load .env.local so `npm run migrate` uses the same DATABASE_URL as the app.
@@ -192,6 +192,18 @@ async function migrate() {
       END $$
     `);
     console.log('  006: legends/legend_symbols builtin standard columns OK');
+
+    // Migration V2-Phase2: deterministic geometry + AI-verification columns.
+    // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
+    try {
+      const v2sql = join(__dirname, '..', 'sql', 'migrate-v2-detection-extensions.sql');
+      if (existsSync(v2sql)) {
+        await p.query(readFileSync(v2sql, 'utf-8'));
+        console.log('  V2-Phase2: detections V2 extensions OK');
+      }
+    } catch (e) {
+      console.warn('  V2-Phase2 migration warning (non-fatal):', e.message);
+    }
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

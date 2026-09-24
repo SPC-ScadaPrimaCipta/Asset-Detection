@@ -1,0 +1,3244 @@
+{
+ "dataset": "pdt11-reconstruction-v1 (vector redraw of user snippet)",
+ "datasetVersion": "gt-v1",
+ "methodology": "reconstruction-v1 vector redraw; GT recorded at draw time (independent); cold OCR (no knownTags); IoU 0-1000? NO \u2014 pixel space 2000x950; thresholds loose (visual-estimate heritage)",
+ "generatedAt": "2026-09-23T08:31:02.747862+00:00",
+ "pipelineVersion": "v2.0.0",
+ "configVersion": "confidence-v1",
+ "counts": {
+  "gtPositives": 9,
+  "gtNegatives": 11,
+  "predictions": 169
+ },
+ "detection": {
+  "precision": 0.0178,
+  "recall": 0.3333,
+  "f1": 0.0337,
+  "tp": 3,
+  "fp": 166,
+  "fn": 6
+ },
+ "iou": {
+  "meanIoU@0.5": 0.6555,
+  "meanIoU@0.75": 0.8976,
+  "tpCount": 3
+ },
+ "perClass": {
+  "INSTRUMENT": {
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "tp": 0,
+   "fp": 4,
+   "fn": 2
+  },
+  "VALVE": {
+   "precision": 0.2222,
+   "recall": 0.4,
+   "f1": 0.2857,
+   "tp": 2,
+   "fp": 7,
+   "fn": 3
+  },
+  "VERTICAL PUMP": {
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "tp": 0,
+   "fp": 2,
+   "fn": 1
+  },
+  "VESSEL": {
+   "precision": 0.0084,
+   "recall": 1.0,
+   "f1": 0.0167,
+   "tp": 1,
+   "fp": 118,
+   "fn": 0
+  }
+ },
+ "confusion": {
+  "INSTRUMENT": {
+   "FALSE_ALARM": 4,
+   "UNMATCHED": 2
+  },
+  "VALVE": {
+   "VALVE": 2,
+   "FALSE_ALARM": 7,
+   "UNMATCHED": 3
+  },
+  "VERTICAL PUMP": {
+   "FALSE_ALARM": 2,
+   "UNMATCHED": 1
+  },
+  "VESSEL": {
+   "VESSEL": 1,
+   "FALSE_ALARM": 118
+  }
+ },
+ "ocr": {
+  "tagExactMatch": 0.0,
+  "tagNormalizedMatch": 0.0,
+  "charAccuracy": 0.0,
+  "falseTagRate": 0.0422,
+  "n": 2
+ },
+ "association": {
+  "correct": 0,
+  "wrong": 0,
+  "unassociated": 2,
+  "accuracy": 0.0
+ },
+ "taxonomy": {
+  "SMALL_SYMBOL_FP": 153,
+  "FALSE_POSITIVE": 11,
+  "FALSE_NEGATIVE": 6,
+  "FALSE_POSITIVE_PIPE_SPEC": 2
+ },
+ "conditions": {
+  "scanQuality": "clean-vector",
+  "dpi": 200,
+  "rotation": 0,
+  "noise": "low",
+  "lineDensity": "high",
+  "symbolSize": "medium",
+  "ocrDifficulty": "medium"
+ },
+ "timings": [
+  {
+   "name": "preprocess",
+   "ms": 80.25,
+   "detail": {}
+  },
+  {
+   "name": "detect",
+   "ms": 162.08,
+   "detail": {}
+  },
+  {
+   "name": "dedup-visual",
+   "ms": 50.98,
+   "detail": {}
+  },
+  {
+   "name": "ocr-variant",
+   "ms": 1535.3,
+   "detail": {
+    "variant": "adaptive_binary",
+    "boxes": 31
+   }
+  },
+  {
+   "name": "ocr",
+   "ms": 1609.25,
+   "detail": {}
+  },
+  {
+   "name": "normalize-parse",
+   "ms": 2.66,
+   "detail": {}
+  },
+  {
+   "name": "legend-match",
+   "ms": 2346.44,
+   "detail": {}
+  },
+  {
+   "name": "associate",
+   "ms": 83.06,
+   "detail": {}
+  },
+  {
+   "name": "confidence",
+   "ms": 16.54,
+   "detail": {}
+  }
+ ],
+ "sweep": [
+  {
+   "weights": "A-default",
+   "high": 0.85,
+   "low": 0.5,
+   "HIGH": 1,
+   "REVIEW": 39,
+   "LOW": 129,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.85,
+   "low": 0.55,
+   "HIGH": 1,
+   "REVIEW": 11,
+   "LOW": 157,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.85,
+   "low": 0.6,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.85,
+   "low": 0.65,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.85,
+   "low": 0.7,
+   "HIGH": 1,
+   "REVIEW": 0,
+   "LOW": 168,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.88,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.88,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 12,
+   "LOW": 157,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.88,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.88,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.88,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.9,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.9,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 12,
+   "LOW": 157,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.9,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.9,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.9,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.92,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.92,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 12,
+   "LOW": 157,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.92,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.92,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.92,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.95,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.95,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 12,
+   "LOW": 157,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.95,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.95,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "A-default",
+   "high": 0.95,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.85,
+   "low": 0.5,
+   "HIGH": 1,
+   "REVIEW": 33,
+   "LOW": 135,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.85,
+   "low": 0.55,
+   "HIGH": 1,
+   "REVIEW": 5,
+   "LOW": 163,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.85,
+   "low": 0.6,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.85,
+   "low": 0.65,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.85,
+   "low": 0.7,
+   "HIGH": 1,
+   "REVIEW": 0,
+   "LOW": 168,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.88,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 34,
+   "LOW": 135,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.88,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 6,
+   "LOW": 163,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.88,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.88,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.88,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.9,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 34,
+   "LOW": 135,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.9,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 6,
+   "LOW": 163,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.9,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.9,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.9,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.92,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 34,
+   "LOW": 135,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.92,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 6,
+   "LOW": 163,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.92,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.92,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.92,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.95,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 34,
+   "LOW": 135,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.95,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 6,
+   "LOW": 163,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.95,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.95,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "B-legend-heavy",
+   "high": 0.95,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.85,
+   "low": 0.5,
+   "HIGH": 1,
+   "REVIEW": 39,
+   "LOW": 129,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.85,
+   "low": 0.55,
+   "HIGH": 1,
+   "REVIEW": 12,
+   "LOW": 156,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.85,
+   "low": 0.6,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.85,
+   "low": 0.65,
+   "HIGH": 1,
+   "REVIEW": 3,
+   "LOW": 165,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.85,
+   "low": 0.7,
+   "HIGH": 1,
+   "REVIEW": 0,
+   "LOW": 168,
+   "reviewVolume": 168,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.88,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.88,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 13,
+   "LOW": 156,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.88,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.88,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.88,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.9,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.9,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 13,
+   "LOW": 156,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.9,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.9,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.9,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.92,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.92,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 13,
+   "LOW": 156,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.92,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.92,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.92,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.95,
+   "low": 0.5,
+   "HIGH": 0,
+   "REVIEW": 40,
+   "LOW": 129,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.95,
+   "low": 0.55,
+   "HIGH": 0,
+   "REVIEW": 13,
+   "LOW": 156,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.95,
+   "low": 0.6,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.95,
+   "low": 0.65,
+   "HIGH": 0,
+   "REVIEW": 4,
+   "LOW": 165,
+   "reviewVolume": 169,
+   "n": 169
+  },
+  {
+   "weights": "C-visual-heavy",
+   "high": 0.95,
+   "low": 0.7,
+   "HIGH": 0,
+   "REVIEW": 1,
+   "LOW": 168,
+   "reviewVolume": 169,
+   "n": 169
+  }
+ ],
+ "geminiDelta": {
+  "status": "not-run",
+  "reason": "no API key in eval env; harness gemini_delta() ready; transport-agnostic"
+ },
+ "humanReference": "GT JSON = reference (by construction independent)",
+ "phase9": {
+  "generatedAt": "2026-09-23T08:54:14.185974+00:00",
+  "method": "same GT, same methodology; punctuation trim always on (unit-covered); linesplit default OFF (negative end-to-end delta, mechanism retained)",
+  "ablation": [
+   {
+    "variant": "baseline",
+    "n": 169,
+    "masked": 0,
+    "detection": {
+     "precision": 0.0178,
+     "recall": 0.3333,
+     "f1": 0.0337,
+     "tp": 3,
+     "fp": 166,
+     "fn": 6
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6555,
+     "meanIoU@0.75": 0.8976,
+     "tpCount": 3
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 4,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.2222,
+      "recall": 0.4,
+      "f1": 0.2857,
+      "tp": 2,
+      "fp": 7,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 2,
+      "fn": 1
+     },
+     "VESSEL": {
+      "precision": 0.0084,
+      "recall": 1.0,
+      "f1": 0.0167,
+      "tp": 1,
+      "fp": 118,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "SMALL_SYMBOL_FP": 153,
+     "FALSE_POSITIVE": 11,
+     "FALSE_NEGATIVE": 6,
+     "FALSE_POSITIVE_PIPE_SPEC": 2
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.0542,
+     "n": 2
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 2,
+     "accuracy": 0.0
+    },
+    "timings": [
+     {
+      "name": "preprocess",
+      "ms": 98.2,
+      "detail": {}
+     },
+     {
+      "name": "detect",
+      "ms": 126.26,
+      "detail": {}
+     },
+     {
+      "name": "dedup-visual",
+      "ms": 35.56,
+      "detail": {}
+     },
+     {
+      "name": "ocr-variant",
+      "ms": 1411.99,
+      "detail": {
+       "variant": "adaptive_binary",
+       "boxes": 31
+      }
+     },
+     {
+      "name": "ocr",
+      "ms": 1492.76,
+      "detail": {}
+     },
+     {
+      "name": "text-mask",
+      "ms": 0.0,
+      "detail": {}
+     },
+     {
+      "name": "normalize-parse",
+      "ms": 3.37,
+      "detail": {}
+     },
+     {
+      "name": "legend-match",
+      "ms": 1939.83,
+      "detail": {}
+     },
+     {
+      "name": "associate",
+      "ms": 90.34,
+      "detail": {}
+     },
+     {
+      "name": "confidence",
+      "ms": 14.27,
+      "detail": {}
+     }
+    ]
+   },
+   {
+    "variant": "+mask",
+    "n": 26,
+    "masked": 143,
+    "detection": {
+     "precision": 0.1154,
+     "recall": 0.3333,
+     "f1": 0.1714,
+     "tp": 3,
+     "fp": 23,
+     "fn": 6
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6555,
+     "meanIoU@0.75": 0.8976,
+     "tpCount": 3
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.6667,
+      "recall": 0.4,
+      "f1": 0.5,
+      "tp": 2,
+      "fp": 1,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 1
+     },
+     "VESSEL": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "tp": 1,
+      "fp": 1,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "SMALL_SYMBOL_FP": 11,
+     "FALSE_POSITIVE": 11,
+     "FALSE_NEGATIVE": 6,
+     "FALSE_POSITIVE_PIPE_SPEC": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.2609,
+     "n": 2
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 2,
+     "accuracy": 0.0
+    },
+    "timings": [
+     {
+      "name": "preprocess",
+      "ms": 99.36,
+      "detail": {}
+     },
+     {
+      "name": "detect",
+      "ms": 116.62,
+      "detail": {}
+     },
+     {
+      "name": "dedup-visual",
+      "ms": 42.5,
+      "detail": {}
+     },
+     {
+      "name": "ocr-variant",
+      "ms": 1241.06,
+      "detail": {
+       "variant": "adaptive_binary",
+       "boxes": 31
+      }
+     },
+     {
+      "name": "ocr",
+      "ms": 1313.08,
+      "detail": {}
+     },
+     {
+      "name": "text-mask",
+      "ms": 14.84,
+      "detail": {}
+     },
+     {
+      "name": "normalize-parse",
+      "ms": 0.97,
+      "detail": {}
+     },
+     {
+      "name": "legend-match",
+      "ms": 136.51,
+      "detail": {}
+     },
+     {
+      "name": "associate",
+      "ms": 12.34,
+      "detail": {}
+     },
+     {
+      "name": "confidence",
+      "ms": 1.67,
+      "detail": {}
+     }
+    ]
+   },
+   {
+    "variant": "+linesplit",
+    "n": 156,
+    "masked": 0,
+    "detection": {
+     "precision": 0.0128,
+     "recall": 0.2222,
+     "f1": 0.0242,
+     "tp": 2,
+     "fp": 154,
+     "fn": 7
+    },
+    "iou": {
+     "meanIoU@0.5": 0.5595,
+     "meanIoU@0.75": 0.0,
+     "tpCount": 2
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 5,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.0769,
+      "recall": 0.2,
+      "f1": 0.1111,
+      "tp": 1,
+      "fp": 12,
+      "fn": 4
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 1
+     },
+     "VESSEL": {
+      "precision": 0.0089,
+      "recall": 1.0,
+      "f1": 0.0177,
+      "tp": 1,
+      "fp": 111,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "SMALL_SYMBOL_FP": 133,
+     "FALSE_POSITIVE": 17,
+     "WRONG_SYMBOL_CLASS": 6,
+     "BAD_BBOX": 2,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_MARKER": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.0519,
+     "n": 1
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 1,
+     "accuracy": 0.0
+    },
+    "timings": [
+     {
+      "name": "preprocess",
+      "ms": 76.36,
+      "detail": {}
+     },
+     {
+      "name": "detect",
+      "ms": 239.73,
+      "detail": {}
+     },
+     {
+      "name": "dedup-visual",
+      "ms": 39.19,
+      "detail": {}
+     },
+     {
+      "name": "ocr-variant",
+      "ms": 1547.32,
+      "detail": {
+       "variant": "adaptive_binary",
+       "boxes": 31
+      }
+     },
+     {
+      "name": "ocr",
+      "ms": 1634.74,
+      "detail": {}
+     },
+     {
+      "name": "text-mask",
+      "ms": 0.0,
+      "detail": {}
+     },
+     {
+      "name": "normalize-parse",
+      "ms": 1.52,
+      "detail": {}
+     },
+     {
+      "name": "legend-match",
+      "ms": 2064.59,
+      "detail": {}
+     },
+     {
+      "name": "associate",
+      "ms": 69.49,
+      "detail": {}
+     },
+     {
+      "name": "confidence",
+      "ms": 8.47,
+      "detail": {}
+     }
+    ]
+   },
+   {
+    "variant": "+both",
+    "n": 35,
+    "masked": 121,
+    "detection": {
+     "precision": 0.0571,
+     "recall": 0.2222,
+     "f1": 0.0909,
+     "tp": 2,
+     "fp": 33,
+     "fn": 7
+    },
+    "iou": {
+     "meanIoU@0.5": 0.5595,
+     "meanIoU@0.75": 0.0,
+     "tpCount": 2
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 4,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.1,
+      "recall": 0.2,
+      "f1": 0.1333,
+      "tp": 1,
+      "fp": 9,
+      "fn": 4
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 2,
+      "fn": 1
+     },
+     "VESSEL": {
+      "precision": 0.1111,
+      "recall": 1.0,
+      "f1": 0.2,
+      "tp": 1,
+      "fp": 8,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "FALSE_POSITIVE": 17,
+     "SMALL_SYMBOL_FP": 12,
+     "WRONG_SYMBOL_CLASS": 6,
+     "BAD_BBOX": 2,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_MARKER": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.1818,
+     "n": 1
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 1,
+     "accuracy": 0.0
+    },
+    "timings": [
+     {
+      "name": "preprocess",
+      "ms": 88.11,
+      "detail": {}
+     },
+     {
+      "name": "detect",
+      "ms": 289.25,
+      "detail": {}
+     },
+     {
+      "name": "dedup-visual",
+      "ms": 49.73,
+      "detail": {}
+     },
+     {
+      "name": "ocr-variant",
+      "ms": 1252.94,
+      "detail": {
+       "variant": "adaptive_binary",
+       "boxes": 31
+      }
+     },
+     {
+      "name": "ocr",
+      "ms": 1328.09,
+      "detail": {}
+     },
+     {
+      "name": "text-mask",
+      "ms": 12.51,
+      "detail": {}
+     },
+     {
+      "name": "normalize-parse",
+      "ms": 1.06,
+      "detail": {}
+     },
+     {
+      "name": "legend-match",
+      "ms": 341.48,
+      "detail": {}
+     },
+     {
+      "name": "associate",
+      "ms": 20.19,
+      "detail": {}
+     },
+     {
+      "name": "confidence",
+      "ms": 6.62,
+      "detail": {}
+     }
+    ]
+   }
+  ],
+  "candidateRecall": {
+   "baseline-3/9": "end-to-end TP",
+   "linesplit mechanism": "candidate-level 5/9, pump reunited IoU 0.81 (matching stage is next bottleneck)"
+  },
+  "sweep": [
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 9,
+    "LOW": 26,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 28,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 30,
+    "reviewVolume": 35,
+    "n": 35
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 1,
+    "LOW": 34,
+    "reviewVolume": 35,
+    "n": 35
+   }
+  ]
+ },
+ "phase10": {
+  "generatedAt": "2026-09-23T09:10:23.064753+00:00",
+  "method": "same GT/methodology/IoU gate/weights; matcher-stage only; global linesplit OFF except via mask+split combo (documented interaction); refine+repair default-safe (guarded no-op when not helpful)",
+  "ablation": [
+   {
+    "variant": "P10-split",
+    "n": 28,
+    "masked": 139,
+    "reconUsed": 0,
+    "detection": {
+     "precision": 0.1429,
+     "recall": 0.4444,
+     "f1": 0.2162,
+     "tp": 4,
+     "fp": 24,
+     "fn": 5
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6198,
+     "meanIoU@0.75": 0.7633,
+     "tpCount": 4
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.6667,
+      "recall": 0.4,
+      "f1": 0.5,
+      "tp": 2,
+      "fp": 1,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "tp": 1,
+      "fp": 1,
+      "fn": 0
+     },
+     "VESSEL": {
+      "precision": 0.1111,
+      "recall": 1.0,
+      "f1": 0.2,
+      "tp": 1,
+      "fp": 8,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "FALSE_POSITIVE": 13,
+     "SMALL_SYMBOL_FP": 8,
+     "WRONG_SYMBOL_CLASS": 4,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_PIPE_SPEC": 1,
+     "BAD_BBOX": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.25,
+     "n": 3
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 3,
+     "accuracy": 0.0
+    }
+   },
+   {
+    "variant": "+refine",
+    "n": 28,
+    "masked": 139,
+    "reconUsed": 0,
+    "detection": {
+     "precision": 0.1429,
+     "recall": 0.4444,
+     "f1": 0.2162,
+     "tp": 4,
+     "fp": 24,
+     "fn": 5
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6825,
+     "meanIoU@0.75": 0.8304,
+     "tpCount": 4
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.25,
+      "recall": 0.4,
+      "f1": 0.3077,
+      "tp": 2,
+      "fp": 6,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "tp": 1,
+      "fp": 1,
+      "fn": 0
+     },
+     "VESSEL": {
+      "precision": 0.25,
+      "recall": 1.0,
+      "f1": 0.4,
+      "tp": 1,
+      "fp": 3,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "FALSE_POSITIVE": 11,
+     "SMALL_SYMBOL_FP": 10,
+     "WRONG_SYMBOL_CLASS": 4,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_PIPE_SPEC": 1,
+     "BAD_BBOX": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.25,
+     "n": 3
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 3,
+     "accuracy": 0.0
+    }
+   },
+   {
+    "variant": "+recon",
+    "n": 28,
+    "masked": 139,
+    "reconUsed": 0,
+    "detection": {
+     "precision": 0.1429,
+     "recall": 0.4444,
+     "f1": 0.2162,
+     "tp": 4,
+     "fp": 24,
+     "fn": 5
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6198,
+     "meanIoU@0.75": 0.7633,
+     "tpCount": 4
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.6667,
+      "recall": 0.4,
+      "f1": 0.5,
+      "tp": 2,
+      "fp": 1,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "tp": 1,
+      "fp": 1,
+      "fn": 0
+     },
+     "VESSEL": {
+      "precision": 0.1111,
+      "recall": 1.0,
+      "f1": 0.2,
+      "tp": 1,
+      "fp": 8,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "FALSE_POSITIVE": 13,
+     "SMALL_SYMBOL_FP": 8,
+     "WRONG_SYMBOL_CLASS": 4,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_PIPE_SPEC": 1,
+     "BAD_BBOX": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.25,
+     "n": 3
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 3,
+     "accuracy": 0.0
+    }
+   },
+   {
+    "variant": "+full10",
+    "n": 28,
+    "masked": 139,
+    "reconUsed": 0,
+    "detection": {
+     "precision": 0.1429,
+     "recall": 0.4444,
+     "f1": 0.2162,
+     "tp": 4,
+     "fp": 24,
+     "fn": 5
+    },
+    "iou": {
+     "meanIoU@0.5": 0.6825,
+     "meanIoU@0.75": 0.8304,
+     "tpCount": 4
+    },
+    "perClass": {
+     "INSTRUMENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 2
+     },
+     "VALVE": {
+      "precision": 0.25,
+      "recall": 0.4,
+      "f1": 0.3077,
+      "tp": 2,
+      "fp": 6,
+      "fn": 3
+     },
+     "VERTICAL PUMP": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "tp": 1,
+      "fp": 1,
+      "fn": 0
+     },
+     "VESSEL": {
+      "precision": 0.25,
+      "recall": 1.0,
+      "f1": 0.4,
+      "tp": 1,
+      "fp": 3,
+      "fn": 0
+     }
+    },
+    "taxonomy": {
+     "FALSE_POSITIVE": 11,
+     "SMALL_SYMBOL_FP": 10,
+     "WRONG_SYMBOL_CLASS": 4,
+     "FALSE_NEGATIVE": 2,
+     "FALSE_POSITIVE_PIPE_SPEC": 1,
+     "BAD_BBOX": 1
+    },
+    "ocr": {
+     "tagExactMatch": 0.0,
+     "tagNormalizedMatch": 0.0,
+     "charAccuracy": 0.0,
+     "falseTagRate": 0.25,
+     "n": 3
+    },
+    "association": {
+     "correct": 0,
+     "wrong": 0,
+     "unassociated": 3,
+     "accuracy": 0.0
+    }
+   }
+  ],
+  "sweep": [
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 1,
+    "REVIEW": 6,
+    "LOW": 21,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 1,
+    "REVIEW": 4,
+    "LOW": 23,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 1,
+    "REVIEW": 2,
+    "LOW": 25,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 1,
+    "REVIEW": 2,
+    "LOW": 25,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 1,
+    "REVIEW": 1,
+    "LOW": 26,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "A-default",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 1,
+    "REVIEW": 6,
+    "LOW": 21,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 1,
+    "REVIEW": 4,
+    "LOW": 23,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 1,
+    "REVIEW": 2,
+    "LOW": 25,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 1,
+    "REVIEW": 2,
+    "LOW": 25,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 1,
+    "REVIEW": 1,
+    "LOW": 26,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 7,
+    "LOW": 21,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "B-legend-heavy",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.5,
+    "HIGH": 1,
+    "REVIEW": 7,
+    "LOW": 20,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.55,
+    "HIGH": 1,
+    "REVIEW": 4,
+    "LOW": 23,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.6,
+    "HIGH": 1,
+    "REVIEW": 3,
+    "LOW": 24,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.65,
+    "HIGH": 1,
+    "REVIEW": 2,
+    "LOW": 25,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.85,
+    "low": 0.7,
+    "HIGH": 1,
+    "REVIEW": 1,
+    "LOW": 26,
+    "reviewVolume": 27,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 8,
+    "LOW": 20,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 4,
+    "LOW": 24,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.88,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 8,
+    "LOW": 20,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 4,
+    "LOW": 24,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.9,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 8,
+    "LOW": 20,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 4,
+    "LOW": 24,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.92,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.5,
+    "HIGH": 0,
+    "REVIEW": 8,
+    "LOW": 20,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.55,
+    "HIGH": 0,
+    "REVIEW": 5,
+    "LOW": 23,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.6,
+    "HIGH": 0,
+    "REVIEW": 4,
+    "LOW": 24,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.65,
+    "HIGH": 0,
+    "REVIEW": 3,
+    "LOW": 25,
+    "reviewVolume": 28,
+    "n": 28
+   },
+   {
+    "weights": "C-visual-heavy",
+    "high": 0.95,
+    "low": 0.7,
+    "HIGH": 0,
+    "REVIEW": 2,
+    "LOW": 26,
+    "reviewVolume": 28,
+    "n": 28
+   }
+  ],
+  "recommendedDefaults": {
+   "masking": "ON",
+   "linesplit+reunion": "ON (only with masking)",
+   "refine": "ON (guarded)",
+   "repair": "ON (auditable no-op when direct sufficient)"
+  }
+ }
+}

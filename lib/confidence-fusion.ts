@@ -146,6 +146,10 @@ export function computeOcrScore(assetTag: string | null, ocrText: string | undef
   if (!assetTag || !ocrText) return null;
   const upper = ocrText.toUpperCase();
   const tag = assetTag.toUpperCase();
+  // M8: degenerate tags (e.g. 'P-') carry no information — a bare 'P-' prefix
+  // is a substring of almost any tag-bearing text ('P-101 pump' includes 'P-').
+  // Require ≥2 alphanumerics before any matching to avoid false positives.
+  if (tag.replace(/[^A-Z0-9]/g, '').length < 2) return null;
   // Exact match → strong positive evidence
   if (upper.includes(tag)) return 1.0;
   // Prefix match → weak positive evidence (tag family present).

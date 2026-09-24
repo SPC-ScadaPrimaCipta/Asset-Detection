@@ -514,9 +514,12 @@ export function calibrateConfidence(detections: ResolvedDetection[], ocrText?: s
     }
 
     let penalty = 0;
+    // Tag confirmed in OCR text counts as corroboration beyond the evidence list —
+    // don't stack the thin-evidence penalty on top of it (avoids double-counting).
+    const tagConfirmed = !!(d.assetTag && ocrText && ocrUpper.indexOf(d.assetTag.toUpperCase()) !== -1);
     if (!d.assetTag) penalty += 0.05;
-    if (d.assetTag && ocrText && ocrUpper.indexOf(d.assetTag.toUpperCase()) === -1) penalty += 0.10;
-    if (d.evidence.length <= 1) penalty += 0.03;
+    if (d.assetTag && ocrText && !tagConfirmed) penalty += 0.10;
+    if (d.evidence.length <= 1 && !tagConfirmed) penalty += 0.03;
     if (d.bbox.width > 250 || d.bbox.height > 250) penalty += 0.05;
     if (d.bbox.width <= 1 || d.bbox.height <= 1) {
       return {

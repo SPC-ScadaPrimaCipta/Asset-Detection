@@ -33,7 +33,13 @@ export const BBoxSchema = z.object({
   y:      z.number(),
   width:  z.number(),
   height: z.number(),
-}).transform(raw => {
+}).refine(
+  // Negative origins are malformed AI output — reject, don't silently clamp.
+  // (Zero width/height is still coerced to 1 below; degenerate size is then
+  // caught separately by calibrateConfidence which caps confidence at 0.30.)
+  (v) => v.x >= 0 && v.y >= 0,
+  { message: "bbox x/y must be >= 0" }
+).transform(raw => {
   const n = normalizeBBoxValues(raw);
   // Final clamp: nothing escapes valid 0-1000 space after normalization
   return {

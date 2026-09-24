@@ -51,6 +51,12 @@ interface Detection {
   bbox_y: number | null;
   bbox_w: number | null;
   bbox_h: number | null;
+  symbol_bbox_x: number | null;
+  symbol_bbox_y: number | null;
+  symbol_bbox_w: number | null;
+  symbol_bbox_h: number | null;
+  page_width: number | null;
+  page_height: number | null;
   evidence: string[] | string | null;
   service: string | null;
   location: string | null;
@@ -1323,10 +1329,27 @@ function PidViewer({
                       const ny = drag ? drag.y : (d.bbox_y ?? 0);
                       const nw = drag ? drag.w : (d.bbox_w ?? 50);
                       const nh = drag ? drag.h : (d.bbox_h ?? 50);
-                      const x = (nx / 1000) * imgNatural.w;
-                      const y = (ny / 1000) * imgNatural.h;
-                      const w = (nw / 1000) * imgNatural.w;
-                      const h = (nh / 1000) * imgNatural.h;
+                      const hasCanonicalBox =
+                        d.symbol_bbox_x !== null &&
+                        d.symbol_bbox_y !== null &&
+                        d.symbol_bbox_w !== null &&
+                        d.symbol_bbox_h !== null &&
+                        d.page_width !== null &&
+                        d.page_height !== null &&
+                        d.page_width > 0 &&
+                        d.page_height > 0;
+                      const x = hasCanonicalBox
+                        ? (d.symbol_bbox_x! / d.page_width!) * imgNatural.w
+                        : (nx / 1000) * imgNatural.w;
+                      const y = hasCanonicalBox
+                        ? (d.symbol_bbox_y! / d.page_height!) * imgNatural.h
+                        : (ny / 1000) * imgNatural.h;
+                      const w = hasCanonicalBox
+                        ? (d.symbol_bbox_w! / d.page_width!) * imgNatural.w
+                        : (nw / 1000) * imgNatural.w;
+                      const h = hasCanonicalBox
+                        ? (d.symbol_bbox_h! / d.page_height!) * imgNatural.h
+                        : (nh / 1000) * imgNatural.h;
                       const selected = d.id === selectedId;
                       const editable = isSel && rotation === 0 && !!onBboxChange;
                       const color =
