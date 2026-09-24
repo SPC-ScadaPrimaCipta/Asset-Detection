@@ -21,14 +21,15 @@ const cache = new Map<string, { models: string[]; expiresAt: number }>();
 const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 // Preferred Gemini flash models in priority order
+// Must support: generateContent + image input + responseMimeType: application/json
+// Updated: gemini-2.0/2.5-flash deprecated. gemini-3.5-flash ignores responseMimeType.
+// gemini-3.6-flash is current recommended but can 503; fallback to lite variants.
 const GEMINI_PREFERRED = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-preview-05-20',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-001',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-3.7-flash',
   'gemini-1.5-flash',
-  'gemini-1.5-flash-001',
-  'gemini-1.5-flash-002',
 ];
 
 /**
@@ -100,9 +101,9 @@ export async function resolveGeminiModels(): Promise<string[]> {
 
   const hardcodedFallback = [
     configuredModel,
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
   ].filter((m, i, a) => a.indexOf(m) === i);
 
   if (!cfg.geminiKey) return hardcodedFallback;

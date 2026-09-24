@@ -748,6 +748,8 @@ function PidViewer({
   drawMode,
   onDrawComplete,
   onDrawCancel,
+  showAll,
+  onShowAllChange,
 }: {
   documentId: string;
   detections: Detection[];
@@ -760,6 +762,8 @@ function PidViewer({
   drawMode?: boolean;
   onDrawComplete?: (bbox: { x: number; y: number; w: number; h: number }) => void;
   onDrawCancel?: () => void;
+  showAll?: boolean;
+  onShowAllChange?: (v: boolean) => void;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -844,11 +848,10 @@ function PidViewer({
     return () => window.removeEventListener("keydown", handler);
   }, [drawMode, onDrawCancel]);
 
-  // Only the selected detection's bbox is shown — everything else stays hidden
-  const visible = selectedId
+  // showAll: tampilkan semua bbox di halaman. Selected = solid, lainnya = dashed.
+  const visible = showAll
     ? detections.filter(
         (d) =>
-          d.id === selectedId &&
           d.detection_status !== "REJECTED" &&
           d.review_status !== "REJECTED" &&
           d.bbox_x !== null &&
@@ -856,7 +859,18 @@ function PidViewer({
           d.bbox_w !== null &&
           d.bbox_h !== null,
       )
-    : [];
+    : selectedId
+      ? detections.filter(
+          (d) =>
+            d.id === selectedId &&
+            d.detection_status !== "REJECTED" &&
+            d.review_status !== "REJECTED" &&
+            d.bbox_x !== null &&
+            d.bbox_y !== null &&
+            d.bbox_w !== null &&
+            d.bbox_h !== null,
+        )
+      : [];
 
   // wheel must be non-passive to allow preventDefault (React onWheel is passive in Chrome)
   // Re-bind when `fullscreen` toggles: viewerContent remounts under a new parent,
@@ -1145,6 +1159,23 @@ function PidViewer({
           Reset
         </button>
 
+        {/* Show All toggle */}
+        {onShowAllChange && (
+          <button
+            onClick={() => onShowAllChange(!showAll)}
+            title={showAll ? "Show selected only" : "Show all bounding boxes"}
+            style={{
+              ...toolButtonStyle,
+              background: showAll ? "var(--primary)" : "var(--surface)",
+              color: showAll ? "var(--surface)" : "var(--foreground-muted)",
+              border: showAll ? "1px solid var(--primary)" : "1px solid var(--border)",
+              fontWeight: showAll ? "600" : "500",
+            }}
+          >
+            {showAll ? "⊞ All" : "⊞ Show All"}
+          </button>
+        )}
+
         {/* Phase 5/legend-style: autosave saat mouseup — indikator sukses */}
         {bboxSavedFlash && selectedId && (
           <span style={{ fontSize: "11px", color: "var(--success)", fontWeight: "600" }}>
@@ -1171,9 +1202,11 @@ function PidViewer({
           }}
         >
           <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-            {visible.length > 0
-              ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
-              : "Bbox hidden — select an asset to show"}
+            {showAll
+              ? `Showing all: ${visible.length} bbox`
+              : visible.length > 0
+                ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
+                : "Bbox hidden — select an asset or Show All"}
           </span>
           {/* Fullscreen toggle */}
           <button
@@ -1622,7 +1655,9 @@ function PidViewer({
         <span style={{ marginLeft: "auto", color: "var(--foreground-subtle)" }}>
           {drawMode
             ? "Draw mode: drag di gambar untuk buat kotak · Esc batal"
-            : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
+            : showAll
+              ? "Show All aktif: klik bbox untuk pilih aset · Scroll zoom · Drag pan"
+              : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
         </span>
       </div>
     </>
@@ -2492,6 +2527,7 @@ function DetectionWorkspace() {
   const [drawMode, setDrawMode] = useState(false);
   const [pendingDrawBbox, setPendingDrawBbox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [confirmingDraw, setConfirmingDraw] = useState(false);
+  const [showAllBbox, setShowAllBbox] = useState(false);
 
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
@@ -2520,6 +2556,43 @@ function DetectionWorkspace() {
           100,
       )
     : null;
+
+  // Count duplicates (same UPPER(asset_tag)|UPPER(asset_type) per document)
+  const duplicateCount = (() => {
+    const seen = new Map<string, number>();
+    for (const d of detections) {
+      const key = `${(d.asset_tag ?? "").toUpperCase().trim()}|${(d.asset_type ?? "").toUpperCase().trim()}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    let dupes = 0;
+    seen.forEach((cnt) => { if (cnt > 1) dupes += cnt - 1; });
+    return dupes;
+  })();
+
+  const [deduping, setDeduping] = useState(false);
+  const [dedupeError, setDedupeError] = useState('');
+  const [confirmDedupe, setConfirmDedupe] = useState(false);
+
+  const handleDeduplicate = async () => {
+    if (!documentId) return;
+    setConfirmDedupe(false);
+    setDeduping(true);
+    setDedupeError('');
+    try {
+      const res = await fetch('/api/detections/deduplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as { error?: string }).error ?? `Error ${res.status}`);
+      await loadDetections();
+    } catch (e) {
+      setDedupeError(e instanceof Error ? e.message : 'Deduplicate failed');
+    } finally {
+      setDeduping(false);
+    }
+  };
 
   // Load reference data
   useEffect(() => {
@@ -2893,6 +2966,79 @@ function DetectionWorkspace() {
         </div>
       )}
 
+      {/* Duplicate warning bar */}
+      {detections.length > 0 && duplicateCount > 0 && !confirmDedupe && (
+        <div style={{
+          ...cardStyle,
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          border: "1px solid var(--warning)",
+          background: "var(--warning-soft)",
+        }}>
+          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
+            ⚠ <strong>{duplicateCount}</strong> duplicate detection{duplicateCount !== 1 ? "s" : ""} found (same tag + type)
+          </span>
+          <button
+            onClick={() => setConfirmDedupe(true)}
+            disabled={deduping}
+            style={{
+              ...buttonStyle,
+              fontSize: "12px",
+              padding: "5px 12px",
+              border: "1px solid var(--warning)",
+              color: "var(--warning)",
+              opacity: deduping ? 0.5 : 1,
+            }}
+          >
+            Remove Duplicates
+          </button>
+        </div>
+      )}
+
+      {/* Deduplicate confirm */}
+      {confirmDedupe && (
+        <div style={{
+          ...cardStyle,
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          border: "1px solid var(--danger)",
+          background: "var(--danger-soft)",
+        }}>
+          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
+            Hapus <strong>{duplicateCount}</strong> duplikat? Tindakan ini <strong>permanen</strong> — baris duplikat dihapus dari DB, hanya 1 terbaik per tag+type yang disimpan.
+          </span>
+          <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+            <button
+              onClick={handleDeduplicate}
+              disabled={deduping}
+              style={{ ...primaryButtonStyle, fontSize: "12px", padding: "5px 12px", background: "var(--danger)", border: "1px solid var(--danger)", opacity: deduping ? 0.5 : 1 }}
+            >
+              {deduping ? "Removing…" : "Ya, Hapus"}
+            </button>
+            <button
+              onClick={() => setConfirmDedupe(false)}
+              style={{ ...buttonStyle, fontSize: "12px", padding: "5px 12px" }}
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Deduplicate error */}
+      {dedupeError && (
+        <p style={{ fontSize: "12px", color: "var(--danger)", background: "var(--danger-soft)", borderRadius: "var(--radius-sm)", padding: "8px 12px", margin: 0 }}>
+          {dedupeError}
+          <button onClick={() => setDedupeError('')} style={{ marginLeft: "8px", background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: "600" }}>✕</button>
+        </p>
+      )}
+
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
       {detections.length > 0 || currentJobId ? (
         <div style={{ display: "flex", gap: "12px", flex: 1, minHeight: 700 }}>
@@ -2994,6 +3140,8 @@ function DetectionWorkspace() {
                   setDrawMode(false);
                 }}
                 onDrawCancel={() => setDrawMode(false)}
+                showAll={showAllBbox}
+                onShowAllChange={setShowAllBbox}
               />
             </div>
           </div>

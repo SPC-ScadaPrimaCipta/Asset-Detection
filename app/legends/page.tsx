@@ -82,6 +82,9 @@ export default function LegendsPage() {
     if (res.ok) {
       const data = await res.json();
       setLegends(data);
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? `Failed to load legends (${res.status})`);
     }
   }, []);
 

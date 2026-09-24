@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
 import { getFile } from '@/lib/storage';
-import { getPdfPageCountFromBuffer, renderPageToPng, extractPdfTextByPage } from '@/lib/pdf-render';
-import { extractLegendSymbolsFromPng, extractLegendSymbolsFromOcr } from '@/lib/legend-extract';
-import { getAiConfig } from '@/lib/ai-config';
+import { getPdfPageCountFromBuffer, renderPageToPng } from '@/lib/pdf-render';
+import { extractLegendSymbolsFromPng } from '@/lib/legend-extract';
 
-export const maxDuration = 60;
-const RENDER_SCALE = 3.5;
+export const maxDuration = 300;
+
+// Scale 3.0 = ~216 DPI — lebih detail untuk legend dengan simbol kecil.
+const RENDER_SCALE = 3.0;
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,98 +20,49 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     try { buf = await getFile(`legend-${id}.pdf`) as unknown as Buffer; }
     catch { return NextResponse.json({ error: 'Legend PDF not found in storage. Re-upload to re-parse.' }, { status: 404 }); }
 
-    const cfg = await getAiConfig();
-    const useDeepSeek = cfg.provider === 'deepseek';
-
     const pageCount = await getPdfPageCountFromBuffer(buf);
-    await db.query("DELETE FROM legend_symbols WHERE legend_id=$1 AND status='DRAFT'", [id]);
 
-    // Pre-extract OCR for all pages — needed for DeepSeek (no image), and as fallback for Gemini failures
-    let ocrPages: string[] = [];
-    try {
-      ocrPages = await extractPdfTextByPage(buf);
-    } catch (e: unknown) {
-      console.warn('[legend/reparse] OCR extraction failed (non-fatal):', (e instanceof Error ? e.message : String(e)).slice(0, 200));
-    }
+    // Delete ALL existing symbols (DRAFT + ACTIVE) — reparse is a full replacement.
+    await db.query('DELETE FROM legend_symbols WHERE legend_id=$1', [id]);
 
     let totalInserted = 0;
-    const diagnostics: { page: number; detected: number; method: string; error?: string }[] = [];
+    const diagnostics: { page: number; detected: number; refined: number; error?: string }[] = [];
 
     for (let page = 1; page <= pageCount; page++) {
-      const pageOcr = ocrPages[page - 1] ?? '';
-
-      if (useDeepSeek) {
-        // DeepSeek: text-only reparse via OCR
-        if (!pageOcr.trim()) {
-          diagnostics.push({ page, detected: 0, method: 'deepseek-ocr', error: 'No OCR text for this page' });
-          continue;
-        }
-        try {
-          const symbols = await extractLegendSymbolsFromOcr(pageOcr, page);
-          diagnostics.push({ page, detected: symbols.length, method: 'deepseek-ocr' });
-          for (const s of symbols) {
-            await db.query(
-              `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12)`,
-              [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page],
-            );
-            totalInserted++;
-          }
-        } catch (e: unknown) {
-          const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-          diagnostics.push({ page, detected: 0, method: 'deepseek-ocr', error: msg });
-        }
+      let pngBuffer: Buffer;
+      let pngBase64: string;
+      try {
+        console.log(`[legend/reparse] page ${page} rendering...`);
+        const { png } = await renderPageToPng(buf, page, RENDER_SCALE);
+        pngBuffer = png;
+        pngBase64 = png.toString('base64');
+        console.log(`[legend/reparse] page ${page} render OK, png size: ${png.length} bytes`);
+      } catch (e: unknown) {
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        diagnostics.push({ page, detected: 0, refined: 0, error: `render: ${msg}` });
         continue;
       }
 
-      // Gemini: vision-first, OCR fallback
-      let pngBase64: string | null = null;
       try {
-        const { png } = await renderPageToPng(buf, page, RENDER_SCALE);
-        pngBase64 = png.toString('base64');
+        console.log(`[legend/reparse] page ${page} running two-pass extraction...`);
+        // Pass pngBuffer for two-pass refinement
+        const symbols = await extractLegendSymbolsFromPng(pngBase64, page, pngBuffer);
+        const refinedCount = symbols.filter(s => s.bbox_x !== null).length;
+        diagnostics.push({ page, detected: symbols.length, refined: refinedCount });
+        console.log(`[legend/reparse] page ${page}: ${symbols.length} symbols, ${refinedCount} with bbox`);
+
+        for (const s of symbols) {
+          await db.query(
+            `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12)`,
+            [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases ?? [], s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page],
+          );
+          totalInserted++;
+        }
       } catch (e: unknown) {
         const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-        console.warn(`[legend/reparse] page ${page} render failed: ${msg}`);
-      }
-
-      if (pngBase64) {
-        try {
-          const symbols = await extractLegendSymbolsFromPng(pngBase64, page);
-          diagnostics.push({ page, detected: symbols.length, method: 'gemini-vision' });
-          for (const s of symbols) {
-            await db.query(
-              `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12)`,
-              [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page],
-            );
-            totalInserted++;
-          }
-          continue;
-        } catch (e: unknown) {
-          const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-          console.warn(`[legend/reparse] page ${page} Gemini vision failed, trying OCR fallback: ${msg}`);
-        }
-      }
-
-      // OCR fallback — Gemini render failed or vision AI failed
-      if (pageOcr.trim()) {
-        try {
-          const symbols = await extractLegendSymbolsFromOcr(pageOcr, page);
-          diagnostics.push({ page, detected: symbols.length, method: 'gemini-ocr-fallback' });
-          for (const s of symbols) {
-            await db.query(
-              `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12)`,
-              [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page],
-            );
-            totalInserted++;
-          }
-        } catch (e: unknown) {
-          const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-          diagnostics.push({ page, detected: 0, method: 'gemini-ocr-fallback', error: msg });
-        }
-      } else {
-        diagnostics.push({ page, detected: 0, method: 'failed', error: 'Render failed and no OCR text available' });
+        console.error(`[legend/reparse] page ${page} FAILED: ${msg}`);
+        diagnostics.push({ page, detected: 0, refined: 0, error: msg });
       }
     }
 

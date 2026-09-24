@@ -169,6 +169,7 @@ function EditRow({
           tag_pattern: form.tag_pattern.trim() || null,
           description: form.description.trim() || null,
           aliases: form.aliases ? form.aliases.split(',').map(a => a.trim()).filter(Boolean) : [],
+          status: symbol.status ?? 'ACTIVE',
         }),
       });
       if (!res.ok) {

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
-import { validatePdfFile, getPdfPageCountFromBuffer, renderPageToPng, extractPdfTextByPage } from '@/lib/pdf-render';
+import { validatePdfFile, getPdfPageCountFromBuffer, renderPageToPng } from '@/lib/pdf-render';
 import { saveFile } from '@/lib/storage';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
-import { extractLegendSymbolsFromPng, extractLegendSymbolsFromOcr, type ParsedSymbol } from '@/lib/legend-extract';
+import { extractLegendSymbolsFromPng } from '@/lib/legend-extract';
 import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
-import { getAiConfig } from '@/lib/ai-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,90 +30,36 @@ export async function POST(request: NextRequest) {
     await saveFile(`legend-${legendId}.pdf`, buf);
     await db.query("INSERT INTO legends (id, name, description, status) VALUES ($1,$2,$3,'DRAFT')", [legendId, name, `Imported from ${file.name}`]);
 
-    // Per-page AI parse: Gemini vision (default) or DeepSeek OCR (text-only)
-    // + reference crop per symbol for few-shot detection (Gemini vision path only)
+    // Per-page high-res render ΓåÆ Gemini vision (same as reparse)
+    // Phase 1: scale 4.0 (samakan dengan detection) + validasi tag_pattern
+    // + simpan reference crop per simbol untuk few-shot detection.
     let draft: { asset_type: string; symbol_name: string | null }[] = [];
     try {
-      const cfg = await getAiConfig();
-      const useDeepSeek = cfg.provider === 'deepseek';
       const pageCount = await getPdfPageCountFromBuffer(buf);
       const { cropPageRegion } = await import('@/lib/image-crop');
       const { hashImage } = await import('@/lib/symbol-cache');
-
-      // Pre-extract OCR text — needed for DeepSeek provider and as Gemini fallback
-      let ocrPages: string[] = [];
-      try {
-        ocrPages = await extractPdfTextByPage(buf);
-      } catch (e) {
-        console.warn('[legend/upload] OCR extraction failed (non-fatal):', (e as Error).message?.slice(0, 200));
-      }
-
       for (let page = 1; page <= pageCount; page++) {
-        const pageOcr = ocrPages[page - 1] ?? '';
-
-        // Declare page-level render state — used by ref crop section below
-        let pngBase64: string | null = null;
+        let pngBase64: string;
         let pngW = 0;
         let pngH = 0;
-
-        let symbols: ParsedSymbol[];
-
-        if (useDeepSeek) {
-          // DeepSeek: text-only via OCR — no image understanding
-          if (!pageOcr.trim()) {
-            console.warn(`[legend/upload] page ${page} skipped — DeepSeek requires OCR text but none available`);
-            continue;
-          }
-          try {
-            symbols = await extractLegendSymbolsFromOcr(pageOcr, page);
-          } catch (e) {
-            console.warn(`[legend/upload] page ${page} DeepSeek OCR failed:`, (e as Error).message?.slice(0, 300));
-            continue;
-          }
-        } else {
-          // Gemini: vision-first, OCR text fallback
-          try {
-            const rendered = await renderPageToPng(buf, page, 4.0);
-            pngW = rendered.width;
-            pngH = rendered.height;
-            pngBase64 = rendered.png.toString('base64');
-          } catch (e) {
-            console.warn(`[legend/upload] page ${page} render failed:`, (e as Error).message?.slice(0, 200));
-          }
-
-          if (pngBase64) {
-            try {
-              symbols = await extractLegendSymbolsFromPng(pngBase64, page);
-            } catch (e) {
-              console.warn(`[legend/upload] page ${page} Gemini vision failed, trying OCR fallback:`, (e as Error).message?.slice(0, 300));
-              pngBase64 = null; pngW = 0; pngH = 0; // no ref crop if vision failed
-              if (pageOcr.trim()) {
-                try {
-                  symbols = await extractLegendSymbolsFromOcr(pageOcr, page);
-                } catch (e2) {
-                  console.warn(`[legend/upload] page ${page} OCR fallback also failed:`, (e2 as Error).message?.slice(0, 200));
-                  continue;
-                }
-              } else {
-                continue;
-              }
-            }
-          } else if (pageOcr.trim()) {
-            // Render failed — try OCR fallback
-            try {
-              symbols = await extractLegendSymbolsFromOcr(pageOcr, page);
-            } catch (e) {
-              console.warn(`[legend/upload] page ${page} OCR fallback failed:`, (e as Error).message?.slice(0, 200));
-              continue;
-            }
-          } else {
-            console.warn(`[legend/upload] page ${page} skipped — render failed and no OCR text`);
-            continue;
-          }
+        try {
+          const rendered = await renderPageToPng(buf, page, 2.0);
+          pngW = rendered.width;
+          pngH = rendered.height;
+          pngBase64 = rendered.png.toString('base64');
+        } catch (e) {
+          console.warn(`[legend/upload] page ${page} render failed:`, (e as Error).message?.slice(0, 200));
+          continue;
         }
-
+        let symbols: Awaited<ReturnType<typeof extractLegendSymbolsFromPng>>;
+        try {
+          symbols = await extractLegendSymbolsFromPng(pngBase64, page);
+        } catch (e) {
+          console.warn(`[legend/upload] page ${page} AI failed:`, (e as Error).message?.slice(0, 300));
+          continue;
+        }
         for (const s of symbols) {
-          // Schema + tag_pattern validation before INSERT
+          // Validasi schema + tag_pattern sebelum INSERT (cegah pattern salah ketik)
           const parsed = LegendSymbolSchema.safeParse({
             asset_type: s.asset_type.slice(0, 120),
             symbol_name: s.symbol_name,
@@ -132,16 +77,14 @@ export async function POST(request: NextRequest) {
           const patternErr = validateTagPattern(parsed.data.tag_pattern);
           const safePattern = patternErr ? null : parsed.data.tag_pattern;
           if (patternErr) {
-            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" → nulled (${patternErr})`);
+            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" ΓåÆ nulled (${patternErr})`);
           }
-
-          // Reference crop: cut symbol from page PNG for few-shot detection.
-          // Best-effort — crop failure does not block insert.
-          // Only available when pngBase64 is set (Gemini vision path).
+          // Reference crop: potong simbol dari page PNG untuk few-shot detection.
+          // Best-effort ΓÇö gagal crop tidak menggagalkan insert.
           let refUrl: string | null = null;
           let refHash: string | null = null;
           try {
-            if (pngBase64 && s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
+            if (s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
               const cropB64 = await cropPageRegion(
                 pngBase64,
                 { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
@@ -157,7 +100,6 @@ export async function POST(request: NextRequest) {
           } catch (cropErr) {
             console.warn(`[legend/upload] page ${page} ref crop failed (non-fatal):`, (cropErr as Error).message?.slice(0, 150));
           }
-
           await db.query(
             `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT',$13,$14)`,
             [uuidv4(), legendId, parsed.data.asset_type, parsed.data.symbol_name, safePattern, parsed.data.description, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, parsed.data.aliases, refUrl, refHash],

@@ -194,22 +194,19 @@ export default function SettingsPage() {
     setSaving(true);
 
     try {
-      if (!formData.gemini_api_key && !formData.deepseek_api_key) {
-        throw new Error('At least one API key required');
-      }
-
-      if (formData.ai_provider === 'gemini' && !formData.gemini_api_key) {
-        throw new Error('Gemini API key required for Gemini provider');
-      }
-
-      if (formData.ai_provider === 'deepseek' && !formData.deepseek_api_key) {
-        throw new Error('DeepSeek API key required for DeepSeek provider');
-      }
+      // Only include key fields if user typed something — empty = keep existing DB value
+      const payload: Record<string, string | undefined> = {
+        ai_provider: formData.ai_provider,
+        gemini_model: formData.gemini_model,
+        deepseek_model: formData.deepseek_model,
+      };
+      if (formData.gemini_api_key) payload.gemini_api_key = formData.gemini_api_key;
+      if (formData.deepseek_api_key) payload.deepseek_api_key = formData.deepseek_api_key;
 
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
