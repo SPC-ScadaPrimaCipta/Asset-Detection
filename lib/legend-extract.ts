@@ -133,11 +133,13 @@ export async function extractLegendSymbolsFromPng(pngBase64: string, page: numbe
       return raw.map((s) => mapRawToSymbol(s as Record<string, unknown>));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      const retryable = /429|quota|rate|overloaded|high demand|503|not.found|404|fetch/i.test(msg);
+      // Always try next model unless it's an auth error (wrong API key) or explicit non-retryable.
+      // Covers: 404, not found, deprecated, unsupported, FAILED_PRECONDITION, model errors, rate limits, etc.
+      const authError = /API.?key|PERMISSION_DENIED|invalid.key|unauthorized|403/i.test(msg);
       console.warn(`[legend-extract] page ${page} model ${modelName} failed: ${msg.slice(0, 300)}`);
       lastErr = e;
-      if (retryable) continue;
-      throw e;
+      if (!authError) continue;  // try next model
+      throw e;  // auth error — no point retrying other models with same key
     }
   }
   throw lastErr ?? new Error('All models failed');
