@@ -1,7 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { execFile } from "child_process";
 import path from "path";
-const RENDER_SCRIPT = path.resolve(process.cwd(), "scripts/render-page.mjs");
+const RENDER_SCRIPT = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "scripts/render-page.mjs");
 
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const ALLOWED_MIME = ["application/pdf"];

@@ -66,7 +66,8 @@ console.log(`[legend/reparse] page ${page} rendering...`);
             pngW, pngH, id, page, 0.05
           );
           await db.query(
-`INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, reference_image_url, reference_crop_hash)\n             VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12,$13,$14)`,\n            [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases ?? [], s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, refUrl, refHash],
+`INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, reference_image_url, reference_crop_hash)\n             VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12,$13,$14)`,
+            [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases ?? [], s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, refUrl, refHash],
           );
           totalInserted++;
         }

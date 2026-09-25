@@ -259,7 +259,6 @@ async function analyzeRegion(
         model: modelName,
         generationConfig: { temperature: 0.05, maxOutputTokens: 8192, responseMimeType: 'application/json' },
       });
-      });
       const r = await model.generateContent([{ text: makeRegionPrompt(regionLabel) }, imgPart]);
       const text = r.response.text();
       const j = parseJsonResponse(text) as { symbols?: unknown[] };
@@ -565,14 +564,6 @@ bbox: tight around symbol graphic only, 0-1000 coords, NOT including text label.
   lastErr = lastErr;
   if (lastErr) throw lastErr;
   return [];
-}
-
-      lastErr = e;
-      if (retryable) continue;
-      throw e;
-    }
-  }
-  throw lastErr ?? new Error('All models failed');
 }
 
 /** Two overlapping vertical halves (legend sheets are columnar). 0-1000 space. */
