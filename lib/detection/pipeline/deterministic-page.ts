@@ -351,6 +351,12 @@ export async function processPageDeterministic(
       droppedNoise++;
       continue;
     }
+    // Precision pass 2026-09-25: weak legend match (<0.35) without a tag
+    // reads as glyph/fragment noise. Tagged visuals are never dropped here.
+    if (!tagNorm && top && (top.score ?? 0) < 0.35) {
+      droppedNoise++;
+      continue;
+    }
     const spatialTop = symAssocScore.get(v.candidateId);
     const ocrIn = tagCand
       ? { isTag: !!tagCand.tag?.isTag, confidence: tagCand.ocr?.confidence ?? 0.5 }

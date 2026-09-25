@@ -6,6 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { ArrowCounterClockwise, PencilLine, SquaresFour, CheckCircle, SealCheck, PencilSimple, XCircle, Trash, FloppyDisk, X, CaretLeft, CaretRight, Plus, Minus } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { validateTagPattern } from '@/lib/legend-schemas';
+import { referenceCropUrl } from '@/lib/legend-url';
 
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -19,6 +20,7 @@ interface LegendSymbol {
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
   pid_page: number | null;
   reference_image_url: string | null;
+  reference_crop_hash: string | null;
   computed_features: Record<string, unknown> | null;
   quality_status: 'validated' | 'review' | 'rejected' | null;
   quality_reasons: string[] | null;
@@ -491,13 +493,9 @@ export default function LegendReviewPage() {
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((d as any).error || `Re-crop failed (${res.status})`);
-      const created = (d as any).new as LegendSymbol;
-      setSymbols(prev => {
-        const next = prev.map(x => x.id === recropTargetId ? { ...x, superseded_by: created.id } : x);
-        next.push(created);
-        return next;
-      });
-      setSelectedId(created.id);
+      const updated = (d as any).symbol as LegendSymbol;
+      setSymbols(prev => prev.map(x => x.id === recropTargetId ? { ...x, ...updated } : x));
+      setSelectedId(recropTargetId);
       setRecropTargetId(null);
     } catch (e: any) { setError(e.message || 'Re-crop failed'); }
     finally { setRecropping(false); }
@@ -530,6 +528,10 @@ export default function LegendReviewPage() {
       const r = await fetch(`/api/legends/${legendId}/reparse`, { method: 'POST' });
       const d = await r.json() as any; if (!r.ok) throw new Error(d.error || 'Re-parse failed');
       const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`); if (sr.ok) { const j = await sr.json(); setSymbols(Array.isArray(j) ? j : []); }
+      setSelectedId(null); setEditingId(null); setRecropTargetId(null); setRejectModalId(null); setConfirmDeleteId(null);
+      setDrawMode(false); setAddModalOpen(false); setAddModalBbox(null); setSymPage(1);
+      setSuccessMsg('Legend re-parsed successfully. Symbol list refreshed.');
+      setTimeout(() => setSuccessMsg(''), 2500);
     } catch (e: any) { setError(e.message); } finally { setReparsing(false); }
   };
   const handleSaveEdit = async () => {
@@ -1002,7 +1004,7 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
                       <QualityBadge s={sel.quality_status} missing={!sel.reference_image_url} />
                     </div>
                     {sel.reference_image_url ? (
-                      <img src={`/api/legends/${legendId}/symbols/${sel.id}/crop`} alt="reference crop"
+                      <img src={referenceCropUrl(legendId, sel.id, sel.reference_crop_hash)} alt="reference crop"
                         style={{ width: '100%', maxHeight: 120, objectFit: 'contain', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : (

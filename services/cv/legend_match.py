@@ -20,9 +20,12 @@ import numpy as np
 @dataclass
 class MatchConfig:
     # Initial engineering parameters ONLY — Phase 6 calibrates (Phase 8 data).
+    # Calibrated 2026-09-25 (precision pass): gates tightened after eval
+    # showed VESSEL FP 14 + text glyphs passing (P 0.143). Revert to
+    # 0.3/0.3/0.2 if recall (TP) drops.
     min_geometry: float = 0.3
-    min_contour: float = 0.3
-    min_template: float = 0.2
+    min_contour: float = 0.4
+    min_template: float = 0.3
     max_candidates: int = 5
     scales: tuple = (0.7, 0.85, 1.0, 1.2, 1.4)
     rotations: tuple = (0, 90, 180, 270)
@@ -158,7 +161,7 @@ def match_candidate(candidate: dict, definitions: list,
             instr.full_comparisons += 1
             if t < cfg.min_template:
                 continue
-            score = round(0.25 * g + 0.30 * c + 0.15 * e + 0.30 * t, 4)
+            score = round(0.20 * g + 0.30 * c + 0.15 * e + 0.35 * t, 4)
             instr.accepted += 1
             ms = round((time.perf_counter() - t0) * 1000.0, 2)
             instr.timings[d.get("symbolId", "?")] = ms

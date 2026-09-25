@@ -32,7 +32,9 @@ class ConfidenceConfig:
     w_ocr: float = 0.15
     w_spatial: float = 0.15
     # Band thresholds (routing only).
-    high_threshold: float = 0.90
+    # Calibrated 2026-09-25 (precision pass): HIGH 0.90→0.80, mirrors
+    # HIGH_CONFIDENCE_THRESHOLD in lib/env.ts (was unreachable).
+    high_threshold: float = 0.80
     low_threshold: float = 0.70
     # Explicit, visible penalties (not hidden score manipulation).
     ambiguity_penalty_scale: float = 0.15  # × (1 - margin), applied when margin small
@@ -48,7 +50,7 @@ class ConfidenceConfig:
                 return default
 
         return ConfidenceConfig(
-            high_threshold=f("HIGH_CONFIDENCE_THRESHOLD", 0.90),
+            high_threshold=f("HIGH_CONFIDENCE_THRESHOLD", 0.80),
             low_threshold=f("LOW_CONFIDENCE_THRESHOLD", 0.70),
         )
 

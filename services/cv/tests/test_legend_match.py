@@ -75,9 +75,9 @@ def test_noisy_symbol_matches():
 
 
 def test_unrelated_geometry_has_no_strong_match():
-    # Discrimination (not a production threshold — Phase 6 calibrates):
-    # unrelated top must stay clearly below EVERY exact-match top,
-    # measured in the same run against the same definitions.
+    # Discrimination (calibrated 2026-09-25, precision pass):
+    # unrelated geometry must NOT match at all, or stay clearly below
+    # EVERY exact-match top, measured in the same run.
     exact_tops = []
     for label in ("Pump", "Valve", "PSV", "Instrument"):
         m = match_candidate(query_features(label), defs())
@@ -90,9 +90,9 @@ def test_unrelated_geometry_has_no_strong_match():
          "edgeDensity": v["edgeDensity"], "lineCount": v["lineCount"],
          "normCrop": normalize_crop(gray, bbox, TEMPLATE_SIZE)}
     m = match_candidate(q, defs())
-    assert m, "expected at least weak evidence (recall-oriented matcher)"
-    assert m[0]["score"] + 0.05 <= min(exact_tops), (
-        f"unrelated {m[0]['score']} too close to exact min {min(exact_tops)}")
+    if m:
+        assert m[0]["score"] + 0.05 <= min(exact_tops), (
+            f"unrelated {m[0]['score']} too close to exact min {min(exact_tops)}")
 
 
 def test_multiple_matches_ranked_deterministically():

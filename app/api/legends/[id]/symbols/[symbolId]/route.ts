@@ -27,6 +27,17 @@ export async function PUT(
   const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, review_reason } = parsed.data;
 
   try {
+    const exists = await db.query(
+      'SELECT 1 FROM legend_symbols WHERE id = $1 AND legend_id = $2',
+      [symbolId, legendId]
+    );
+    if (exists.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Symbol not found. It may have been replaced by a re-parse; refresh the page and select it again.' },
+        { status: 404 }
+      );
+    }
+
     await db.query(
       `UPDATE legend_symbols SET
         asset_type = $1, symbol_name = $2, tag_pattern = $3, description = $4,
@@ -70,6 +81,14 @@ export async function DELETE(
       );
     }
   } catch { /* is_builtin column missing — allow delete */ }
+
+  const exists = await db.query('SELECT 1 FROM legend_symbols WHERE id = $1 AND legend_id = $2', [symbolId, legendId]);
+  if (exists.rows.length === 0) {
+    return NextResponse.json(
+      { error: 'Symbol not found. It may have been replaced by a re-parse; refresh the page and select it again.' },
+      { status: 404 }
+    );
+  }
 
   await db.query('DELETE FROM legend_symbols WHERE id = $1 AND legend_id = $2', [symbolId, legendId]);
   return NextResponse.json({ success: true });

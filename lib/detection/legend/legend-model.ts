@@ -342,7 +342,7 @@ export interface LegendMatchThresholds {
 
 export const DEFAULT_LEGEND_THRESHOLDS: LegendMatchThresholds = {
   minGeometry: 0.3,
-  minContour: 0.3,
-  minTemplate: 0.2,
+  minContour: 0.4,
+  minTemplate: 0.3,
   maxCandidates: 5,
 };

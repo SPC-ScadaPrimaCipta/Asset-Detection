@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 
 @dataclass
 class MaskConfig:
-    contain_thr: float = 0.6
+    # Calibrated 2026-09-25 (precision pass): contain_thr 0.6→0.7.
+    contain_thr: float = 0.7
     text_bigger_factor: float = 2.0
     keep_area_min: float = 1500.0
     min_convexity: float = 0.85

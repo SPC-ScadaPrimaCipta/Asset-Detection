@@ -42,7 +42,7 @@ const envSchema = z.object({
   PIPELINE_VERSION: z.string().default('phase10'),
   TILE_SIZE: z.coerce.number().int().positive().default(1280),
   TILE_OVERLAP: z.coerce.number().min(0).max(0.9).default(0.2),
-  HIGH_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.9),
+  HIGH_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.8),
   LOW_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
   MAX_GEMINI_CALLS_PER_PAGE: z.coerce.number().int().positive().default(10),
   MAX_GEMINI_RETRY_PER_PAGE: z.coerce.number().int().min(0).default(2),

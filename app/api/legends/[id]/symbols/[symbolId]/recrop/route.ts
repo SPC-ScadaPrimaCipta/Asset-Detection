@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
-import { getFile, saveFile, fileExists } from '@/lib/storage';
+import { deleteFile, getFile, saveFile } from '@/lib/storage';
 import { renderPageToPng } from '@/lib/pdf-render';
 import { cropPageRegion } from '@/lib/image-crop';
 import { hashImage } from '@/lib/symbol-cache';
 
 /**
- * POST /api/legends/[id]/symbols/[symbolId]/recrop — versioned re-crop.
+ * POST /api/legends/[id]/symbols/[symbolId]/recrop — replace reference crop.
  *
  * Body: { bbox_x, bbox_y, bbox_w, bbox_h } in 0–1000 page space.
- * Renders the legend PDF page server-side, crops the new region, saves a
- * VERSIONED file (never overwrites the raw crop), INSERTs a new
- * legend_symbols row (DRAFT, quality NULL = not assessed), and links the old
- * row via superseded_by. Raw reference is preserved for audit.
+ * Renders the legend PDF page server-side, replaces the stored crop, and
+ * updates the existing legend_symbols row in place.
  */
 export async function POST(
   request: NextRequest,
@@ -47,27 +44,46 @@ export async function POST(
     );
     if (!cropB64) return NextResponse.json({ error: 'Crop failed for this bbox' }, { status: 422 });
     const hash = hashImage(cropB64);
-    let refName = `legend-${legendId}-p${page}-${hash.slice(0, 12)}-v2.png`;
-    let v = 2;
-    while (await fileExists(refName)) {
-      v++;
-      refName = `legend-${legendId}-p${page}-${hash.slice(0, 12)}-v${v}.png`;
-    }
+    const refName = `legend-${legendId}-p${page}-${hash.slice(0, 12)}.png`;
     await saveFile(refName, Buffer.from(cropB64, 'base64'));
 
-    const newId = uuidv4();
     await db.query(
-      `INSERT INTO legend_symbols
-        (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status,
-         bbox_x, bbox_y, bbox_w, bbox_h, pid_page, reference_image_url, reference_crop_hash,
-         quality_status, pipeline_version, class_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12,$13,$14,NULL,NULL,$15)`,
-      [newId, legendId, cur.asset_type, cur.symbol_name, cur.tag_pattern, cur.description,
-       cur.aliases ?? [], bx, by, bw, bh, page, refName, hash, cur.class_id ?? null]
+      `UPDATE legend_symbols SET
+        asset_type = $1,
+        symbol_name = $2,
+        tag_pattern = $3,
+        description = $4,
+        aliases = $5::text[],
+        status = 'DRAFT',
+        bbox_x = $6,
+        bbox_y = $7,
+        bbox_w = $8,
+        bbox_h = $9,
+        pid_page = $10,
+        reference_image_url = $11,
+        reference_crop_hash = $12,
+        quality_status = NULL,
+        pipeline_version = NULL,
+        review_reason = NULL,
+        superseded_by = NULL,
+        updated_at = NOW()
+       WHERE id = $13 AND legend_id = $14`,
+      [cur.asset_type, cur.symbol_name, cur.tag_pattern, cur.description,
+       cur.aliases ?? [], bx, by, bw, bh, page, refName, hash, symbolId, legendId]
     );
-    await db.query('UPDATE legend_symbols SET superseded_by=$1, updated_at=NOW() WHERE id=$2', [newId, symbolId]);
-    const created = await db.query('SELECT * FROM legend_symbols WHERE id=$1', [newId]);
-    return NextResponse.json({ old: { id: symbolId, superseded_by: newId }, new: created.rows[0] }, { status: 201 });
+    const previousRef = typeof cur.reference_image_url === 'string' ? cur.reference_image_url : null;
+    if (
+      previousRef &&
+      previousRef !== refName &&
+      previousRef.startsWith(`legend-${legendId}-`) &&
+      !previousRef.includes('/') &&
+      !previousRef.includes('\\')
+    ) {
+      try { await deleteFile(previousRef); }
+      catch (e: unknown) { console.warn('[legend recrop POST] old crop cleanup failed:', e instanceof Error ? e.message : String(e)); }
+    }
+    const updated = await db.query('SELECT * FROM legend_symbols WHERE id=$1 AND legend_id=$2', [symbolId, legendId]);
+    return NextResponse.json({ replaced: true, symbol: updated.rows[0] }, { status: 200 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[legend recrop POST]', msg.slice(0, 300));
