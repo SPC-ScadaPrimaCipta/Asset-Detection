@@ -6,6 +6,7 @@ import { saveFile } from '@/lib/storage';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { extractLegendSymbolsRobust } from '@/lib/legend-extract';
 import { cropPageRegion } from '@/lib/image-crop';
+import { createHash } from 'crypto';
 import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
 import { cropAndSaveSymbol } from '@/lib/legend-crop';
 
@@ -101,7 +102,7 @@ let refUrl: string | null = null;
                 pngW, pngH, 0.05,
               );
               if (cropB64) {
-                refHash = hashImage(cropB64);
+                refHash = createHash('sha256').update(cropB64).digest('hex');
                 const refName = `legend-${legendId}-p${page}-${refHash.slice(0, 12)}.png`;
                 await saveFile(refName, Buffer.from(cropB64, 'base64'));
                 refUrl = refName;

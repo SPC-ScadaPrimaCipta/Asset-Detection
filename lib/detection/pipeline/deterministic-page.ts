@@ -123,7 +123,6 @@ export function filterEligibleSymbols<T extends LegendSymbolRow>(symbols: T[]): 
       !s.superseded_by
   );
 }
-}
 
 export async function loadLegendDefs(
   legendId: string,
