@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { FileXls, MagnifyingGlass, Eye, CaretLeft, CaretRight, PencilSimple, Trash, FloppyDisk, X } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ interface AssetsResponse {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 25;
 
 const REVIEW_STATUS_OPTS = [
   { label: 'All', value: '' },
@@ -275,6 +276,7 @@ function AssetRegisterWorkspace() {
   const [confidence, setConfidence] = useState(searchParams.get('confidence') ?? '');
   const [sort, setSort] = useState(searchParams.get('sort') ?? 'created_at_desc');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // Data
   const [projects, setProjects] = useState<Project[]>([]);
@@ -288,6 +290,12 @@ function AssetRegisterWorkspace() {
 
   // Detail panel
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+
+  // Edit / Delete
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Asset>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Export
   const [includeReviewItems, setIncludeReviewItems] = useState(false);
@@ -330,9 +338,9 @@ function AssetRegisterWorkspace() {
     if (confParams.confidence_max) sp.set('confidence_max', confParams.confidence_max);
     if (sort) sp.set('sort', sort);
     sp.set('page', String(page));
-    sp.set('limit', String(PAGE_SIZE));
+    sp.set('limit', String(pageSize));
     return `/api/assets?${sp.toString()}`;
-  }, [projectId, debouncedQ, assetType, reviewStatus, confidence, sort, page]);
+  }, [projectId, debouncedQ, assetType, reviewStatus, confidence, sort, page, pageSize]);
 
   // ── Fetch assets ──
   const fetchAssets = useCallback(async () => {
@@ -364,6 +372,39 @@ function AssetRegisterWorkspace() {
 
   // Reset to page 1 when filters change (except page itself)
   const resetPage = () => setPage(1);
+
+  // ── Edit / Delete handlers ──
+  const handleEdit = (asset: Asset) => {
+    setEditingAsset(asset);
+    setEditForm({
+      asset_tag: asset.asset_tag ?? '',
+      asset_type: asset.asset_type,
+      equipment_class: asset.equipment_class ?? '',
+      description: asset.description ?? '',
+      service: asset.service ?? '',
+      location: asset.location ?? '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAsset) return;
+    setSavingEdit(true);
+    const r = await fetch(`/api/assets/${editingAsset.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editForm),
+    });
+    if (r.ok) { await fetchAssets(); setEditingAsset(null); }
+    setSavingEdit(false);
+  };
+
+  const handleDelete = async (asset: Asset) => {
+    if (!confirm(`Delete asset "${asset.asset_tag ?? asset.asset_type}"? This cannot be undone.`)) return;
+    setDeletingId(asset.id);
+    await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' });
+    await fetchAssets();
+    setDeletingId(null);
+  };
 
   // ── Stats ──
   const confirmed = assets.filter(a => a.review_status === 'APPROVED').length;
@@ -399,7 +440,7 @@ function AssetRegisterWorkspace() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -522,9 +563,7 @@ function AssetRegisterWorkspace() {
                 </>
               ) : (
                 <>
-                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                  </svg>
+                  <FileXls size={16} weight="bold" />
                   Export Excel
                 </>
               )}
@@ -576,9 +615,7 @@ function AssetRegisterWorkspace() {
             </>
           ) : (
             <>
-              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <FileXls size={16} weight="bold" />
               Export Asset Register (.xlsx)
             </>
           )}
@@ -650,7 +687,7 @@ function AssetRegisterWorkspace() {
                     onMouseLeave={e => { if (selectedAsset?.id !== asset.id) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <td style={{ ...tdBase, color: 'var(--foreground-subtle)', fontVariantNumeric: 'tabular-nums' }}>
-                      {(page - 1) * PAGE_SIZE + idx + 1}
+                      {(page - 1) * pageSize + idx + 1}
                     </td>
                     <td style={{ ...tdBase, fontWeight: '500', color: 'var(--foreground)', whiteSpace: 'nowrap', fontFamily: 'var(--font-geist-mono, ui-monospace, monospace)' }}>
                       {asset.asset_tag ?? <span style={{ color: 'var(--foreground-subtle)', fontStyle: 'italic', fontFamily: 'sans-serif' }}>—</span>}
@@ -683,14 +720,39 @@ function AssetRegisterWorkspace() {
                       <StatusBadge reviewStatus={asset.review_status} />
                     </td>
                     <td style={{ ...tdBase, textAlign: 'right' }}>
-                      <button
-                        onClick={() => setSelectedAsset(prev => prev?.id === asset.id ? null : asset)}
-                        style={{ fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', color: 'var(--foreground-muted)', border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 150ms ease-out' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-soft)'; e.currentTarget.style.color = 'var(--accent)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface-muted)'; e.currentTarget.style.color = 'var(--foreground-muted)'; }}
-                      >
-                        View
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        {/* View */}
+                        <button
+                          onClick={() => setSelectedAsset(prev => prev?.id === asset.id ? null : asset)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#F0F2E9', color: '#1F2A22', border: '1px solid #DDE2D8', cursor: 'pointer', transition: 'all 150ms ease-out' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#E4E6DC'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#F0F2E9'; }}
+                        >
+                          <Eye size={13} weight="bold" />
+                          View
+                        </button>
+                        {/* Edit */}
+                        <button
+                          onClick={() => handleEdit(asset)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#002B4E', color: '#FFFFFF', border: '1px solid #002B4E', cursor: 'pointer', transition: 'all 150ms ease-out' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#003d6b'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#002B4E'; }}
+                        >
+                          <PencilSimple size={13} weight="bold" />
+                          Edit
+                        </button>
+                        {/* Delete */}
+                        <button
+                          onClick={() => handleDelete(asset)}
+                          disabled={deletingId === asset.id}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#A65A55', color: '#FFFFFF', border: '1px solid #A65A55', cursor: deletingId === asset.id ? 'not-allowed' : 'pointer', transition: 'all 150ms ease-out', opacity: deletingId === asset.id ? 0.4 : 1 }}
+                          onMouseEnter={e => { if (deletingId !== asset.id) e.currentTarget.style.background = '#8f4d48'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#A65A55'; }}
+                        >
+                          <Trash size={13} weight="bold" />
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -700,35 +762,131 @@ function AssetRegisterWorkspace() {
         </div>
 
         {/* ── Pagination ── */}
-        {totalPages > 1 && (
-          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: 'var(--foreground-muted)' }}>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1 || loading}
-              style={{ padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === 1 || loading) ? 0.4 : 1 }}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: 'var(--foreground-muted)' }}>
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1 || loading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === 1 || loading) ? 0.4 : 1 }}
+          >
+            <CaretLeft size={13} weight="bold" />
+            Prev
+          </button>
+          <span style={{ fontSize: '12px' }}>
+            Page <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{page}</span>
+            {' '}of{' '}
+            <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{totalPages}</span>
+            <span style={{ marginLeft: '8px', color: 'var(--foreground-subtle)' }}>({total} total)</span>
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages || loading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === totalPages || loading) ? 0.4 : 1 }}
+          >
+            Next
+            <CaretRight size={13} weight="bold" />
+          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
             >
-              ← Prev
-            </button>
-            <span style={{ fontSize: '12px' }}>
-              Page <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{page}</span>
-              {' '}of{' '}
-              <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{totalPages}</span>
-              <span style={{ marginLeft: '8px', color: 'var(--foreground-subtle)' }}>({total} total)</span>
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages || loading}
-              style={{ padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === totalPages || loading) ? 0.4 : 1 }}
-            >
-              Next →
-            </button>
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Detail Side Panel ── */}
       {selectedAsset && (
         <DetailPanel asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editingAsset && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Backdrop */}
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.45)', zIndex: 59 }}
+            onClick={() => !savingEdit && setEditingAsset(null)}
+            aria-hidden="true"
+          />
+          {/* Card */}
+          <div style={{ position: 'relative', zIndex: 60, width: 420, maxHeight: '90vh', overflowY: 'auto', ...cardStyle, padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 16px 40px rgba(0,0,0,0.18)' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: 'var(--foreground)' }}>
+                Edit Asset
+              </h2>
+              <button
+                onClick={() => !savingEdit && setEditingAsset(null)}
+                aria-label="Close edit modal"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--foreground-subtle)', borderRadius: 'var(--radius-sm)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--foreground-muted)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--foreground-subtle)'; }}
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+
+            {/* Fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {(
+                [
+                  { key: 'asset_tag', label: 'Asset Tag' },
+                  { key: 'asset_type', label: 'Asset Type' },
+                  { key: 'equipment_class', label: 'Equipment Class' },
+                  { key: 'description', label: 'Description' },
+                  { key: 'service', label: 'Service' },
+                  { key: 'location', label: 'Location' },
+                ] as { key: keyof Asset; label: string }[]
+              ).map(({ key, label }) => (
+                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={fieldLabelStyle}>{label}</label>
+                  <input
+                    type="text"
+                    value={(editForm[key] as string) ?? ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, [key]: e.target.value }))}
+                    style={{ ...controlStyle }}
+                    disabled={savingEdit}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px', borderTop: '1px solid var(--border)' }}>
+              <button
+                onClick={() => !savingEdit && setEditingAsset(null)}
+                disabled={savingEdit}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground-muted)', fontSize: '13px', fontWeight: '500', cursor: savingEdit ? 'not-allowed' : 'pointer', opacity: savingEdit ? 0.5 : 1 }}
+              >
+                <X size={14} weight="bold" />
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid #0078B8', background: '#0078B8', color: '#FFFFFF', fontSize: '13px', fontWeight: '500', cursor: savingEdit ? 'not-allowed' : 'pointer', opacity: savingEdit ? 0.6 : 1, transition: 'all 150ms ease-out' }}
+                onMouseEnter={e => { if (!savingEdit) e.currentTarget.style.background = '#0069a3'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#0078B8'; }}
+              >
+                {savingEdit ? (
+                  <>
+                    <Spinner size={14} />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <FloppyDisk size={14} weight="bold" />
+                    Save
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

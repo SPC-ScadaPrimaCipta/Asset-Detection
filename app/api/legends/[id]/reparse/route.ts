@@ -6,8 +6,10 @@ import { getPdfPageCountFromBuffer, renderPageToPng } from '@/lib/pdf-render';
 import { extractLegendSymbolsFromPng } from '@/lib/legend-extract';
 import { cropAndSaveSymbol } from '@/lib/legend-crop';
 
-export const maxDuration = 60;
-const RENDER_SCALE = 3.5;
+export const maxDuration = 300;
+
+// Scale 3.0 = ~216 DPI — lebih detail untuk legend dengan simbol kecil.
+const RENDER_SCALE = 3.0;
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,28 +22,41 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     catch { return NextResponse.json({ error: 'Legend PDF not found in storage. Re-upload to re-parse.' }, { status: 404 }); }
 
     const pageCount = await getPdfPageCountFromBuffer(buf);
-    await db.query("DELETE FROM legend_symbols WHERE legend_id=$1 AND status='DRAFT'", [id]);
+
+    // Delete ALL existing symbols (DRAFT + ACTIVE) — reparse is a full replacement.
+    await db.query('DELETE FROM legend_symbols WHERE legend_id=$1', [id]);
 
     let totalInserted = 0;
-    const diagnostics: { page: number; detected: number; error?: string }[] = [];
+    const diagnostics: { page: number; detected: number; refined: number; error?: string }[] = [];
 
     for (let page = 1; page <= pageCount; page++) {
+      let pngBuffer: Buffer;
       let pngBase64: string;
       let pngW = 0;
       let pngH = 0;
       try {
+console.log(`[legend/reparse] page ${page} rendering...`);
         const rendered = await renderPageToPng(buf, page, RENDER_SCALE);
-        pngBase64 = rendered.png.toString('base64');
+        const { png } = rendered;
+        pngBuffer = png;
+        pngBase64 = png.toString('base64');
         pngW = rendered.width;
         pngH = rendered.height;
+        console.log(`[legend/reparse] page ${page} render OK, png size: ${png.length} bytes`);
       } catch (e: unknown) {
         const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-        diagnostics.push({ page, detected: 0, error: `render: ${msg}` });
+        diagnostics.push({ page, detected: 0, refined: 0, error: `render: ${msg}` });
         continue;
       }
+
       try {
-        const symbols = await extractLegendSymbolsFromPng(pngBase64, page);
-        diagnostics.push({ page, detected: symbols.length });
+        console.log(`[legend/reparse] page ${page} running two-pass extraction...`);
+        // Pass pngBuffer for two-pass refinement
+        const symbols = await extractLegendSymbolsFromPng(pngBase64, page, pngBuffer);
+        const refinedCount = symbols.filter(s => s.bbox_x !== null).length;
+        diagnostics.push({ page, detected: symbols.length, refined: refinedCount });
+        console.log(`[legend/reparse] page ${page}: ${symbols.length} symbols, ${refinedCount} with bbox`);
+
         for (const s of symbols) {
           // Reference crops — same shared helper as upload (Stage 3.5 fix:
           // reparse previously skipped crops entirely, producing cropless rows).
@@ -51,15 +66,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             pngW, pngH, id, page, 0.05
           );
           await db.query(
-            `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, reference_image_url, reference_crop_hash)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12,$13,$14)`,
-            [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, refUrl, refHash],
+`INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, reference_image_url, reference_crop_hash)\n             VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9,$10,$11,$12,$13,$14)`,\n            [uuidv4(), id, s.asset_type.slice(0, 120), s.symbol_name, s.tag_pattern, s.description, s.aliases ?? [], s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, refUrl, refHash],
           );
           totalInserted++;
         }
       } catch (e: unknown) {
-        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
-        diagnostics.push({ page, detected: 0, error: msg.slice(0, 300) });
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        console.error(`[legend/reparse] page ${page} FAILED: ${msg}`);
+        diagnostics.push({ page, detected: 0, refined: 0, error: msg });
       }
     }
 

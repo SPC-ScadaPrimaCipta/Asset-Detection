@@ -101,7 +101,17 @@ confidence:
 - below 0.65: uncertain — include only with strong visual evidence
 
 bbox: normalized 0-1000 space. x_norm = (x_pixel / image_width) × 1000.
-Draw bbox TIGHTLY around the symbol graphic only, not including the tag text.
+BBOX RULES — CRITICAL:
+• Draw bbox TIGHTLY around the symbol GRAPHIC only (the circle, square, triangle, valve body, pump circle, etc.)
+• DO NOT include tag text (e.g. "PDT-11") inside the bbox — text is outside the symbol
+• DO NOT include pipe lines, connecting lines, or signal lines inside the bbox
+• DO NOT pad — the bbox edges should touch the outermost pixel of the symbol graphic
+• Instrument circles: bbox should be the circle diameter, not larger
+• Valves: bbox should be the valve body only, not the actuator or connecting pipes
+• Typical instrument symbol bbox: width 30-80 units, height 30-80 units in 0-1000 space
+• Typical valve bbox: width 20-70 units, height 20-70 units
+• Typical pump/vessel bbox: width 50-150 units, height 50-150 units
+• If bbox width or height exceeds 200 units for an instrument/valve, you are likely including pipe lines — shrink it
 
 service, mainEquipment, description: null unless explicitly printed as text on the drawing near the symbol. NEVER infer from context.
 

@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     await saveFile(`legend-${legendId}.pdf`, buf);
     await db.query("INSERT INTO legends (id, name, description, status) VALUES ($1,$2,$3,'DRAFT')", [legendId, name, `Imported from ${file.name}`]);
 
-    // Per-page high-res render → Gemini vision (same as reparse)
+    // Per-page high-res render ΓåÆ Gemini vision (same as reparse)
     // Phase 1: scale 4.0 (samakan dengan detection) + validasi tag_pattern
     // + simpan reference crop per simbol untuk few-shot detection.
     let draft: { asset_type: string; symbol_name: string | null }[] = [];
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
         let pngW = 0;
         let pngH = 0;
         try {
-          const rendered = await renderPageToPng(buf, page, 4.0);
+          const rendered = await renderPageToPng(buf, page, 2.0);
           pngW = rendered.width;
           pngH = rendered.height;
           pngBase64 = rendered.png.toString('base64');
@@ -88,16 +88,28 @@ export async function POST(request: NextRequest) {
           const patternErr = validateTagPattern(parsed.data.tag_pattern);
           const safePattern = patternErr ? null : parsed.data.tag_pattern;
           if (patternErr) {
-            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" → nulled (${patternErr})`);
+            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" ΓåÆ nulled (${patternErr})`);
           }
           // Reference crop: potong simbol dari page PNG untuk few-shot detection.
-          // Shared helper (lib/legend-crop) — best-effort, gagal crop tidak
-          // menggagalkan insert.
-          const { refUrl, refHash } = await cropAndSaveSymbol(
-            pngBase64,
-            { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
-            pngW, pngH, legendId, page, 0.05
-          );
+let refUrl: string | null = null;
+          let refHash: string | null = null;
+          try {
+            if (s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
+              const cropB64 = await cropPageRegion(
+                pngBase64,
+                { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
+                pngW, pngH, 0.05,
+              );
+              if (cropB64) {
+                refHash = hashImage(cropB64);
+                const refName = `legend-${legendId}-p${page}-${refHash.slice(0, 12)}.png`;
+                await saveFile(refName, Buffer.from(cropB64, 'base64'));
+                refUrl = refName;
+              }
+            }
+          } catch (cropErr) {
+            console.warn(`[legend/upload] page ${page} ref crop failed (non-fatal):`, (cropErr as Error).message?.slice(0, 150));
+          }
           await db.query(
             `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT',$13,$14)`,
             [uuidv4(), legendId, parsed.data.asset_type, parsed.data.symbol_name, safePattern, parsed.data.description, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, parsed.data.aliases, refUrl, refHash],

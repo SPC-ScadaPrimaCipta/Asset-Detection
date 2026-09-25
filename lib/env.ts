@@ -28,7 +28,7 @@ loadEnvFiles();
 // and are resolved at runtime via lib/ai-config.ts. This prevents `npm run worker` crash
 // when keys are only in DB, not .env.local.
 const envSchema = z.object({
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — set in .env.local'),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required - set in .env.local'),
   GEMINI_API_KEY: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),

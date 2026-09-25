@@ -15,15 +15,21 @@ import {
   buildKnownTagSet,
 } from "@/lib/ocr-candidate";
 import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
+// ── Hybrid CV + Gemini pipeline ──────────────────────────────────────────────
+import { cvHealth } from "@/lib/detection/cv-client";
+import { processPageDeterministic as cvDetectPage, loadLegendDefs } from "@/lib/detection/pipeline/deterministic-page";
+import { fillGapsWithGemini, toCvDetections } from "@/lib/detection/fusion/gemini-gap-filler";
+import { detectionConfig } from "@/lib/detection/config";
 import { persistDetections } from "@/lib/detection/persistence/detection-repository";
 import {
   filterEligibleSymbols,
   legendTagPatterns,
-  loadLegendDefs,
+  loadLegendDefs as loadLegendDefsAlias,
   processPageDeterministic,
   type DetStageCounts,
 } from "@/lib/detection/pipeline/deterministic-page";
-import { cvHealth } from "@/lib/detection/cv-client";
+import { buildKnownTagSet } from "@/lib/ocr-candidate";
+import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
 import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
 
 /**
@@ -89,9 +95,7 @@ export const worker = new Worker(
       });
 
       const legendSymbols = effectiveLegendId
-        ? filterEligibleSymbols(
-            (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
-          )
+        ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1 AND status='ACTIVE'", [effectiveLegendId])).rows
         : [];
 
       const tagPatterns: RegExp[] = legendSymbols
@@ -219,6 +223,35 @@ export const worker = new Worker(
       const _defaultBatch = _scale >= 5.0 ? 2 : 3;
       const PAGE_BATCH_SIZE = parseInt(process.env.PAGE_BATCH_SIZE ?? String(_defaultBatch), 10);
 
+      // ── Hybrid pipeline setup ──────────────────────────────────────────────
+      // Check CV service availability once per job (not per page).
+      // AI_MODE=assisted → coba CV dulu, fallback ke Gemini per page jika CV down.
+      // AI_MODE=disabled (default) → full Gemini only (existing behaviour).
+      const cvAvailable = detectionConfig.aiMode === 'assisted' && (await cvHealth().catch(() => false));
+      log(`pipeline mode: ${cvAvailable ? 'HYBRID (CV+Gemini)' : 'GEMINI-ONLY'}`, {
+        aiMode: detectionConfig.aiMode,
+        cvAvailable,
+      });
+
+      // Jika CV tersedia, load legend definitions sekali per job (bukan per page).
+      // loadLegendDefs: prefer reference_image_url crops → fallback legend PDF extract.
+      const legendDefsForCv = cvAvailable && effectiveLegendId
+        ? await loadLegendDefs(
+            effectiveLegendId,
+            (msg, extra) => log(`[legendDefs] ${msg}`, extra),
+            legendSymbols as Array<{
+              id: string; asset_type: string; symbol_name?: string | null;
+              tag_pattern?: string | null; aliases?: string[] | null;
+              reference_image_url?: string | null;
+            }>
+          ).catch(e => {
+            log('loadLegendDefs failed (non-fatal) — CV matching disabled', {
+              error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+            });
+            return [];
+          })
+        : [];
+
       // processOnePage: encapsulates all per-page work (render → detect → OCR → persist).
       // Returns number of detections persisted, or 0 on skip.
       // NOTE: DB inserts are safe to run concurrently — each page writes independent rows.
@@ -283,46 +316,167 @@ export const worker = new Worker(
         }
 
         try {
-          // Cap legend sent to AI per page: max 80 symbols.
-          // Prioritize: symbols with tag_pattern first (most useful for detection),
-          // then by symbol name length (shorter = more likely real equipment vs piping detail).
-          // 197 symbols causes context overflow on thinking models → empty detections.
-          const MAX_LEGEND_PER_PAGE = parseInt(process.env.MAX_LEGEND_PER_PAGE ?? '80', 10);
-          const cappedLegend = legendSymbols.length > MAX_LEGEND_PER_PAGE
-            ? [
-                // First: symbols with tag patterns (highest detection value)
-                ...legendSymbols.filter((s: Record<string, unknown>) => s.tag_pattern),
-                // Then: remaining symbols sorted by name length (shorter = more likely primary equipment)
-                ...legendSymbols
-                  .filter((s: Record<string, unknown>) => !s.tag_pattern)
-                  .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
-                    String(a.symbol_name ?? a.asset_type).length - String(b.symbol_name ?? b.asset_type).length
-                  ),
-              ].slice(0, MAX_LEGEND_PER_PAGE)
-            : legendSymbols;
+          // ── HYBRID PIPELINE: CV first, Gemini fills gaps ─────────────────
+          if (cvAvailable && pageImageBase64 && pngDimensions) {
+            // Step 1: CV deterministic detection (persist ke DB sendiri)
+            const cvResult = await cvDetectPage({
+              buf,
+              page,
+              jobId,
+              docId: doc.id,
+              filename: doc.filename,
+              effectiveLegendId,
+              legendSymbols: legendSymbols as Array<{
+                id: string; asset_type: string;
+                symbol_name?: string | null; tag_pattern?: string | null;
+              }>,
+              tagPatterns: legendSymbols
+                .filter((s: Record<string, unknown>) => s.tag_pattern)
+                .map((s: Record<string, unknown>, i: number) => {
+                  const raw = String(s.tag_pattern);
+                  const esc = raw
+                    .replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+                    .replace(/#/g, '\\d')
+                    .replace(/\*/g, '.*');
+                  return { id: `legend-${i}`, regex: `^${esc}$` };
+                }),
+              legendDefs: legendDefsForCv,
+              nullThreshold: parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50'),
+              db,
+              log: (msg: string, extra?: Record<string, unknown>) => log(`[cv] ${msg}`, extra),
+            }).catch((e: unknown) => {
+              log(`page ${page} CV failed (non-fatal) — Gemini fallback`, {
+                page,
+                error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+              });
+              return { status: 'service-down' as const, count: 0 };
+            });
 
-          const result = await runDetectionAgent({
-            page,
-            pageImageBase64,
-            fileUri: geminiFileUriFallback,
-            pdfBase64: !pageImageBase64 && !geminiFileUriFallback
-              ? buf.toString("base64")
-              : undefined,
-            legendId: effectiveLegendId ?? "",
-            legendSymbols: cappedLegend as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
-            ocrText: ocrPages[page - 1] ?? "",
-            pngWidth: pngDimensions?.width,
-            pngHeight: pngDimensions?.height,
-            projectId: jrow.project_id ?? null,
-            drawingType,
-          });
-          detections = result.detections;
+            if (cvResult.status !== 'service-down') {
+              // Step 2: Query CV detections yang baru saja di-persist untuk gap analysis
+              const cvRows = (await db.query(
+                `SELECT asset_tag, asset_type, confidence,
+                        bbox_x, bbox_y, bbox_w, bbox_h,
+                        evidence, legend_symbol_id, detection_source
+                 FROM detections
+                 WHERE job_id=$1 AND pid_page=$2
+                   AND detection_source='DETERMINISTIC'
+                 ORDER BY confidence DESC`,
+                [jobId, page]
+              )).rows as Array<{
+                asset_tag: string | null; asset_type: string; confidence: number;
+                bbox_x: number; bbox_y: number; bbox_w: number; bbox_h: number;
+                evidence: string | string[]; legend_symbol_id: string | null;
+                detection_source: string;
+              }>;
 
-          log(`page ${page}/${pageCount} detections=${detections.length}`, {
-            page,
-            count: detections.length,
-            ms: Date.now() - pageStart,
-          });
+              const cvDets = toCvDetections(cvRows.map(r => ({
+                assetTag: r.asset_tag,
+                assetType: r.asset_type,
+                confidence: r.confidence,
+                bbox: { x: r.bbox_x, y: r.bbox_y, width: r.bbox_w, height: r.bbox_h },
+                evidence: typeof r.evidence === 'string' ? JSON.parse(r.evidence) : (r.evidence ?? []),
+                legendSymbol: r.legend_symbol_id,
+                detection_source: r.detection_source,
+              })));
+
+              // Step 3: Gemini gap-filler — hanya untuk area CV tidak confident
+              const fused = await fillGapsWithGemini({
+                page,
+                pageImageBase64,
+                pngWidth: pngDimensions.width,
+                pngHeight: pngDimensions.height,
+                legendId: effectiveLegendId ?? '',
+                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
+                cvDetections: cvDets,
+                ocrText: ocrPages[page - 1] ?? '',
+                projectId: jrow.project_id ?? null,
+                drawingType,
+              }, (msg: string, extra?: Record<string, unknown>) => log(`[gap-filler] ${msg}`, extra));
+
+              // Hanya simpan detections yang Gemini tambah / perbaiki (bukan CV_HIGH yg sudah persist)
+              detections = fused
+                .filter(f => f.fusion_source !== 'CV_HIGH')
+                .map(f => ({
+                  assetTag: f.assetTag,
+                  assetType: f.assetType,
+                  description: null,
+                  equipmentClass: null,
+                  service: null,
+                  location: null,
+                  unit: null,
+                  area: null,
+                  confidence: f.confidence,
+                  bbox: f.bbox,
+                  evidence: f.evidence,
+                  legendSymbol: f.legendSymbol,
+                  detection_source: f.detection_source,
+                  validation_status: 'NEEDS_REVIEW' as const,
+                  field_confidence: null,
+                  field_provenance: null,
+                  rule_applied: `fusion:${f.fusion_source}`,
+                  resolved_asset_name: f.assetType,
+                  image_hash: null,
+                  canonical_features: null,
+                  symbol_embedding: null,
+                  symbol_features: null,
+                  confidence_breakdown: {
+                    cv: f.cv_confidence ?? 0,
+                    gemini: f.gemini_confidence ?? 0,
+                    fused: f.confidence,
+                  },
+                  audit: null,
+                } as unknown as typeof detections[number]));
+
+              log(`page ${page}/${pageCount} HYBRID: cv_persisted=${cvRows.length} gemini_fill=${detections.length}`, {
+                page,
+                cvPersisted: cvRows.length,
+                geminiFill: detections.length,
+                ms: Date.now() - pageStart,
+              });
+            } else {
+              // CV service down mid-job → full Gemini fallback untuk page ini
+              log(`page ${page} CV service-down — falling back to full Gemini`, { page });
+              const result = await runDetectionAgent({
+                page,
+                pageImageBase64,
+                fileUri: geminiFileUriFallback,
+                pdfBase64: !pageImageBase64 && !geminiFileUriFallback ? buf.toString('base64') : undefined,
+                legendId: effectiveLegendId ?? '',
+                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
+                ocrText: ocrPages[page - 1] ?? '',
+                pngWidth: pngDimensions?.width,
+                pngHeight: pngDimensions?.height,
+                projectId: jrow.project_id ?? null,
+                drawingType,
+              });
+              detections = result.detections;
+            }
+          } else {
+            // ── GEMINI-ONLY (AI_MODE=disabled atau CV tidak tersedia) ────────
+            const result = await runDetectionAgent({
+              page,
+              pageImageBase64,
+              fileUri: geminiFileUriFallback,
+              pdfBase64: !pageImageBase64 && !geminiFileUriFallback
+                ? buf.toString("base64")
+                : undefined,
+              legendId: effectiveLegendId ?? "",
+              legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
+              ocrText: ocrPages[page - 1] ?? "",
+              pngWidth: pngDimensions?.width,
+              pngHeight: pngDimensions?.height,
+              projectId: jrow.project_id ?? null,
+              drawingType,
+            });
+            detections = result.detections;
+
+            log(`page ${page}/${pageCount} detections=${detections.length}`, {
+              page,
+              count: detections.length,
+              ms: Date.now() - pageStart,
+            });
+          }
         } catch (err: unknown) {
           const msg = `${err}`;
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
@@ -467,14 +621,8 @@ export const worker = new Worker(
 
       // Process pages in batches of PAGE_BATCH_SIZE.
       // Cancelled check runs between batches (not mid-batch).
-      // Pages that fail AI detection are retried up to PAGE_RETRY_MAX times with backoff.
-      const PAGE_RETRY_MAX = parseInt(process.env.PAGE_RETRY_MAX ?? '2', 10);
-      const PAGE_RETRY_DELAY_MS = parseInt(process.env.PAGE_RETRY_DELAY_MS ?? '3000', 10);
-
       let totalPagesProcessed = 0;
-      let totalAiErrors = 0;
-      const failedPages: number[] = [];
-
+      let totalAiErrors = 0;  // track pages that failed due to AI error (not 0-detection pages)
       for (let batchStart = 1; batchStart <= pageCount; batchStart += PAGE_BATCH_SIZE) {
         // Check for cancellation between batches
         const cur = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
@@ -487,26 +635,7 @@ export const worker = new Worker(
         const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
 
         log(`processing page batch [${batchStart}-${batchEnd}]`);
-
-        // Process each page with retry on AI error
-        const batchResults = await Promise.all(batchPages.map(async (p) => {
-          let result = await processOnePage(p);
-          if (result < 0) {
-            // AI error — retry with backoff
-            for (let attempt = 1; attempt <= PAGE_RETRY_MAX; attempt++) {
-              log(`page ${p} retry attempt ${attempt}/${PAGE_RETRY_MAX}`);
-              await new Promise(r => setTimeout(r, PAGE_RETRY_DELAY_MS * attempt));
-              result = await processOnePage(p);
-              if (result >= 0) {
-                log(`page ${p} retry succeeded on attempt ${attempt}`);
-                break;
-              }
-            }
-            if (result < 0) failedPages.push(p);
-          }
-          return result;
-        }));
-
+        const batchResults = await Promise.all(batchPages.map(p => processOnePage(p)));
         // processOnePage returns -1 on AI error, 0 on empty detection, N on success
         totalAiErrors += batchResults.filter(r => r < 0).length;
         totalPagesProcessed += batchPages.length;
@@ -520,15 +649,6 @@ export const worker = new Worker(
       // If every page failed with AI error → mark job FAILED so user knows to retry
       if (totalAiErrors === pageCount) {
         throw new Error(`All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`);
-      }
-
-      // Partial failure — log which pages failed but continue to COMPLETED
-      if (failedPages.length > 0) {
-        log(`WARNING: ${failedPages.length} page(s) failed after retries: [${failedPages.join(', ')}]`);
-        await db.query(
-          "UPDATE detection_jobs SET error_detail=$1 WHERE id=$2",
-          [`Partial completion: page(s) [${failedPages.join(', ')}] failed AI detection after ${PAGE_RETRY_MAX} retries — other pages completed. Re-run detection to retry failed pages.`, jobId]
-        );
       }
 
       // F7: Post-job entity resolution

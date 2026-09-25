@@ -20,6 +20,7 @@ interface LegendSymbol {
   tag_pattern: string | null;
   description: string | null;
   aliases: string[] | string | null;
+  status?: string | null;
 }
 
 // ─── Style constants ──────────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ function EditRow({
           tag_pattern: form.tag_pattern.trim() || null,
           description: form.description.trim() || null,
           aliases: form.aliases ? form.aliases.split(',').map(a => a.trim()).filter(Boolean) : [],
+          status: symbol.status ?? 'ACTIVE',
         }),
       });
       if (!res.ok) {

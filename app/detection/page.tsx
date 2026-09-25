@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { Lightning, CheckCircle, XCircle, PencilSimple, FloppyDisk, FileXls, PlusCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -753,6 +754,8 @@ function PidViewer({
   drawMode,
   onDrawComplete,
   onDrawCancel,
+  showAll,
+  onShowAllChange,
 }: {
   documentId: string;
   detections: Detection[];
@@ -765,6 +768,8 @@ function PidViewer({
   drawMode?: boolean;
   onDrawComplete?: (bbox: { x: number; y: number; w: number; h: number }) => void;
   onDrawCancel?: () => void;
+  showAll?: boolean;
+  onShowAllChange?: (v: boolean) => void;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -849,11 +854,10 @@ function PidViewer({
     return () => window.removeEventListener("keydown", handler);
   }, [drawMode, onDrawCancel]);
 
-  // Only the selected detection's bbox is shown — everything else stays hidden
-  const visible = selectedId
+  // showAll: tampilkan semua bbox di halaman. Selected = solid, lainnya = dashed.
+  const visible = showAll
     ? detections.filter(
         (d) =>
-          d.id === selectedId &&
           d.detection_status !== "REJECTED" &&
           d.review_status !== "REJECTED" &&
           d.bbox_x !== null &&
@@ -861,7 +865,18 @@ function PidViewer({
           d.bbox_w !== null &&
           d.bbox_h !== null,
       )
-    : [];
+    : selectedId
+      ? detections.filter(
+          (d) =>
+            d.id === selectedId &&
+            d.detection_status !== "REJECTED" &&
+            d.review_status !== "REJECTED" &&
+            d.bbox_x !== null &&
+            d.bbox_y !== null &&
+            d.bbox_w !== null &&
+            d.bbox_h !== null,
+        )
+      : [];
 
   // wheel must be non-passive to allow preventDefault (React onWheel is passive in Chrome)
   // Re-bind when `fullscreen` toggles: viewerContent remounts under a new parent,
@@ -1150,6 +1165,23 @@ function PidViewer({
           Reset
         </button>
 
+        {/* Show All toggle */}
+        {onShowAllChange && (
+          <button
+            onClick={() => onShowAllChange(!showAll)}
+            title={showAll ? "Show selected only" : "Show all bounding boxes"}
+            style={{
+              ...toolButtonStyle,
+              background: showAll ? "var(--primary)" : "var(--surface)",
+              color: showAll ? "var(--surface)" : "var(--foreground-muted)",
+              border: showAll ? "1px solid var(--primary)" : "1px solid var(--border)",
+              fontWeight: showAll ? "600" : "500",
+            }}
+          >
+            {showAll ? "⊞ All" : "⊞ Show All"}
+          </button>
+        )}
+
         {/* Phase 5/legend-style: autosave saat mouseup — indikator sukses */}
         {bboxSavedFlash && selectedId && (
           <span style={{ fontSize: "11px", color: "var(--success)", fontWeight: "600" }}>
@@ -1176,9 +1208,11 @@ function PidViewer({
           }}
         >
           <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-            {visible.length > 0
-              ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
-              : "Bbox hidden — select an asset to show"}
+            {showAll
+              ? `Showing all: ${visible.length} bbox`
+              : visible.length > 0
+                ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
+                : "Bbox hidden — select an asset or Show All"}
           </span>
           {/* Fullscreen toggle */}
           <button
@@ -1644,7 +1678,9 @@ function PidViewer({
         <span style={{ marginLeft: "auto", color: "var(--foreground-subtle)" }}>
           {drawMode
             ? "Draw mode: drag di gambar untuk buat kotak · Esc batal"
-            : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
+            : showAll
+              ? "Show All aktif: klik bbox untuk pilih aset · Scroll zoom · Drag pan"
+              : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
         </span>
       </div>
     </>
@@ -1746,7 +1782,7 @@ function AssetDetail({
     flex: 1,
     padding: "6px 8px",
     borderRadius: "var(--radius-sm)",
-    background: "var(--info)",
+    background: "#002B4E",
     color: "white",
     fontSize: "12px",
     fontWeight: "600",
@@ -1985,24 +2021,28 @@ function AssetDetail({
             <>
               <button
                 onClick={() => onConfirm(detection.id)}
-                style={successBtn}
+                style={{ ...successBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
               >
+                <CheckCircle size={14} weight="bold" style={{ flexShrink: 0 }} />
                 Confirm
               </button>
               {!editing ? (
-                <button onClick={() => setEditing(true)} style={infoBtn}>
+                <button onClick={() => setEditing(true)} style={{ ...infoBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <PencilSimple size={14} weight="bold" style={{ flexShrink: 0 }} />
                   Edit
                 </button>
               ) : (
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  style={{ ...infoBtn, opacity: saving ? 0.5 : 1 }}
+                  style={{ ...infoBtn, opacity: saving ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                 >
+                  <FloppyDisk size={14} weight="bold" style={{ flexShrink: 0 }} />
                   {saving ? "Saving…" : "Save"}
                 </button>
               )}
-              <button onClick={() => onReject(detection.id)} style={dangerBtn}>
+              <button onClick={() => onReject(detection.id)} style={{ ...dangerBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                <XCircle size={14} weight="bold" style={{ flexShrink: 0 }} />
                 Reject
               </button>
             </>
@@ -2069,7 +2109,7 @@ function DetectionsTable({
   const [sortAsc, setSortAsc] = useState(true);
   // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
   const [hideDupes, setHideDupes] = useState(true);
-  const PAGE_SIZE = 15;
+  const [pageSize, setPageSize] = useState(15);
 
   // M1: Build dedup map — for each normalized key keep highest-confidence detection
   const dedupMap = useMemo(() => {
@@ -2131,8 +2171,8 @@ function DetectionsTable({
     return sortAsc ? cmp : -cmp;
   });
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const slice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const slice = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const toggleSort = (col: "tag" | "type" | "page" | "conf" | "status") => {
     if (sortBy === col) setSortAsc(!sortAsc);
@@ -2351,7 +2391,7 @@ function DetectionsTable({
                   <td
                     style={{ ...cellBase, color: "var(--foreground-subtle)" }}
                   >
-                    {(page - 1) * PAGE_SIZE + i + 1}
+                    {(page - 1) * pageSize + i + 1}
                   </td>
                   {/* M4: No-tag indicator */}
                   <td
@@ -2435,40 +2475,51 @@ function DetectionsTable({
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div
+      <div
+        style={{
+          padding: "8px 16px",
+          borderTop: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          fontSize: "12px",
+          color: "var(--foreground-muted)",
+        }}
+      >
+        <button
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1, display: 'flex', alignItems: 'center' }}
+        >
+          <CaretLeft size={14} weight="bold" />
+        </button>
+        <span>
+          Page {page} / {totalPages}
+        </span>
+        <button
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
           style={{
-            padding: "8px 16px",
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            fontSize: "12px",
-            color: "var(--foreground-muted)",
+            ...toolButtonStyle,
+            opacity: page === totalPages ? 0.4 : 1,
+            display: 'flex',
+            alignItems: 'center',
           }}
         >
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1 }}
+          <CaretRight size={14} weight="bold" />
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: 'var(--foreground-muted)' }}>Show</span>
+          <select
+            value={pageSize}
+            onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+            style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
           >
-            ←
-          </button>
-          <span>
-            Page {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            style={{
-              ...toolButtonStyle,
-              opacity: page === totalPages ? 0.4 : 1,
-            }}
-          >
-            →
-          </button>
+            {[15, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span style={{ color: 'var(--foreground-subtle)' }}>{sorted.length} total</span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -2479,26 +2530,64 @@ function DetectionWorkspace() {
   const searchParams = useSearchParams();
   const initProjectId = searchParams.get("project_id") ?? "";
 
+  // Load from localStorage on mount
+  const [projectId, setProjectId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_projectId') || initProjectId;
+    return initProjectId;
+  });
+  const [documentId, setDocumentId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_documentId') || "";
+    return "";
+  });
+  const [legendId, setLegendId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_legendId') || "";
+    return "";
+  });
+  const [currentPage, setCurrentPage] = useState<number | null>(() => {
+    if (typeof window !== 'undefined') {
+      const p = localStorage.getItem('det_currentPage');
+      return p ? parseInt(p, 10) : null;
+    }
+    return null;
+  });
+
+  // Sync to localStorage
+  useEffect(() => {
+    if (projectId) localStorage.setItem('det_projectId', projectId);
+    else localStorage.removeItem('det_projectId');
+  }, [projectId]);
+
+  useEffect(() => {
+    if (documentId) localStorage.setItem('det_documentId', documentId);
+    else localStorage.removeItem('det_documentId');
+  }, [documentId]);
+
+  useEffect(() => {
+    if (legendId) localStorage.setItem('det_legendId', legendId);
+    else localStorage.removeItem('det_legendId');
+  }, [legendId]);
+
+  useEffect(() => {
+    if (currentPage) localStorage.setItem('det_currentPage', String(currentPage));
+    else localStorage.removeItem('det_currentPage');
+  }, [currentPage]);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [legends, setLegends] = useState<Legend[]>([]);
   const [detections, setDetections] = useState<Detection[]>([]);
-
-  const [projectId, setProjectId] = useState(initProjectId);
-  const [documentId, setDocumentId] = useState("");
-  const [legendId, setLegendId] = useState("");
 
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(
     null,
   );
-  const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
   // Draw-to-add: tekan Add Assets Manually → mode draw di viewer → konfirmasi kotak → modal
   const [drawMode, setDrawMode] = useState(false);
   const [pendingDrawBbox, setPendingDrawBbox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [confirmingDraw, setConfirmingDraw] = useState(false);
+  const [showAllBbox, setShowAllBbox] = useState(false);
 
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
@@ -2528,12 +2617,49 @@ function DetectionWorkspace() {
       )
     : null;
 
+  // Count duplicates (same UPPER(asset_tag)|UPPER(asset_type) per document)
+  const duplicateCount = (() => {
+    const seen = new Map<string, number>();
+    for (const d of detections) {
+      const key = `${(d.asset_tag ?? "").toUpperCase().trim()}|${(d.asset_type ?? "").toUpperCase().trim()}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    let dupes = 0;
+    seen.forEach((cnt) => { if (cnt > 1) dupes += cnt - 1; });
+    return dupes;
+  })();
+
+  const [deduping, setDeduping] = useState(false);
+  const [dedupeError, setDedupeError] = useState('');
+  const [confirmDedupe, setConfirmDedupe] = useState(false);
+
+  const handleDeduplicate = async () => {
+    if (!documentId) return;
+    setConfirmDedupe(false);
+    setDeduping(true);
+    setDedupeError('');
+    try {
+      const res = await fetch('/api/detections/deduplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as { error?: string }).error ?? `Error ${res.status}`);
+      await loadDetections();
+    } catch (e) {
+      setDedupeError(e instanceof Error ? e.message : 'Deduplicate failed');
+    } finally {
+      setDeduping(false);
+    }
+  };
+
   // Load reference data
   useEffect(() => {
     fetch("/api/projects")
       .then((r) => r.json())
       .then((d) => setProjects(Array.isArray(d) ? d : []));
-    fetch("/api/legends")
+    fetch("/api/legends?status=ACTIVE")
       .then((r) => r.json())
       .then((d) => setLegends(Array.isArray(d) ? d : []));
   }, []);
@@ -2814,10 +2940,11 @@ function DetectionWorkspace() {
             disabled={running || !documentId}
             style={
               running || !documentId
-                ? { ...primaryButtonStyle, opacity: 0.5, cursor: "not-allowed" }
-                : primaryButtonStyle
+                ? { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', opacity: 0.5, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
+                : { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', display: 'flex', alignItems: 'center', gap: '6px' }
             }
           >
+            <Lightning size={14} weight="fill" style={{ flexShrink: 0 }} />
             {running ? "Starting…" : "Run Detection"}
           </button>
 
@@ -2836,13 +2963,13 @@ function DetectionWorkspace() {
             disabled={!documentId}
             style={
               !documentId
-                ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed" }
+                ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
                 : drawMode
-                  ? { ...primaryButtonStyle }
-                  : buttonStyle
+                  ? { ...primaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }
+                  : { ...buttonStyle, display: 'flex', alignItems: 'center', gap: '6px' }
             }
           >
-            {drawMode ? "✕ Cancel Drawing" : "+ Add Asset Manually"}
+            {drawMode ? "✕ Cancel Drawing" : <><PlusCircle size={14} weight="bold" style={{ flexShrink: 0 }} /> Add Asset Manually</>}
           </button>
         </div>
       </div>
@@ -2897,6 +3024,79 @@ function DetectionWorkspace() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Duplicate warning bar */}
+      {detections.length > 0 && duplicateCount > 0 && !confirmDedupe && (
+        <div style={{
+          ...cardStyle,
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          border: "1px solid var(--warning)",
+          background: "var(--warning-soft)",
+        }}>
+          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
+            ⚠ <strong>{duplicateCount}</strong> duplicate detection{duplicateCount !== 1 ? "s" : ""} found (same tag + type)
+          </span>
+          <button
+            onClick={() => setConfirmDedupe(true)}
+            disabled={deduping}
+            style={{
+              ...buttonStyle,
+              fontSize: "12px",
+              padding: "5px 12px",
+              border: "1px solid var(--warning)",
+              color: "var(--warning)",
+              opacity: deduping ? 0.5 : 1,
+            }}
+          >
+            Remove Duplicates
+          </button>
+        </div>
+      )}
+
+      {/* Deduplicate confirm */}
+      {confirmDedupe && (
+        <div style={{
+          ...cardStyle,
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          border: "1px solid var(--danger)",
+          background: "var(--danger-soft)",
+        }}>
+          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
+            Hapus <strong>{duplicateCount}</strong> duplikat? Tindakan ini <strong>permanen</strong> — baris duplikat dihapus dari DB, hanya 1 terbaik per tag+type yang disimpan.
+          </span>
+          <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+            <button
+              onClick={handleDeduplicate}
+              disabled={deduping}
+              style={{ ...primaryButtonStyle, fontSize: "12px", padding: "5px 12px", background: "var(--danger)", border: "1px solid var(--danger)", opacity: deduping ? 0.5 : 1 }}
+            >
+              {deduping ? "Removing…" : "Ya, Hapus"}
+            </button>
+            <button
+              onClick={() => setConfirmDedupe(false)}
+              style={{ ...buttonStyle, fontSize: "12px", padding: "5px 12px" }}
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Deduplicate error */}
+      {dedupeError && (
+        <p style={{ fontSize: "12px", color: "var(--danger)", background: "var(--danger-soft)", borderRadius: "var(--radius-sm)", padding: "8px 12px", margin: 0 }}>
+          {dedupeError}
+          <button onClick={() => setDedupeError('')} style={{ marginLeft: "8px", background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: "600" }}>✕</button>
+        </p>
       )}
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
@@ -3000,6 +3200,8 @@ function DetectionWorkspace() {
                   setDrawMode(false);
                 }}
                 onDrawCancel={() => setDrawMode(false)}
+                showAll={showAllBbox}
+                onShowAllChange={setShowAllBbox}
               />
             </div>
           </div>

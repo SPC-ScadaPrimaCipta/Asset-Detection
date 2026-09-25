@@ -68,6 +68,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
+    // Check built-in protection
+    try {
+      const legendRow = await db.query('SELECT is_builtin FROM legends WHERE id=$1', [id]);
+      if (legendRow.rows[0]?.is_builtin) {
+        return NextResponse.json({ error: 'Built-in standard legends cannot be deleted.' }, { status: 403 });
+      }
+    } catch { /* is_builtin column missing — allow delete */ }
+
+    // Delete symbols first (in case no ON DELETE CASCADE in DB)
+    await db.query('DELETE FROM legend_symbols WHERE legend_id = $1', [id]);
     await db.query('DELETE FROM legends WHERE id = $1', [id]);
     return NextResponse.json({ success: true });
   } catch (e: unknown) {

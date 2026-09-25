@@ -100,11 +100,12 @@ export interface LegendDefinition {
   rotationInvariant: boolean;
   provenance: string[];
   version: string;
-  /** Stage 1 (additive): explicit box roles; null = not provided by source. */
+/** Stage 1 (additive): explicit box roles; null = not provided by source. */
   rowBBox?: PageBox | null;
   referenceBBox?: PageBox | null;
   /** Stage 1 (additive): per-definition pipeline versions. */
   versions?: LegendVersions;
+
 }
 
 export function normalizeLegendLabel(value: string | null | undefined): string {
@@ -161,7 +162,7 @@ export function coerceLegendDefinition(raw: Partial<LegendDefinition> = {}): Leg
     },
     variants: Array.isArray(raw.variants) ? raw.variants as LegendTemplateVariant[] : [],
     sourcePage: Number.isFinite(pageNumber) ? pageNumber : 1,
-    source: {
+source: raw.source ?? {
       pageNumber: Number.isFinite(pageNumber) ? pageNumber : 1,
       bbox: symbolBox,
     },
@@ -183,7 +184,7 @@ export function coerceLegendDefinition(raw: Partial<LegendDefinition> = {}): Leg
     version: String(raw.version ?? 'legacy'),
   };
 
-  // Stage 1: NEVER collapse distinct boxes. Each role keeps its own valid box;
+// Stage 1: NEVER collapse distinct boxes. Each role keeps its own valid box;
   // fallback to the shared box ONLY when the individual box is missing/invalid.
   // Asset Type stays derived from label (Legend Description) — untouched here.
   const rawSource = (raw.source ?? {}) as {

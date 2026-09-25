@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import * as pdfjsLib from 'pdfjs-dist';
+import { ArrowCounterClockwise, PencilLine, SquaresFour, CheckCircle, SealCheck, PencilSimple, XCircle, Trash, FloppyDisk, X, CaretLeft, CaretRight, Plus, Minus } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/button';
 import { validateTagPattern } from '@/lib/legend-schemas';
 
 if (typeof window !== 'undefined') {
@@ -93,8 +95,12 @@ export default function LegendReviewPage() {
   const [reparsing, setReparsing] = useState(false);
   const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [confirmApproveAll, setConfirmApproveAll] = useState(false);
+  const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // ── Manual draw-to-add symbol ──────────────────────────────────────────────
+  // ΓöÇΓöÇ Manual draw-to-add symbol ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [drawMode, setDrawMode] = useState(false);
   const [drawState, setDrawState] = useState<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -109,7 +115,7 @@ export default function LegendReviewPage() {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [viewport, setViewport] = useState<{ w: number; h: number } | null>(null);
   const [dragBbox, setDragBbox] = useState<any>(null);
-  // Set true once a real drag happens — used to swallow the click event that
+  // Set true once a real drag happens ΓÇö used to swallow the click event that
   // follows mouseup after moving/resizing (so the sidebar doesn't jump).
   const suppressClickRef = useRef(false);
 
@@ -127,7 +133,7 @@ export default function LegendReviewPage() {
   // viewRef   = what is displayed (eased toward target every frame)
   // targetRef = where the view is heading (accumulates wheel events)
   // All anchor math derives from these refs + stable layout sizes
-  // (offsetWidth/offsetLeft — unaffected by the scale transform), so rapid
+  // (offsetWidth/offsetLeft ΓÇö unaffected by the scale transform), so rapid
   // event streams can never observe a half-rendered frame and jump.
   const ZMIN = 0.3, ZMAX = 4;
   const viewRef = useRef({ zoom, pan });
@@ -176,7 +182,7 @@ export default function LegendReviewPage() {
 
   // Move the TARGET so the content point under (clientX, clientY) stays fixed.
   // nx/ny are measured in the VIEW frame (what the user actually sees);
-  // the correction is expressed at target zoom — all ref-exact, no DOM reads.
+  // the correction is expressed at target zoom ΓÇö all ref-exact, no DOM reads.
   const retargetZoom = useCallback((clientX: number, clientY: number, next: number) => {
     const m = zoomMetrics(); if (!m) return;
     next = Math.max(ZMIN, Math.min(ZMAX, next));
@@ -211,10 +217,10 @@ export default function LegendReviewPage() {
     setZoom(z); setPan({ ...p });
   }, []);
 
-  // non-passive wheel for pdf zoom — scroll (biasa) = zoom, anchored at cursor.
+  // non-passive wheel for pdf zoom ΓÇö scroll (biasa) = zoom, anchored at cursor.
   // The content div uses transformOrigin 'top left', so a plain scale() would
   // grow toward bottom-right; retargetZoom compensates via pan.
-  // NOTE: deps include `loading` — on first render the component early-returns
+  // NOTE: deps include `loading` ΓÇö on first render the component early-returns
   // while loading, so viewerRef.current is null and there is nothing to bind to.
   // When loading finishes the viewer mounts and this effect must re-run to attach.
   useEffect(() => {
@@ -238,7 +244,7 @@ export default function LegendReviewPage() {
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-bbox]')) return;
     if (drawMode) {
-      // Draw mode — capture start point relative to contentRef in CSS coords
+      // Draw mode ΓÇö capture start point relative to contentRef in CSS coords
       const content = contentRef.current; if (!content || !viewport) return;
       const rect = content.getBoundingClientRect();
       const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
@@ -285,7 +291,8 @@ export default function LegendReviewPage() {
           return;
         }
         setAddModalBbox({ x: bx, y: by, w: bw, h: bh });
-        setAddForm({ assetType: '', symbolName: '', tagPattern: '', description: '' });
+        // Preserve any form data already entered — only reset if form is empty
+        setAddForm(prev => prev.assetType ? prev : { assetType: '', symbolName: '', tagPattern: '', description: '' });
         setAddModalOpen(true);
         setDrawMode(false);
       }
@@ -293,6 +300,20 @@ export default function LegendReviewPage() {
     }
     setDragging(false);
   };
+
+  // ESC key: cancel draw mode
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (drawMode) { setDrawMode(false); setDrawState(null); }
+        if (confirmApproveAll) setConfirmApproveAll(false);
+        if (confirmFinalize) setConfirmFinalize(false);
+        if (confirmDeleteId) setConfirmDeleteId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawMode, confirmApproveAll, confirmFinalize, confirmDeleteId]);
 
   // drag bbox move/resize
   useEffect(() => {
@@ -307,7 +328,7 @@ export default function LegendReviewPage() {
         const ny = Math.max(0, Math.min(cssH - dragBbox.h, dragBbox.origY + ndy));
         setDragBbox((p: any) => p ? { ...p, x: nx, y: ny } : p);
       } else {
-        // Resize — mode is a combination of r/l/t/b (e.g. 'r', 'tl', 'br').
+        // Resize ΓÇö mode is a combination of r/l/t/b (e.g. 'r', 'tl', 'br').
         // Right/bottom edges grow w/h; left/top edges move x/y with the
         // opposite edge anchored. All clamped to canvas, min 10px.
         const mode: string = dragBbox.mode;
@@ -400,7 +421,7 @@ export default function LegendReviewPage() {
   }, [symbols.length, symPage]);
 
   const persistSymbol = async (sym: LegendSymbol, patch: Partial<LegendSymbol>) => {
-    // normalize aliases — DB may return string/JSON
+    // normalize aliases ΓÇö DB may return string/JSON
     const rawAliases = (patch as any).aliases ?? sym.aliases;
     let aliases: string[] = [];
     if (Array.isArray(rawAliases)) aliases = rawAliases.map(String);
@@ -494,7 +515,7 @@ export default function LegendReviewPage() {
     finally { setDiagnosing(false); }
   };
   const handleDeleteSymbol = async (id: string) => {
-    if (!confirm('Delete this symbol permanently?')) return;
+    setConfirmDeleteId(null);
     try {
       const res = await fetch(`/api/legends/${legendId}/symbols/${id}`, { method: 'DELETE' });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as any).error || 'Delete failed'); }
@@ -516,13 +537,13 @@ export default function LegendReviewPage() {
     const tpErr = validateTagPattern(editForm.tag_pattern ?? null);
     if (tpErr) { setError(tpErr); return; }
     try {
-      // normalize aliases — DB may return string/object
+      // normalize aliases ΓÇö DB may return string/object
       let aliases: string[] = [];
       const rawAliases = (editForm as any).aliases;
       if (Array.isArray(rawAliases)) aliases = rawAliases.map(String);
       else if (typeof rawAliases === 'string') { try { const p = JSON.parse(rawAliases); aliases = Array.isArray(p) ? p.map(String) : []; } catch { aliases = []; } }
 
-      // normalize bbox — input values may be strings
+      // normalize bbox ΓÇö input values may be strings
       const toInt = (v: unknown) => { const n = parseInt(String(v ?? ''), 10); return isNaN(n) ? null : n; };
 
       const payload = {
@@ -547,27 +568,25 @@ export default function LegendReviewPage() {
   const handleApproveAll = async () => {
     const drafts = symbols.filter(s => s.status === 'DRAFT');
     if (!drafts.length) return;
-    if (!confirm(`Approve all ${drafts.length} DRAFT symbols?`)) return;
+    setConfirmApproveAll(false);
     setApprovingAll(true); setError('');
     try {
       const res = await fetch(`/api/legends/${legendId}/symbols/bulk-approve`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? 'Approve all failed');
-      const updated: LegendSymbol[] = body.symbols ?? [];
-      if (updated.length) setSymbols(prev => prev.map(s => { const u = updated.find((x: LegendSymbol) => x.id === s.id); return u ? u as LegendSymbol : s; }));
-      else {
-        const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
-        if (sr.ok) { const j = await sr.json(); if (Array.isArray(j)) setSymbols(j); }
-      }
+      // Always refetch from server — response body may be empty if already approved
+      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
+      if (sr.ok) { const j = await sr.json(); if (Array.isArray(j)) setSymbols(j); }
+      setSuccessMsg(`All symbols approved (${drafts.length})`);
+      setTimeout(() => setSuccessMsg(''), 3000);
     } catch (e: any) { setError(e.message || 'Approve all failed'); } finally { setApprovingAll(false); }
   };
 
   const handleFinalize = async () => {
-    const drafts = symbols.filter(s => s.status === 'DRAFT').length;
-    if (drafts > 0 && !confirm(`${drafts} symbols still in draft. Finalize anyway?`)) return;
+    setConfirmFinalize(false);
     setFinalizing(true);
     try {
-      const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE', strictQuality: true }) });
+const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE', strictQuality: true }) });
       if (r.status === 409) {
         const d = await r.json().catch(() => ({}));
         const msg = `Quality gate: ${(d as any).unassessed ?? 0} unassessed, ${(d as any).in_review ?? 0} in review, ${(d as any).drafts ?? 0} drafts. Only VALIDATED references feed the matcher.\n\nFinalize anyway?`;
@@ -575,11 +594,12 @@ export default function LegendReviewPage() {
         const r2 = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE', strictQuality: true, force: true }) });
         if (!r2.ok) throw new Error();
       } else if (!r.ok) throw new Error();
-      router.push(`/legends/${legendId}`);
+      setSuccessMsg('Legend activated! Redirecting…');
+      setTimeout(() => router.push(`/legends/${legendId}`), 1200);
     } catch { setError('Finalize failed'); } finally { setFinalizing(false); }
   };
 
-  // ── Add Symbol modal save handler ────────────────────────────────────────
+  // ΓöÇΓöÇ Add Symbol modal save handler ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const handleAddSymbolSave = async () => {
     if (addSaving) return; // guard against double-click / StrictMode double-invoke
     if (!addForm.assetType.trim()) { setError('Asset Type is required'); return; }
@@ -617,7 +637,7 @@ export default function LegendReviewPage() {
     finally { setAddSaving(false); }
   };
 
-  if (loading) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-subtle)' }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-subtle)' }}>Loading&hellip;</div>;
   if (!legend) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-muted)' }}>Legend not found</div>;
 
   const qualityCounts = {
@@ -650,19 +670,27 @@ export default function LegendReviewPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 24px)', overflow: 'hidden' }}>
-      {/* ── Add Symbol Modal ──────────────────────────────────────────────── */}
+      {/* ΓöÇΓöÇ Add Symbol Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
       {addModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={e => { if (e.target === e.currentTarget) { setAddModalOpen(false); setAddModalBbox(null); } }}>
           <div style={{ ...cardStyle, padding: 24, width: 380, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>Add Symbol Manually</h2>
-              <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--foreground-muted)', lineHeight: 1 }}>×</button>
+              <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--foreground-muted)', lineHeight: 1 }}>&times;</button>
             </div>
-            {addModalBbox && (
-              <p style={{ fontSize: 11, color: 'var(--foreground-muted)', background: 'var(--surface-muted)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', marginBottom: 12 }}>
-                Bbox: x={addModalBbox.x} y={addModalBbox.y} w={addModalBbox.w} h={addModalBbox.h} · Page {currentPage}
-              </p>
+            {addModalBbox ? (
+              <div style={{ fontSize: 11, color: 'var(--foreground-muted)', background: 'var(--success-soft)', border: '1px solid var(--success)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>✓ BBox: x={addModalBbox.x} y={addModalBbox.y} w={addModalBbox.w} h={addModalBbox.h} · Page {currentPage}</span>
+                <button onClick={() => setAddModalBbox(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--danger)' }}>✕ Clear</button>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <button onClick={() => { setAddModalOpen(false); setDrawMode(true); }}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border)', background: 'var(--surface-muted)', color: 'var(--foreground-muted)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <PencilLine size={12} /> Draw BBox on PDF (optional — can save without)
+                </button>
+              </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -693,45 +721,69 @@ export default function LegendReviewPage() {
               </label>
               <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
                 <button onClick={() => { setAddModalOpen(false); setAddModalBbox(null); }}
-                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer' }}>
-                  Cancel
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <X size={13} />Cancel
                 </button>
                 <button onClick={handleAddSymbolSave} disabled={addSaving || !addForm.assetType.trim()}
-                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: addSaving || !addForm.assetType.trim() ? 'not-allowed' : 'pointer', opacity: addSaving || !addForm.assetType.trim() ? 0.55 : 1 }}>
-                  {addSaving ? 'Saving…' : 'Save Symbol'}
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: addSaving || !addForm.assetType.trim() ? 'not-allowed' : 'pointer', opacity: addSaving || !addForm.assetType.trim() ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <FloppyDisk size={13} />{addSaving ? 'Saving\u2026' : 'Save Symbol'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-      {/* Header — compact */}
+      {/* Header ΓÇö compact */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)', margin: 0, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{legend.name}</h1>
-          <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
-          <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>
-            <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓{qualityCounts.validated} Valid</span>
-            {' · '}<span style={{ color: '#b45309', fontWeight: 700 }}>⚠{qualityCounts.review} Review</span>
-            {' · '}<span style={{ color: 'var(--danger)', fontWeight: 700 }}>✕{qualityCounts.rejected} Rejected</span>
-            {' · '}<span style={{ fontWeight: 700 }}>?{qualityCounts.missing} Missing</span>
-          </p>
+<p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
           <button onClick={handleDiagnose} disabled={diagnosing} title="Run deterministic quality diagnostics (ink/border/text/geometry/duplicates)" style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: diagnosing ? 'var(--surface-muted)' : 'var(--surface)', color: 'var(--primary)', fontSize: 12, fontWeight: 600, cursor: diagnosing ? 'wait' : 'pointer', opacity: diagnosing ? 0.6 : 1 }}>{diagnosing ? 'Diagnosing…' : '◉ Diagnose'}</button>
-          <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1 }}>{reparsing ? 'Re-parsing…' : '↺ Re-parse'}</button>
+
+          <button onClick={handleReparse} disabled={reparsing}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: reparsing ? 'not-allowed' : 'pointer', opacity: reparsing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <ArrowCounterClockwise size={13} />{reparsing ? 'Re-parsing…' : 'Re-parse'}
+          </button>
+
           <button
             onClick={() => { setDrawMode(v => !v); setRecropTargetId(null); }}
             title={drawMode ? 'Cancel draw mode' : 'Drag on the PDF to mark a new symbol area'}
-            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-          >{drawMode ? '✕ Cancel' : '✏ Add Symbol'}</button>
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+          >{drawMode ? '✕ Cancel' : '✏ Add Symbol (draw)'}
+          </button>
+
+          <button
+            onClick={() => {
+              // Open modal directly — bbox will be null (user can draw optionally)
+              setAddModalBbox(null);
+              setAddForm({ assetType: '', symbolName: '', tagPattern: '', description: '' });
+              setAddModalOpen(true);
+            }}
+            title="Add a symbol manually (optionally draw bbox on PDF first)"
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <PencilLine size={13} />Add Symbol
+          </button>
           <button
             onClick={() => setShowAllBboxes(v => !v)}
-            title={showAllBboxes ? 'Switch to single-select mode' : 'Show all symbol bounding boxes at once'}
-            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`, background: showAllBboxes ? 'var(--primary)' : 'var(--surface)', color: showAllBboxes ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-          >{showAllBboxes ? '⊞ All (on)' : '⊞ Show All'}</button>
-          <button onClick={handleApproveAll} disabled={approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1 }}>{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}</button>
-          <button onClick={handleFinalize} disabled={finalizing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: finalizing ? 0.6 : 1 }}>{finalizing ? 'Finalizing…' : 'Finalize & Activate'}</button>
+            title={showAllBboxes ? 'Switch to single-select mode' : 'Show all symbol bounding boxes on PDF'}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`, background: showAllBboxes ? 'var(--primary)' : 'var(--surface)', color: showAllBboxes ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <SquaresFour size={13} />{showAllBboxes ? 'Show All (on)' : 'Show All'}
+          </button>
+          <button onClick={() => {
+            const drafts = symbols.filter(s => s.status === 'DRAFT').length;
+            if (drafts === 0) return;
+            setConfirmApproveAll(true);
+          }}
+            disabled={approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <CheckCircle size={13} />{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}
+          </button>
+          <button onClick={() => setConfirmFinalize(true)} disabled={finalizing}
+            style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: finalizing ? 'not-allowed' : 'pointer', opacity: finalizing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <SealCheck size={13} />{finalizing ? 'Finalizing…' : 'Finalize & Activate'}
+          </button>
         </div>
       </div>
 
@@ -740,13 +792,55 @@ export default function LegendReviewPage() {
           <span>{error}</span><button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
         </div>
       )}
+      {successMsg && (
+        <div style={{ background: 'var(--success-soft)', border: '1px solid var(--success)', color: 'var(--success)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, flexShrink: 0 }}>
+          ✓ {successMsg}
+        </div>
+      )}
+      {/* Approve All confirmation */}
+      {confirmApproveAll && (
+        <div style={{ background: 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+          <span style={{ color: 'var(--foreground)' }}>Approve all <strong>{symbols.filter(s => s.status === 'DRAFT').length}</strong> DRAFT symbols?</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={handleApproveAll} style={{ padding: '4px 12px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Yes, Approve All</button>
+            <button onClick={() => setConfirmApproveAll(false)} style={{ padding: '4px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {/* Finalize confirmation */}
+      {confirmFinalize && (
+        <div style={{ background: 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+          <span style={{ color: 'var(--foreground)' }}>
+            {symbols.filter(s => s.status === 'DRAFT').length > 0
+              ? `${symbols.filter(s => s.status === 'DRAFT').length} symbols still DRAFT. Finalize & Activate legend anyway?`
+              : 'Finalize and activate this legend?'}
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={handleFinalize} style={{ padding: '4px 12px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Yes, Finalize</button>
+            <button onClick={() => setConfirmFinalize(false)} style={{ padding: '4px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {/* Delete symbol confirmation */}
+      {confirmDeleteId && (() => {
+        const sym = symbols.find(s => s.id === confirmDeleteId);
+        return (
+          <div style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+            <span style={{ color: 'var(--foreground)' }}>Delete <strong>{sym?.asset_type}</strong> permanently?</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => handleDeleteSymbol(confirmDeleteId)} style={{ padding: '4px 12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+              <button onClick={() => setConfirmDeleteId(null)} style={{ padding: '4px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
       {symbols.length === 0 && !reparsing && (
-        <div style={{ border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--foreground-muted)', flexShrink: 0 }}>No symbols yet. Click <strong>↺ Re-parse</strong> to run AI analysis.</div>
+        <div style={{ border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--foreground-muted)', flexShrink: 0 }}>No symbols yet. Click <strong>Re-parse</strong> to run AI analysis.</div>
       )}
 
-      {/* Workspace — fills remaining height, no page scroll */}
+      {/* Workspace ΓÇö fills remaining height, no page scroll */}
       <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {/* Viewer — compact, no outer scroll */}
+        {/* Viewer ΓÇö compact, no outer scroll */}
         <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Toolbar compact */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: '1px solid var(--border)', background: 'var(--surface-muted)', flexShrink: 0, gap: 8 }}>
@@ -754,23 +848,23 @@ export default function LegendReviewPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {pdfPages > 1 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === 1 ? 0.4 : 1 }}>◀</button>
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === 1 ? 0.4 : 1, display: 'inline-flex', alignItems: 'center' }}><CaretLeft size={12} /></button>
                   <span style={{ fontSize: 11, width: 36, textAlign: 'center', color: 'var(--foreground-muted)' }}>{currentPage}/{pdfPages}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(pdfPages, p + 1))} disabled={currentPage === pdfPages} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === pdfPages ? 0.4 : 1 }}>▶</button>
+                  <button onClick={() => setCurrentPage(p => Math.min(pdfPages, p + 1))} disabled={currentPage === pdfPages} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', opacity: currentPage === pdfPages ? 0.4 : 1, display: 'inline-flex', alignItems: 'center' }}><CaretRight size={12} /></button>
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <button onClick={() => stepZoom(-1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>−</button>
+                <button onClick={() => stepZoom(-1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Minus size={12} /></button>
                 <span style={{ fontSize: 11, width: 30, textAlign: 'center', color: 'var(--foreground-muted)' }}>{Math.round(zoom * 100)}%</span>
-                <button onClick={() => stepZoom(1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>+</button>
-                <button onClick={() => { const el = viewerRef.current; if (!el) return; const v = el.getBoundingClientRect(); retargetZoom(v.left + v.width / 2, v.top + v.height / 2, fitZoom); }} title="Fit" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊡</button>
-                <button onClick={() => { targetRef.current = { zoom: fitZoom, pan: { x: 0, y: 0 } }; kickZoomAnim(); }} title="Reset" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>⊙</button>
+                <button onClick={() => stepZoom(1)} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Plus size={12} /></button>
+                <button onClick={() => { const el = viewerRef.current; if (!el) return; const v = el.getBoundingClientRect(); retargetZoom(v.left + v.width / 2, v.top + v.height / 2, fitZoom); }} title="Fit" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>Fit</button>
+                <button onClick={() => { targetRef.current = { zoom: fitZoom, pan: { x: 0, y: 0 } }; kickZoomAnim(); }} title="Reset" style={{ padding: '2px 6px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}>Reset</button>
               </div>
               <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
               <button onClick={() => setShowCards(v => !v)} style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: showCards ? 'var(--primary)' : 'var(--surface)', color: showCards ? '#fff' : 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}>{showCards ? 'Hide' : 'Show'} Symbols</button>
             </div>
           </div>
-          {/* Canvas viewport — centered, clipped, no scroll */}
+          {/* Canvas viewport ΓÇö centered, clipped, no scroll */}
           <div
             ref={viewerRef}
             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
@@ -782,11 +876,11 @@ export default function LegendReviewPage() {
                 const cssW = viewport.w / (renderScale || 1); const cssH = viewport.h / (renderScale || 1);
                 return (
                   <svg viewBox={`0 0 ${cssW} ${cssH}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null && (showAllBboxes || s.id === selectedId)).map(sym => {
+                    {symbols.filter(s => (s.pid_page ?? 1) === currentPage && s.bbox_x !== null && s.bbox_w !== null && s.bbox_h !== null && (showAllBboxes || s.id === selectedId)).map(sym => {
                       const isSel = sym.id === selectedId;
                       const x = (sym.bbox_x! / 1000) * cssW; const y = (sym.bbox_y! / 1000) * cssH;
                       const w = (sym.bbox_w! / 1000) * cssW; const h = (sym.bbox_h! / 1000) * cssH;
-                      const color = sym.status === 'REJECTED' ? 'var(--danger)' : 'var(--success)';
+const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? '#22c55e' : '#f59e0b';
                       const rx = dragBbox?.id === sym.id ? dragBbox.x : x; const ry = dragBbox?.id === sym.id ? dragBbox.y : y;
                       const rw = dragBbox?.id === sym.id ? dragBbox.w : w; const rh = dragBbox?.id === sym.id ? dragBbox.h : h;
                       const label = (sym.symbol_name || sym.asset_type).slice(0, 16);
@@ -811,7 +905,7 @@ export default function LegendReviewPage() {
                           <rect x={rx} y={ry} width={rw} height={rh} fill="#fbbf24" fillOpacity={isSel ? 0.2 : 0.15} stroke={color} strokeWidth={isSel ? 2.2 : 1} strokeDasharray={isSel ? undefined : '5 3'} rx={1} />
                           <rect x={rx} y={ry > 14 ? ry - 12 : ry + rh + 1} width={Math.min(90, Math.max(w, 62))} height={11} rx={3} fill={color} opacity={0.95} />
                           <text x={rx + 3} y={(ry > 14 ? ry - 12 : ry + rh + 1) + 8} fill="#fff" fontSize={7} fontFamily="ui-monospace,monospace" fontWeight={isSel ? 700 : 500}>{label}</text>
-                          {/* Resize handles — 4 corners + 4 edges, only on selected bbox */}
+                          {/* Resize handles ΓÇö 4 corners + 4 edges, only on selected bbox */}
                           {isSel && ([
                             { m: 'tl', hx: rx, hy: ry, c: 'nwse-resize', t: 'Resize top-left' },
                             { m: 'tr', hx: rx + rw, hy: ry, c: 'nesw-resize', t: 'Resize top-right' },
@@ -830,7 +924,7 @@ export default function LegendReviewPage() {
                         </g>
                       );
                     })}
-                    {/* Live draw rect — shown while user drags in draw mode */}
+                    {/* Live draw rect ΓÇö shown while user drags in draw mode */}
                     {drawMode && drawState && drawState.w > 2 && drawState.h > 2 && (
                       <rect
                         x={drawState.x} y={drawState.y}
@@ -845,14 +939,14 @@ export default function LegendReviewPage() {
             })()}
             {drawMode && (
               <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 10 }}>
-                ✏ Drag to mark symbol area
+                Γ£Å Drag to mark symbol area
               </div>
             )}
             </div>
           </div>
         </div>
 
-        {/* Symbols — paginated, no page scroll */}
+        {/* Symbols ΓÇö paginated, no page scroll */}
         {showCards && (
           <aside style={{ ...cardStyle, width: 300, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
@@ -872,7 +966,7 @@ export default function LegendReviewPage() {
                 />
                 {symSearch && (
                   <button onClick={() => { setSymSearch(''); setSymPage(1); }}
-                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1, padding: 0 }}>×</button>
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1, padding: 0 }}>&times;</button>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -956,7 +1050,11 @@ export default function LegendReviewPage() {
                   {symSearch.trim() ? `No symbols match "${symSearch}"` : 'No symbols on this page.'}
                 </p>
               ) : pagedSymbols.map(sym => (
-                <div key={sym.id} ref={el => { cardRefs.current[sym.id] = el; }} onClick={() => { const n = sym.id === selectedId ? null : sym.id; setSelectedId(n); if (n && sym.pid_page && sym.pid_page !== currentPage) setCurrentPage(sym.pid_page); }}
+                <div key={sym.id} ref={el => { cardRefs.current[sym.id] = el; }} onClick={() => {
+                  const n = sym.id === selectedId ? null : sym.id;
+                  setSelectedId(n);
+                  if (n && sym.pid_page && sym.pid_page !== currentPage) setCurrentPage(sym.pid_page);
+                }}
                   style={{ ...cardStyle, padding: '8px 9px', cursor: 'pointer', borderColor: sym.id === selectedId ? 'var(--accent)' : 'var(--border)', boxShadow: sym.id === selectedId ? '0 0 0 2px var(--accent-soft)' : undefined, background: sym.status === 'REJECTED' ? 'var(--danger-soft)' : sym.status === 'ACTIVE' ? 'var(--success-soft)' : 'var(--warning-soft)', opacity: sym.status === 'REJECTED' ? 0.75 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginBottom: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{sym.asset_type}</span>
@@ -969,21 +1067,35 @@ export default function LegendReviewPage() {
                   {sym.symbol_name && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.symbol_name}</div>}
                   {sym.tag_pattern && <div style={{ fontSize: 10, fontFamily: 'ui-monospace,monospace', color: 'var(--foreground-subtle)', marginBottom: 6 }}>Tag: {sym.tag_pattern}</div>}
                   <div style={{ display: 'flex', gap: 4 }}>
-                    {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Approve</button>}
-                    <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: 2, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
-                    {sym.status !== 'REJECTED'
-                      ? <button onClick={e => { e.stopPropagation(); setRejectModalId(sym.id); setRejectReason(REJECT_REASONS[0]); setRejectNote(sym.review_reason ?? ''); }} title="Reject with reason" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>✕</button>
-                      : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer' }}>Restore</button>}
-                    <button onClick={e => { e.stopPropagation(); handleDeleteSymbol(sym.id); }} title="Delete permanently" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 12, cursor: 'pointer' }}>🗑</button>
+{sym.status === 'DRAFT' && (
+                      <Button variant="approve" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
+                        <CheckCircle size={12} />Approve
+                      </Button>
+                    )}
+                    <Button variant="edit" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }}>
+                      <PencilSimple size={12} />Edit
+                    </Button>
+                    {sym.status !== 'REJECTED' ? (
+                      <Button variant="danger" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject">
+                        <XCircle size={12} />Reject
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
+                        <ArrowCounterClockwise size={12} />Restore
+                      </Button>
+                    )}
+                    <Button variant="danger" size="sm" style={{ flex: 1, background: '#8B3A38', borderColor: '#8B3A38' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(sym.id); }} title="Delete permanently">
+                      <Trash size={12} />Delete
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
-            {/* Pagination — compact */}
+            {/* Pagination ΓÇö compact */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 8px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)', flexShrink: 0, gap: 6 }}>
-              <button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1 }}>‹ Prev</button>
-              <span style={{ fontSize: 11, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>{symPage} / {totalSymPages} · {(symPage - 1) * SYMS_PER_PAGE + 1}-{Math.min(symPage * SYMS_PER_PAGE, filteredSymbols.length)} of {filteredSymbols.length}</span>
-              <button onClick={() => setSymPage(p => Math.min(totalSymPages, p + 1))} disabled={symPage === totalSymPages} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === totalSymPages ? 'not-allowed' : 'pointer', opacity: symPage === totalSymPages ? 0.4 : 1 }}>Next ›</button>
+<button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1, display: 'inline-flex', alignItems: 'center', gap: 3 }}><CaretLeft size={12} />Prev</button>
+              <span style={{ fontSize: 11, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>{symPage} / {totalSymPages} &middot; {(symPage - 1) * SYMS_PER_PAGE + 1}-{Math.min(symPage * SYMS_PER_PAGE, filteredSymbols.length)} of {filteredSymbols.length}</span>
+              <button onClick={() => setSymPage(p => Math.min(totalSymPages, p + 1))} disabled={symPage === totalSymPages} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === totalSymPages ? 'not-allowed' : 'pointer', opacity: symPage === totalSymPages ? 0.4 : 1, display: 'inline-flex', alignItems: 'center', gap: 3 }}>Next<CaretRight size={12} /></button>
             </div>
           </aside>
         )}
@@ -1051,8 +1163,8 @@ export default function LegendReviewPage() {
               </div>
             </label>
             <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-              <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
-              <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><FloppyDisk size={13} />Save</button>
+              <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><X size={13} />Cancel</button>
             </div>
           </div>
         </div>

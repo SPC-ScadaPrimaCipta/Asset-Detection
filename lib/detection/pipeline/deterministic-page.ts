@@ -123,6 +123,7 @@ export function filterEligibleSymbols<T extends LegendSymbolRow>(symbols: T[]): 
       !s.superseded_by
   );
 }
+}
 
 export async function loadLegendDefs(
   legendId: string,
@@ -130,7 +131,7 @@ export async function loadLegendDefs(
   symbols: LegendSymbolRow[] = []
 ): Promise<LegendDefinition[]> {
   // Preferred: human-reviewed DB reference crops (approved labels, no OCR).
-  // Eligibility gate: superseded versions and rejected rows never feed matching.
+// Eligibility gate: superseded versions and rejected rows never feed matching.
   const withCrops = filterEligibleSymbols(symbols).filter((s) => s.reference_image_url);
   if (withCrops.length > 0) {
     try {

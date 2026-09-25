@@ -813,7 +813,6 @@ def legend_diagnostics_endpoint(body: dict) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         return _err(ERR_INTERNAL, f"legend diagnostics failed: {exc}", 500)
 
-
 @app.post("/legend/label-match")
 def legend_label_match_endpoint(body: dict) -> JSONResponse:
     """Deterministic label/alias matching (explicit aliases only)."""

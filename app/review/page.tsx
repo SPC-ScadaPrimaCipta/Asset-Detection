@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { CheckCircle, XCircle, PencilSimple, FloppyDisk, CaretLeft, CaretRight, Trash, ArrowCounterClockwise } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,8 @@ const toolButtonStyle: React.CSSProperties = {
 };
 
 const tableActionBtn: React.CSSProperties = {
-  padding: '4px 8px',
+  padding: '5px 0',
+  width: '76px',
   borderRadius: 'var(--radius-sm)',
   color: 'white',
   fontSize: '12px',
@@ -127,6 +129,11 @@ const tableActionBtn: React.CSSProperties = {
   border: 'none',
   cursor: 'pointer',
   transition: 'all 150ms ease-out',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '4px',
+  flexShrink: 0,
 };
 
 const badgeBase: React.CSSProperties = {
@@ -190,6 +197,8 @@ interface DetailPanelProps {
     id: string,
     fields: { asset_tag: string | null; asset_type: string; description: string | null }
   ) => Promise<void>;
+  onUnreview: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
 function DetailPanel({
@@ -198,6 +207,8 @@ function DetailPanel({
   onConfirm,
   onReject,
   onEdit,
+  onUnreview,
+  onDelete,
 }: DetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [editTag, setEditTag] = useState(detection.asset_tag ?? '');
@@ -206,6 +217,8 @@ function DetailPanel({
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [unreviewing, setUnreviewing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Sync edit fields when detection changes
   useEffect(() => {
@@ -236,6 +249,18 @@ function DetailPanel({
     setRejecting(true);
     await onReject(detection.id);
     setRejecting(false);
+  };
+
+  const handleUnreview = async () => {
+    setUnreviewing(true);
+    await onUnreview(detection.id);
+    setUnreviewing(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    await onDelete(detection.id);
+    setDeleting(false);
   };
 
   const ev = parseEvidence(detection.evidence);
@@ -380,31 +405,57 @@ function DetailPanel({
 
       {/* Actions */}
       <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {isReviewed ? (
-          <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)', fontStyle: 'italic', alignSelf: 'center' }}>
-            Reviewed — {detection.review_status.toLowerCase()}
-          </span>
+        {isReviewed && !editing ? (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              disabled={unreviewing || deleting}
+              style={{ ...actionBtn, background: '#002B4E', opacity: unreviewing || deleting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+            >
+              <PencilSimple size={13} weight="bold" />
+              Edit
+            </button>
+            <button
+              onClick={handleUnreview}
+              disabled={unreviewing || deleting}
+              style={{ ...actionBtn, background: '#A68145', opacity: unreviewing || deleting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+            >
+              <ArrowCounterClockwise size={13} weight="bold" />
+              {unreviewing ? 'Resetting…' : 'Reset to Pending'}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={unreviewing || deleting}
+              style={{ ...actionBtn, background: '#A65A55', opacity: unreviewing || deleting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+            >
+              <Trash size={13} weight="bold" />
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </>
         ) : !editing ? (
           <>
             <button
               onClick={handleConfirm}
               disabled={confirming || rejecting}
-              style={{ ...actionBtn, background: 'var(--success)', opacity: confirming || rejecting ? 0.5 : 1 }}
+              style={{ ...actionBtn, background: 'var(--success)', opacity: confirming || rejecting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
             >
+              <CheckCircle size={13} weight="bold" />
               {confirming ? 'Confirming…' : 'Confirm'}
             </button>
             <button
               onClick={() => setEditing(true)}
               disabled={confirming || rejecting}
-              style={{ ...actionBtn, background: 'var(--info)', opacity: confirming || rejecting ? 0.5 : 1 }}
+              style={{ ...actionBtn, background: '#002B4E', opacity: confirming || rejecting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
             >
+              <PencilSimple size={13} weight="bold" />
               Edit
             </button>
             <button
               onClick={handleReject}
               disabled={confirming || rejecting}
-              style={{ ...actionBtn, background: 'var(--danger)', opacity: confirming || rejecting ? 0.5 : 1 }}
+              style={{ ...actionBtn, background: 'var(--danger)', opacity: confirming || rejecting ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
             >
+              <XCircle size={13} weight="bold" />
               {rejecting ? 'Rejecting…' : 'Reject'}
             </button>
           </>
@@ -413,8 +464,9 @@ function DetailPanel({
             <button
               onClick={handleSave}
               disabled={saving}
-              style={{ ...actionBtn, background: 'var(--info)', opacity: saving ? 0.5 : 1 }}
+              style={{ ...actionBtn, background: '#0078B8', opacity: saving ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
             >
+              <FloppyDisk size={13} weight="bold" />
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
@@ -476,7 +528,7 @@ const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: 'Rejected', value: 'REJECTED' },
 ];
 
-const PAGE_SIZE = 15;
+const DEFAULT_PAGE_SIZE = 15;
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -500,9 +552,13 @@ export default function ReviewPage() {
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // ── Bulk action state ──
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  // ── Confirm All state ──
+  const [confirmingAll, setConfirmingAll] = useState(false);
 
   // ── Load projects on mount ──
   useEffect(() => {
@@ -579,8 +635,8 @@ export default function ReviewPage() {
     return true;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageSlice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageSlice = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // ── Stats (live) ──
   const statsTotal = detections.length;
@@ -670,6 +726,25 @@ export default function ReviewPage() {
     [updateDetectionLocally]
   );
 
+  const handleUnreview = useCallback(
+    async (id: string) => {
+      await fetch(`/api/detections/${id}/unreview`, { method: 'POST' });
+      updateDetectionLocally(id, { review_status: 'PENDING', detection_status: 'DETECTED' });
+    },
+    [updateDetectionLocally]
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      await fetch(`/api/detections/${id}`, { method: 'DELETE' });
+      setDetections((prev) => prev.filter((d) => d.id !== id));
+      setSelectedId((prev) => (prev === id ? null : prev));
+      setSelectedDetection((prev) => (prev?.id === id ? null : prev));
+      setCheckedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    },
+    []
+  );
+
   // ── Bulk actions ──
   const handleBulkConfirm = async () => {
     if (checkedIds.size === 0) return;
@@ -709,6 +784,30 @@ export default function ReviewPage() {
     setBulkLoading(false);
   };
 
+  // ── Confirm All (all PENDING in filtered list) ──
+  const handleConfirmAll = async () => {
+    const pendingIds = filtered
+      .filter((d) => d.review_status === 'PENDING')
+      .map((d) => d.id);
+    if (pendingIds.length === 0) return;
+    setConfirmingAll(true);
+    try {
+      await fetch('/api/detections/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: pendingIds, action: 'confirm' }),
+      });
+      pendingIds.forEach((id) =>
+        updateDetectionLocally(id, {
+          review_status: 'APPROVED',
+          detection_status: 'CONFIRMED',
+        })
+      );
+    } finally {
+      setConfirmingAll(false);
+    }
+  };
+
   const handleRowClick = (d: Detection) => {
     setSelectedId(d.id);
     setSelectedDetection(d);
@@ -744,12 +843,37 @@ export default function ReviewPage() {
             </h1>
             <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>Review AI-detected assets</p>
           </div>
-          <a
-            href="/detection"
-            style={{ fontSize: '12px', color: 'var(--foreground-muted)', textDecoration: 'underline', cursor: 'pointer' }}
-          >
-            ← Detection
-          </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={handleConfirmAll}
+              disabled={confirmingAll || filtered.filter(d => d.review_status === 'PENDING').length === 0}
+              style={{
+                background: '#2D7A3A',
+                color: 'white',
+                padding: '8px 14px',
+                borderRadius: 'var(--radius-sm)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                border: 'none',
+                cursor: confirmingAll || filtered.filter(d => d.review_status === 'PENDING').length === 0 ? 'not-allowed' : 'pointer',
+                opacity: confirmingAll || filtered.filter(d => d.review_status === 'PENDING').length === 0 ? 0.5 : 1,
+              }}
+            >
+              <CheckCircle size={15} weight="bold" />
+              {confirmingAll
+                ? 'Confirming…'
+                : `Confirm All (${filtered.filter(d => d.review_status === 'PENDING').length})`}
+            </button>
+            <a
+              href="/detection"
+              style={{ fontSize: '12px', color: 'var(--foreground-muted)', textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              ← Detection
+            </a>
+          </div>
         </div>
       </header>
 
@@ -1013,7 +1137,7 @@ export default function ReviewPage() {
                     </thead>
                     <tbody>
                       {pageSlice.map((d, i) => {
-                        const rowNum = (page - 1) * PAGE_SIZE + i + 1;
+                        const rowNum = (page - 1) * pageSize + i + 1;
                         const isSelected = d.id === selectedId;
                         const isChecked = checkedIds.has(d.id);
                         return (
@@ -1054,18 +1178,40 @@ export default function ReviewPage() {
                                     style={{ ...tableActionBtn, background: 'var(--success)' }}
                                     title="Confirm"
                                   >
-                                    ✓
+                                    <CheckCircle size={12} weight="bold" /> Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => { handleRowClick(d); }}
+                                    style={{ ...tableActionBtn, background: '#002B4E' }}
+                                    title="Edit"
+                                  >
+                                    <PencilSimple size={12} weight="bold" /> Edit
                                   </button>
                                   <button
                                     onClick={() => handleReject(d.id)}
                                     style={{ ...tableActionBtn, background: 'var(--danger)' }}
                                     title="Reject"
                                   >
-                                    ✕
+                                    <XCircle size={12} weight="bold" /> Reject
                                   </button>
                                 </div>
                               ) : (
-                                <span style={{ color: 'var(--border-strong)', fontSize: '12px' }}>—</span>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <button
+                                    onClick={() => { handleRowClick(d); }}
+                                    style={{ ...tableActionBtn, background: '#002B4E' }}
+                                    title="Edit"
+                                  >
+                                    <PencilSimple size={12} weight="bold" /> Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(d.id)}
+                                    style={{ ...tableActionBtn, background: '#7C3D3A' }}
+                                    title="Delete"
+                                  >
+                                    <Trash size={12} weight="bold" /> Delete
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1076,28 +1222,36 @@ export default function ReviewPage() {
                 </div>
 
                 {/* Pagination */}
-                {totalPages > 1 && (
-                  <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--foreground-muted)' }}>
-                    <button
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      style={{ ...toolButtonStyle, opacity: page === 1 ? 0.4 : 1 }}
+                <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--foreground-muted)' }}>
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    style={{ ...toolButtonStyle, display: 'inline-flex', alignItems: 'center', gap: '4px', opacity: page === 1 ? 0.4 : 1 }}
+                  >
+                    <CaretLeft size={13} weight="bold" />
+                    Prev
+                  </button>
+                  <span>Page {page} / {totalPages}</span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    style={{ ...toolButtonStyle, display: 'inline-flex', alignItems: 'center', gap: '4px', opacity: page === totalPages ? 0.4 : 1 }}
+                  >
+                    Next
+                    <CaretRight size={13} weight="bold" />
+                  </button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => { setPageSize(Number(e.target.value)); setPage(1); setCheckedIds(new Set()); }}
+                      style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
                     >
-                      ←
-                    </button>
-                    <span>Page {page} / {totalPages}</span>
-                    <button
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      style={{ ...toolButtonStyle, opacity: page === totalPages ? 0.4 : 1 }}
-                    >
-                      →
-                    </button>
-                    <span style={{ marginLeft: 'auto', color: 'var(--foreground-subtle)' }}>
-                      {filtered.length} total
-                    </span>
+                      {[15, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span style={{ color: 'var(--foreground-subtle)', fontSize: '12px' }}>{filtered.length} total</span>
                   </div>
-                )}
+                </div>
               </>
             )}
           </div>
@@ -1115,6 +1269,8 @@ export default function ReviewPage() {
                 onConfirm={handleConfirm}
                 onReject={handleReject}
                 onEdit={handleEdit}
+                onUnreview={handleUnreview}
+                onDelete={handleDelete}
               />
             ) : (
               <EmptyDetail />
