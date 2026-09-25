@@ -2599,7 +2599,7 @@ function DetectionWorkspace() {
     fetch("/api/projects")
       .then((r) => r.json())
       .then((d) => setProjects(Array.isArray(d) ? d : []));
-    fetch("/api/legends")
+    fetch("/api/legends?status=ACTIVE")
       .then((r) => r.json())
       .then((d) => setLegends(Array.isArray(d) ? d : []));
   }, []);

@@ -40,11 +40,8 @@ export async function renderPageToPng(
   pageNumber: number,
   scale = 4.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
-  // Try direct in-process mupdf first (fast, no subprocess overhead).
-  // serverExternalPackages: ['mupdf'] in next.config.ts enables this in Next.js.
-  // If import fails (bundler issue), fall back to subprocess automatically.
-  let inProcessFailed = false;
   try {
+    // Direct in-process mupdf — no subprocess spawn overhead
     const mupdf = await import("mupdf" as string);
     const { Document, Matrix, ColorSpace } = mupdf;
 
@@ -62,14 +59,13 @@ export async function renderPageToPng(
 
     return { png, width: pixmap.getWidth(), height: pixmap.getHeight() };
   } catch (inProcessErr) {
+    // Fallback: child_process (preserves backward compat if direct import fails)
     const errMsg = inProcessErr instanceof Error ? inProcessErr.message : String(inProcessErr);
+    // Re-throw range errors immediately — no point falling back
     if (errMsg.includes('out of range')) throw inProcessErr;
-    inProcessFailed = true;
-    console.warn(`[pdf-render] in-process mupdf failed (falling back to subprocess): ${errMsg.slice(0, 300)}`);
-  }
 
-  // Subprocess fallback via render-page.mjs
-  if (inProcessFailed) {
+    console.warn(`[pdf-render] direct mupdf failed, falling back to subprocess: ${errMsg.slice(0, 200)}`);
+
     const payload = JSON.stringify({
       pdf: buffer.toString("base64"),
       page: pageNumber,
@@ -77,40 +73,158 @@ export async function renderPageToPng(
     });
 
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = execFile("node", [RENDER_SCRIPT], {
-        maxBuffer: 100 * 1024 * 1024,
-        timeout: 60_000,
-      });
+      const child = execFile("node", [RENDER_SCRIPT], { maxBuffer: 100 * 1024 * 1024 });
       let out = "";
       let err = "";
       child.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
       child.stderr?.on("data", (d: Buffer) => { err += d.toString(); });
       child.on("close", (code) => {
-        if (code !== 0 && !out) {
-          reject(new Error(`render-page subprocess exited ${code}: ${err.slice(0, 500)}`));
-        } else {
-          resolve(out);
-        }
+        if (code !== 0 && !out) reject(new Error(`render-page exited ${code}: ${err}`));
+        else resolve(out);
       });
-      child.on("error", (e) => reject(new Error(`render-page spawn error: ${e.message}`)));
       child.stdin?.write(payload);
       child.stdin?.end();
     });
 
     const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
-    if (result.error) throw new Error(`render-page: ${result.error}`);
+    if (result.error) throw new Error(result.error);
     return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
   }
-
-  throw new Error(`renderPageToPng: all render methods failed for page ${pageNumber}`);
 }
 
 /**
- * Extract plain text per page using mupdf's built-in text extraction.
- * Falls back to subprocess if direct import fails (Next.js bundler issue before restart).
+ * Detection V2 — overlapping page tiling (canonical page pixels).
+ *
+ * Every tile carries full metadata to reconstruct its page-space location:
+ * tile coords →(tileToPage)→ page coords →(pageToNormalized)→ 0–1000 → SVG.
+ * No independent coordinate system (see lib/detection/geometry/coordinate-transform.ts).
+ */
+export interface TilePlan {
+  /** 0-based tile index in row-major order. */
+  index: number;
+  /** Tile origin in page pixels. */
+  tileX: number;
+  tileY: number;
+  width: number;
+  height: number;
+}
+
+export interface TileSpec extends TilePlan {
+  pageNumber: number;
+  overlap: number;
+  pageWidth: number;
+  pageHeight: number;
+  /** Effective DPI = scale * 72 (mupdf default 72 DPI). */
+  sourceDpi: number;
+}
+
+export interface PageTile extends TileSpec {
+  png: Buffer;
+}
+
+/**
+ * Pure tile-grid planner — no I/O, fully testable.
+ *
+ * Covers [0, pageWidth] x [0, pageHeight] with tiles of tileSize px and
+ * fractional overlap. Edge tiles are shifted (not shrunk) so every tile
+ * keeps full tileSize except when the page itself is smaller.
+ */
+export function computeTileGrid(
+  pageWidth: number,
+  pageHeight: number,
+  tileSize: number,
+  overlap: number
+): TilePlan[] {
+  const step = Math.max(1, Math.round(tileSize * (1 - overlap)));
+  const tiles: TilePlan[] = [];
+  let index = 0;
+  const cols = Math.max(1, Math.ceil((pageWidth - tileSize) / step) + 1);
+  const rows = Math.max(1, Math.ceil((pageHeight - tileSize) / step) + 1);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      // Last tile in each axis snaps to the page edge (overlap grows slightly).
+      const tileX = c === cols - 1 ? Math.max(0, pageWidth - tileSize) : c * step;
+      const tileY = r === rows - 1 ? Math.max(0, pageHeight - tileSize) : r * step;
+      tiles.push({
+        index: index++,
+        tileX,
+        tileY,
+        width: Math.min(tileSize, pageWidth - tileX),
+        height: Math.min(tileSize, pageHeight - tileY),
+      });
+    }
+  }
+  return tiles;
+}
+
+/**
+ * Render a page once, then slice it into overlapping tiles via mupdf
+ * Pixmap pixel copy (same proven pattern as lib/image-crop.ts).
+ */
+export async function renderPageTiles(
+  buffer: Buffer,
+  pageNumber: number,
+  opts: { scale?: number; tileSize?: number; overlap?: number } = {}
+): Promise<{ tiles: PageTile[]; pageWidth: number; pageHeight: number; png: Buffer }> {
+  const scale = opts.scale ?? 4.0;
+  const tileSize = opts.tileSize ?? 1280;
+  const overlap = opts.overlap ?? 0.2;
+
+  const { png, width: pageWidth, height: pageHeight } = await renderPageToPng(
+    buffer,
+    pageNumber,
+    scale
+  );
+
+  const mupdf = await import("mupdf" as string);
+  const { Image, Pixmap, ColorSpace } = mupdf;
+  const srcPm: {
+    getWidth(): number;
+    getHeight(): number;
+    getNumberOfComponents(): number;
+    getStride(): number;
+    getPixels(): Uint8ClampedArray;
+  } = new Image(png).toPixmap();
+
+  const srcW = srcPm.getWidth();
+  const srcH = srcPm.getHeight();
+  const nComp = srcPm.getNumberOfComponents();
+  const srcStride = srcPm.getStride();
+  const srcPixels = srcPm.getPixels();
+
+  const plans = computeTileGrid(srcW, srcH, tileSize, overlap);
+  const tiles: PageTile[] = [];
+  for (const p of plans) {    const cropPm: {
+      getStride(): number;
+      getPixels(): Uint8ClampedArray;
+      asPNG(): Uint8Array;
+    } = new Pixmap(ColorSpace.DeviceRGB, [0, 0, p.width, p.height], false);
+    const cropPixels = cropPm.getPixels();
+    const dstStride = cropPm.getStride();
+    for (let row = 0; row < p.height; row++) {
+      const srcOff = (p.tileY + row) * srcStride + p.tileX * nComp;
+      const dstOff = row * dstStride;
+      for (let col = 0; col < p.width * nComp; col++) {
+        cropPixels[dstOff + col] = srcPixels[srcOff + col];
+      }
+    }
+    tiles.push({
+      ...p,
+      pageNumber,
+      overlap,
+      pageWidth: srcW,
+      pageHeight: srcH,
+      sourceDpi: Math.round(scale * 72),
+      png: Buffer.from(cropPm.asPNG()),
+    });
+  }
+  return { tiles, pageWidth, pageHeight, png };
+}
+
+/**
+ * Extract plain text per page using mupdf's built-in text extraction (via ESM child process).
  */
 export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
-  // Try direct in-process first
   try {
     const mupdf = await import("mupdf" as any);
     const { Document } = mupdf;
@@ -126,26 +240,6 @@ export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
         pages.push("");
       }
     }
-    return pages;
-  } catch {
-    // in-process failed — try subprocess fallback
-  }
-
-  // Subprocess fallback for OCR text extraction
-  try {
-    const pageCount = await getPdfPageCountFromBuffer(buffer);
-    const pages: string[] = [];
-    for (let i = 1; i <= pageCount; i++) {
-      try {
-        // Reuse render subprocess with scale=0.1 just to trigger text extraction
-        // Actually render-page.mjs doesn't support text extraction — use empty string
-        // OCR text extraction via subprocess not implemented; return empty for now
-        pages.push("");
-      } catch {
-        pages.push("");
-      }
-    }
-    console.warn('[pdf-render] extractPdfTextByPage: in-process mupdf failed, returning empty OCR (restart server to fix)');
     return pages;
   } catch {
     return [""];

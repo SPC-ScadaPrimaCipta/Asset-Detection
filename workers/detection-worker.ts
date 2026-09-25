@@ -16,6 +16,11 @@ import {
   buildKnownTagSet,
 } from "@/lib/ocr-candidate";
 import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
+// ── Hybrid CV + Gemini pipeline ──────────────────────────────────────────────
+import { cvHealth } from "@/lib/detection/cv-client";
+import { processPageDeterministic as cvDetectPage, loadLegendDefs } from "@/lib/detection/pipeline/deterministic-page";
+import { fillGapsWithGemini, toCvDetections } from "@/lib/detection/fusion/gemini-gap-filler";
+import { detectionConfig } from "@/lib/detection/config";
 
 /**
  * Infer drawing type from document filename.
@@ -81,7 +86,7 @@ export const worker = new Worker(
       });
 
       const legendSymbols = effectiveLegendId
-        ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
+        ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1 AND status='ACTIVE'", [effectiveLegendId])).rows
         : [];
 
       const tagPatterns: RegExp[] = legendSymbols
@@ -170,6 +175,35 @@ export const worker = new Worker(
       const _defaultBatch = _scale >= 5.0 ? 2 : 3;
       const PAGE_BATCH_SIZE = parseInt(process.env.PAGE_BATCH_SIZE ?? String(_defaultBatch), 10);
 
+      // ── Hybrid pipeline setup ──────────────────────────────────────────────
+      // Check CV service availability once per job (not per page).
+      // AI_MODE=assisted → coba CV dulu, fallback ke Gemini per page jika CV down.
+      // AI_MODE=disabled (default) → full Gemini only (existing behaviour).
+      const cvAvailable = detectionConfig.aiMode === 'assisted' && (await cvHealth().catch(() => false));
+      log(`pipeline mode: ${cvAvailable ? 'HYBRID (CV+Gemini)' : 'GEMINI-ONLY'}`, {
+        aiMode: detectionConfig.aiMode,
+        cvAvailable,
+      });
+
+      // Jika CV tersedia, load legend definitions sekali per job (bukan per page).
+      // loadLegendDefs: prefer reference_image_url crops → fallback legend PDF extract.
+      const legendDefsForCv = cvAvailable && effectiveLegendId
+        ? await loadLegendDefs(
+            effectiveLegendId,
+            (msg, extra) => log(`[legendDefs] ${msg}`, extra),
+            legendSymbols as Array<{
+              id: string; asset_type: string; symbol_name?: string | null;
+              tag_pattern?: string | null; aliases?: string[] | null;
+              reference_image_url?: string | null;
+            }>
+          ).catch(e => {
+            log('loadLegendDefs failed (non-fatal) — CV matching disabled', {
+              error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+            });
+            return [];
+          })
+        : [];
+
       // processOnePage: encapsulates all per-page work (render → detect → OCR → persist).
       // Returns number of detections persisted, or 0 on skip.
       // NOTE: DB inserts are safe to run concurrently — each page writes independent rows.
@@ -203,28 +237,167 @@ export const worker = new Worker(
         }
 
         try {
-          const result = await runDetectionAgent({
-            page,
-            pageImageBase64,
-            fileUri: geminiFileUriFallback,
-            pdfBase64: !pageImageBase64 && !geminiFileUriFallback
-              ? buf.toString("base64")
-              : undefined,
-            legendId: effectiveLegendId ?? "",
-            legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
-            ocrText: ocrPages[page - 1] ?? "",
-            pngWidth: pngDimensions?.width,
-            pngHeight: pngDimensions?.height,
-            projectId: jrow.project_id ?? null,
-            drawingType,
-          });
-          detections = result.detections;
+          // ── HYBRID PIPELINE: CV first, Gemini fills gaps ─────────────────
+          if (cvAvailable && pageImageBase64 && pngDimensions) {
+            // Step 1: CV deterministic detection (persist ke DB sendiri)
+            const cvResult = await cvDetectPage({
+              buf,
+              page,
+              jobId,
+              docId: doc.id,
+              filename: doc.filename,
+              effectiveLegendId,
+              legendSymbols: legendSymbols as Array<{
+                id: string; asset_type: string;
+                symbol_name?: string | null; tag_pattern?: string | null;
+              }>,
+              tagPatterns: legendSymbols
+                .filter((s: Record<string, unknown>) => s.tag_pattern)
+                .map((s: Record<string, unknown>, i: number) => {
+                  const raw = String(s.tag_pattern);
+                  const esc = raw
+                    .replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+                    .replace(/#/g, '\\d')
+                    .replace(/\*/g, '.*');
+                  return { id: `legend-${i}`, regex: `^${esc}$` };
+                }),
+              legendDefs: legendDefsForCv,
+              nullThreshold: parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50'),
+              db,
+              log: (msg: string, extra?: Record<string, unknown>) => log(`[cv] ${msg}`, extra),
+            }).catch((e: unknown) => {
+              log(`page ${page} CV failed (non-fatal) — Gemini fallback`, {
+                page,
+                error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+              });
+              return { status: 'service-down' as const, count: 0 };
+            });
 
-          log(`page ${page}/${pageCount} detections=${detections.length}`, {
-            page,
-            count: detections.length,
-            ms: Date.now() - pageStart,
-          });
+            if (cvResult.status !== 'service-down') {
+              // Step 2: Query CV detections yang baru saja di-persist untuk gap analysis
+              const cvRows = (await db.query(
+                `SELECT asset_tag, asset_type, confidence,
+                        bbox_x, bbox_y, bbox_w, bbox_h,
+                        evidence, legend_symbol_id, detection_source
+                 FROM detections
+                 WHERE job_id=$1 AND pid_page=$2
+                   AND detection_source='DETERMINISTIC'
+                 ORDER BY confidence DESC`,
+                [jobId, page]
+              )).rows as Array<{
+                asset_tag: string | null; asset_type: string; confidence: number;
+                bbox_x: number; bbox_y: number; bbox_w: number; bbox_h: number;
+                evidence: string | string[]; legend_symbol_id: string | null;
+                detection_source: string;
+              }>;
+
+              const cvDets = toCvDetections(cvRows.map(r => ({
+                assetTag: r.asset_tag,
+                assetType: r.asset_type,
+                confidence: r.confidence,
+                bbox: { x: r.bbox_x, y: r.bbox_y, width: r.bbox_w, height: r.bbox_h },
+                evidence: typeof r.evidence === 'string' ? JSON.parse(r.evidence) : (r.evidence ?? []),
+                legendSymbol: r.legend_symbol_id,
+                detection_source: r.detection_source,
+              })));
+
+              // Step 3: Gemini gap-filler — hanya untuk area CV tidak confident
+              const fused = await fillGapsWithGemini({
+                page,
+                pageImageBase64,
+                pngWidth: pngDimensions.width,
+                pngHeight: pngDimensions.height,
+                legendId: effectiveLegendId ?? '',
+                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
+                cvDetections: cvDets,
+                ocrText: ocrPages[page - 1] ?? '',
+                projectId: jrow.project_id ?? null,
+                drawingType,
+              }, (msg: string, extra?: Record<string, unknown>) => log(`[gap-filler] ${msg}`, extra));
+
+              // Hanya simpan detections yang Gemini tambah / perbaiki (bukan CV_HIGH yg sudah persist)
+              detections = fused
+                .filter(f => f.fusion_source !== 'CV_HIGH')
+                .map(f => ({
+                  assetTag: f.assetTag,
+                  assetType: f.assetType,
+                  description: null,
+                  equipmentClass: null,
+                  service: null,
+                  location: null,
+                  unit: null,
+                  area: null,
+                  confidence: f.confidence,
+                  bbox: f.bbox,
+                  evidence: f.evidence,
+                  legendSymbol: f.legendSymbol,
+                  detection_source: f.detection_source,
+                  validation_status: 'NEEDS_REVIEW' as const,
+                  field_confidence: null,
+                  field_provenance: null,
+                  rule_applied: `fusion:${f.fusion_source}`,
+                  resolved_asset_name: f.assetType,
+                  image_hash: null,
+                  canonical_features: null,
+                  symbol_embedding: null,
+                  symbol_features: null,
+                  confidence_breakdown: {
+                    cv: f.cv_confidence ?? 0,
+                    gemini: f.gemini_confidence ?? 0,
+                    fused: f.confidence,
+                  },
+                  audit: null,
+                } as unknown as typeof detections[number]));
+
+              log(`page ${page}/${pageCount} HYBRID: cv_persisted=${cvRows.length} gemini_fill=${detections.length}`, {
+                page,
+                cvPersisted: cvRows.length,
+                geminiFill: detections.length,
+                ms: Date.now() - pageStart,
+              });
+            } else {
+              // CV service down mid-job → full Gemini fallback untuk page ini
+              log(`page ${page} CV service-down — falling back to full Gemini`, { page });
+              const result = await runDetectionAgent({
+                page,
+                pageImageBase64,
+                fileUri: geminiFileUriFallback,
+                pdfBase64: !pageImageBase64 && !geminiFileUriFallback ? buf.toString('base64') : undefined,
+                legendId: effectiveLegendId ?? '',
+                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
+                ocrText: ocrPages[page - 1] ?? '',
+                pngWidth: pngDimensions?.width,
+                pngHeight: pngDimensions?.height,
+                projectId: jrow.project_id ?? null,
+                drawingType,
+              });
+              detections = result.detections;
+            }
+          } else {
+            // ── GEMINI-ONLY (AI_MODE=disabled atau CV tidak tersedia) ────────
+            const result = await runDetectionAgent({
+              page,
+              pageImageBase64,
+              fileUri: geminiFileUriFallback,
+              pdfBase64: !pageImageBase64 && !geminiFileUriFallback
+                ? buf.toString("base64")
+                : undefined,
+              legendId: effectiveLegendId ?? "",
+              legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
+              ocrText: ocrPages[page - 1] ?? "",
+              pngWidth: pngDimensions?.width,
+              pngHeight: pngDimensions?.height,
+              projectId: jrow.project_id ?? null,
+              drawingType,
+            });
+            detections = result.detections;
+
+            log(`page ${page}/${pageCount} detections=${detections.length}`, {
+              page,
+              count: detections.length,
+              ms: Date.now() - pageStart,
+            });
+          }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });

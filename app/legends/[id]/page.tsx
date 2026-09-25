@@ -20,6 +20,7 @@ interface LegendSymbol {
   tag_pattern: string | null;
   description: string | null;
   aliases: string[] | string | null;
+  status?: string | null;
 }
 
 // ─── Style constants ──────────────────────────────────────────────────────────

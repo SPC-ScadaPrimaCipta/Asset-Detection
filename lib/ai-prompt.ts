@@ -8,16 +8,25 @@ export function buildDetectionPrompt(legendSymbols: Array<{
   isa_function_code?: string | null;
   iso_category?: string | null;
 }>) {
-  const hasLegend = legendSymbols.length > 0;
+  // Deduplicate by (symbol_name, asset_type) — DB may contain duplicate rows from double-import
+  const _seen = new Set<string>();
+  const uniqueSymbols = legendSymbols.filter(s => {
+    const key = `${(s.symbol_name ?? '').trim().toLowerCase()}|${(s.asset_type ?? '').trim().toLowerCase()}`;
+    if (_seen.has(key)) return false;
+    _seen.add(key);
+    return true;
+  });
+
+  const hasLegend = uniqueSymbols.length > 0;
 
   // Detect which standards are present in the legend
-  const standards = [...new Set(legendSymbols.map(s => s.standard_code).filter(Boolean))];
+  const standards = [...new Set(uniqueSymbols.map(s => s.standard_code).filter(Boolean))];
   const hasISA = standards.some(s => s?.includes('ISA'));
   const hasISO = standards.some(s => s?.includes('ISO'));
-  const isBuiltinStandard = standards.length > 0 && legendSymbols.some(s => s.standard_code);
+  const isBuiltinStandard = standards.length > 0 && uniqueSymbols.some(s => s.standard_code);
 
   const legendContext = hasLegend
-    ? legendSymbols
+    ? uniqueSymbols
         .map((s) => {
           const displayName = s.symbol_name || s.asset_type;
           const parts: string[] = [`• ${displayName}`];
@@ -147,6 +156,94 @@ Return ONLY this JSON, no markdown, no explanation:
       "bbox": {"x": 245, "y": 380, "width": 52, "height": 48},
       "legendSymbol": "<exact legend name>",
       "evidence": ["Symbol matches legend entry", "No tag visible near symbol"]
+    }
+  ]
+}`;
+}
+
+
+/**
+ * Gap-filler prompt — dipakai saat CV sudah deteksi sebagian halaman.
+ * Lebih focused: Gemini hanya perlu memverifikasi + mengisi area yang CV tidak yakin.
+ * Lebih hemat token daripada full scan.
+ */
+export function buildGapFillerPrompt(
+  legendSymbols: Parameters<typeof buildDetectionPrompt>[0],
+  context: {
+    cvAcceptedCount: number;
+    gapBboxes: Array<{ x: number; y: number; width: number; height: number }>;
+    focusOnGaps: boolean;
+  }
+) {
+  // Deduplicate sama seperti buildDetectionPrompt
+  const _seen = new Set<string>();
+  const uniqueSymbols = legendSymbols.filter(s => {
+    const key = `${(s.symbol_name ?? '').trim().toLowerCase()}|${(s.asset_type ?? '').trim().toLowerCase()}`;
+    if (_seen.has(key)) return false;
+    _seen.add(key);
+    return true;
+  });
+
+  const legendContext = uniqueSymbols.length > 0
+    ? uniqueSymbols
+        .map(s => {
+          const name = s.symbol_name || s.asset_type;
+          const parts = [`• ${name}`];
+          if (s.symbol_name && s.asset_type !== s.symbol_name) parts.push(`(type: ${s.asset_type})`);
+          if (s.tag_pattern) parts.push(`[tag: ${s.tag_pattern}]`);
+          if (s.aliases?.length) parts.push(`aliases: ${s.aliases.join(', ')}`);
+          return parts.join(' ');
+        })
+        .join('\n')
+    : 'No legend provided.';
+
+  const gapDesc = context.gapBboxes.length > 0
+    ? `CV already detected ${context.cvAcceptedCount} high-confidence symbols.\n` +
+      `Focus on these ${context.gapBboxes.length} uncertain area(s) (normalized 0-1000 coords):\n` +
+      context.gapBboxes.map((b, i) =>
+        `  Gap ${i + 1}: x=${b.x} y=${b.y} w=${b.width} h=${b.height}`
+      ).join('\n')
+    : `CV detected ${context.cvAcceptedCount} symbols. Scan full image for anything CV missed.`;
+
+  return `You are an expert P&ID analyst. Computer Vision (CV) has already processed this page.
+Your job: identify symbols CV missed or was uncertain about.
+
+SELECTED LEGEND:
+${legendContext}
+
+CONTEXT:
+${gapDesc}
+
+TASK:
+Detect ALL equipment symbols — especially in the gap areas above.
+Do NOT re-detect areas where CV is already confident (high confidence already recorded).
+Focus on: ambiguous shapes, overlapping symbols, rotated equipment, symbols near borders.
+
+For each detection:
+- assetType: exact legend name
+- assetTag: visible tag or null (never invent)
+- confidence: 0.0-1.0
+- bbox: normalized 0-1000 coords
+- evidence: 1-3 observations
+- legendSymbol: matched legend entry or null
+
+Return ONLY valid JSON:
+{
+  "page": <number>,
+  "detections": [
+    {
+      "assetType": "<legend name>",
+      "assetTag": "<tag or null>",
+      "description": null,
+      "equipmentClass": null,
+      "service": null,
+      "location": null,
+      "unit": null,
+      "area": null,
+      "confidence": 0.85,
+      "bbox": {"x": 200, "y": 300, "width": 60, "height": 55},
+      "legendSymbol": "<legend name>",
+      "evidence": ["Symbol shape matches legend", "Tag visible nearby"]
     }
   ]
 }`;

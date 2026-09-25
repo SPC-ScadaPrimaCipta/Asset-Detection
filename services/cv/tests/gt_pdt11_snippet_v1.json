@@ -1,0 +1,120 @@
+{
+  "$schema": "ground-truth-v1",
+  "page": 1,
+  "source": "PDT-11 rev-cloud snippet (user-provided P&ID markup, 2026-09-24)",
+  "coordMethod": "visual-estimate",
+  "methodNote": "Annotator-labeled WITHOUT viewing any pipeline prediction (independence §2). Bboxes eyeballed on the snippet in 0-1000 space — treat IoU thresholds loosely until cad-measured. Human: analyst + domain reading of the markup.",
+  "conditions": {
+    "scanQuality": "medium-markup",
+    "dpi": "unknown",
+    "rotation": 0,
+    "noise": "medium",
+    "lineDensity": "high",
+    "symbolSize": "small-medium",
+    "ocrDifficulty": "high"
+  },
+  "annotator": "human-analyst",
+  "version": "gt-v1",
+  "assets": [
+    {
+      "id": "gt-001", "bbox": {"x": 280, "y": 205, "width": 115, "height": 32},
+      "symbolLabel": "Vertical Pump", "symbolId": "",
+      "tag": "P-380126", "tagRaw": "P-380126",
+      "tagBBox": {"x": 300, "y": 318, "width": 100, "height": 34},
+      "status": "positive", "notes": "Equipment label PDT-11 VERTICAL PUMP below symbol; tag clouded below"
+    },
+    {
+      "id": "gt-002", "bbox": {"x": 318, "y": 78, "width": 34, "height": 82},
+      "symbolLabel": "Vessel", "symbolId": "",
+      "tag": null, "tagRaw": null, "tagBBox": null,
+      "status": "positive", "notes": "Vertical capsule above pump; no visible tag (tagless asset must still exist)"
+    },
+    {
+      "id": "gt-003", "bbox": {"x": 320, "y": 28, "width": 28, "height": 30},
+      "symbolLabel": "Motor", "symbolId": "",
+      "tag": "EM", "tagRaw": "EM", "tagBBox": null,
+      "status": "ambiguous", "notes": "EM box atop vessel — part of pump package or separate asset? Needs legend ruling"
+    },
+    {
+      "id": "gt-004", "bbox": {"x": 72, "y": 192, "width": 22, "height": 30},
+      "symbolLabel": "Valve", "symbolId": "",
+      "tag": "VLV-380795", "tagRaw": "VLV-380795",
+      "tagBBox": {"x": 18, "y": 108, "width": 108, "height": 30},
+      "status": "positive", "notes": "NC gate valve, 1/2in D2S. 6-digit tag — parser must accept"
+    },
+    {
+      "id": "gt-005", "bbox": {"x": 168, "y": 198, "width": 30, "height": 22},
+      "symbolLabel": "Valve", "symbolId": "",
+      "tag": "VLV-380796", "tagRaw": "VLV-380796",
+      "tagBBox": {"x": 142, "y": 148, "width": 108, "height": 28},
+      "status": "positive", "notes": "Check/bowtie valve symbol, 6in B2R"
+    },
+    {
+      "id": "gt-006", "bbox": {"x": 98, "y": 232, "width": 20, "height": 20},
+      "symbolLabel": "Instrument", "symbolId": "",
+      "tag": "PI-380082", "tagRaw": "PI-380082",
+      "tagBBox": {"x": 62, "y": 248, "width": 104, "height": 30},
+      "status": "positive", "notes": "Small diamond instrument on impulse line"
+    },
+    {
+      "id": "gt-007", "bbox": {"x": 600, "y": 78, "width": 46, "height": 46},
+      "symbolLabel": "Instrument", "symbolId": "",
+      "tag": "PI-380085", "tagRaw": "PI PDT-11 / PI-380085",
+      "tagBBox": {"x": 668, "y": 30, "width": 104, "height": 28},
+      "status": "positive", "notes": "Circle instrument labeled PI PDT-11; cloud tag PI-380085 above — association case"
+    },
+    {
+      "id": "gt-008", "bbox": {"x": 608, "y": 190, "width": 22, "height": 30},
+      "symbolLabel": "Valve", "symbolId": "",
+      "tag": "VLV-380797", "tagRaw": "VLV-380797",
+      "tagBBox": {"x": 556, "y": 138, "width": 108, "height": 28},
+      "status": "positive", "notes": "Gate valve under instrument tap, 3/4in D2S"
+    },
+    {
+      "id": "gt-009", "bbox": {"x": 698, "y": 200, "width": 30, "height": 22},
+      "symbolLabel": "Valve", "symbolId": "",
+      "tag": "VLV-380798", "tagRaw": "VLV-380798",
+      "tagBBox": {"x": 648, "y": 268, "width": 108, "height": 28},
+      "status": "positive", "notes": "Check valve, 3in B5R, NC"
+    },
+    {
+      "id": "gt-010", "bbox": {"x": 736, "y": 190, "width": 22, "height": 30},
+      "symbolLabel": "Valve", "symbolId": "",
+      "tag": "VLV-380799", "tagRaw": "VLV-380799",
+      "tagBBox": {"x": 760, "y": 138, "width": 108, "height": 28},
+      "status": "positive", "notes": "Gate valve, 3in B2R"
+    },
+    {
+      "id": "gt-011", "bbox": {"x": 222, "y": 205, "width": 26, "height": 18},
+      "symbolLabel": "Reducer", "symbolId": "",
+      "tag": null, "tagRaw": "2inx1in", "tagBBox": null,
+      "status": "ambiguous", "notes": "Reducer triangles 2inx1in — fitting or asset? Legend-dependent"
+    },
+    {
+      "id": "gt-012", "bbox": {"x": 534, "y": 205, "width": 26, "height": 18},
+      "symbolLabel": "Reducer", "symbolId": "",
+      "tag": null, "tagRaw": "3inx2inx1in", "tagBBox": null,
+      "status": "ambiguous", "notes": "Reducer 3inx2inx1in — same question as gt-011"
+    },
+    {
+      "id": "gt-013", "bbox": {"x": 500, "y": 330, "width": 100, "height": 28},
+      "symbolLabel": "", "symbolId": "",
+      "tag": "PP-380163", "tagRaw": "PP-380163 / WF-204-A013-1in",
+      "tagBBox": null,
+      "status": "unknown", "notes": "Clouded tag with WF line below — off-page connector or drain? Cannot classify from snippet"
+    }
+  ],
+  "negatives": [
+    {"id": "ng-001", "bbox": {"x": 208, "y": 168, "width": 60, "height": 18}, "kind": "pipe-spec", "text": "6inB2R", "notes": "Pipe spec is not an asset"},
+    {"id": "ng-002", "bbox": {"x": 228, "y": 238, "width": 44, "height": 16}, "kind": "pipe-spec", "text": "2inx1in", "notes": "Reducer size text"},
+    {"id": "ng-003", "bbox": {"x": 548, "y": 238, "width": 72, "height": 16}, "kind": "pipe-spec", "text": "3inx2inx1in", "notes": "Reducer size text"},
+    {"id": "ng-004", "bbox": {"x": 560, "y": 168, "width": 72, "height": 18}, "kind": "pipe-spec", "text": "3/4inD2S", "notes": "Valve size text"},
+    {"id": "ng-005", "bbox": {"x": 700, "y": 228, "width": 60, "height": 16}, "kind": "pipe-spec", "text": "3inB5R", "notes": "Valve size text"},
+    {"id": "ng-006", "bbox": {"x": 760, "y": 168, "width": 52, "height": 18}, "kind": "pipe-spec", "text": "3inB2R", "notes": "Valve size text"},
+    {"id": "ng-007", "bbox": {"x": 60, "y": 148, "width": 72, "height": 18}, "kind": "pipe-spec", "text": "1/2inD2S", "notes": "Valve size text"},
+    {"id": "ng-008", "bbox": {"x": 40, "y": 280, "width": 80, "height": 40}, "kind": "title-text", "text": "FROM WATER POND", "notes": "Source label with arrow"},
+    {"id": "ng-009", "bbox": {"x": 96, "y": 178, "width": 26, "height": 16}, "kind": "marker", "text": "NC", "notes": "Normally-closed marker, not a tag"},
+    {"id": "ng-010", "bbox": {"x": 500, "y": 362, "width": 120, "height": 18}, "kind": "pipe-spec", "text": "WF-204-A013-1in", "notes": "Line number, not equipment tag"},
+    {"id": "ng-011", "bbox": {"x": 306, "y": 262, "width": 70, "height": 40}, "kind": "title-text", "text": "PDT-11 VERTICAL PUMP", "notes": "Equipment title — the ASSET is gt-001, the title itself must not double-count"}
+  ]
+}
