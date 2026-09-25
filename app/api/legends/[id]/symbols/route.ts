@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
+import { getFile } from '@/lib/storage';
+import { renderPageToPng } from '@/lib/pdf-render';
+import { cropAndSaveSymbol } from '@/lib/legend-crop';
 import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,10 +48,45 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const id = uuidv4();
   const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
 
+  // Single-step manual add: crop the drawn bbox immediately so the new row
+  // already carries its reference crop — no separate recrop step needed.
+  // Non-fatal: crop failure still saves the symbol (cropless = MISSING in UI).
+  let refUrl: string | null = null;
+  let refHash: string | null = null;
+  if (bbox_x != null && bbox_y != null && bbox_w != null && bbox_h != null && pid_page != null) {
+    try {
+      const pdf = (await getFile(`legend-${legendId}.pdf`)) as unknown as Buffer;
+      const rendered = await renderPageToPng(pdf, pid_page, 4.0);
+      const ref = await cropAndSaveSymbol(
+        rendered.png.toString('base64'),
+        { x: bbox_x, y: bbox_y, width: bbox_w, height: bbox_h },
+        rendered.width, rendered.height, legendId, pid_page, 0.05
+      );
+      refUrl = ref.refUrl;
+      refHash = ref.refHash;
+    } catch (e) {
+      console.warn(`[legend/symbols] legend ${legendId} auto-crop failed (non-fatal):`, (e as Error).message?.slice(0, 150));
+    }
+  }
+
   await db.query(
-    'INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::text[],$13)',
-    [id, legendId, asset_type, symbol_name, tag_pattern, description, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, aliases, status]
+    'INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash, quality_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::text[],$13,$14,$15,$16)',
+    [id, legendId, asset_type, symbol_name, tag_pattern, description, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, aliases, status, refUrl, refHash, refUrl ? 'review' : null]
   );
 
-  return NextResponse.json({ id, legend_id: legendId, ...parsed.data }, { status: 201 });
+  // Return the full DB row (incl. reference_image_url) so the UI shows the
+  // crop immediately without a refetch.
+  let created;
+  try {
+    created = await db.query(
+      `SELECT ls.*, lc.label AS class_label, lc.normalized_label AS class_key
+       FROM legend_symbols ls LEFT JOIN legend_classes lc ON lc.id = ls.class_id
+       WHERE ls.id=$1`,
+      [id]
+    );
+  } catch {
+    created = await db.query('SELECT * FROM legend_symbols WHERE id=$1', [id]);
+  }
+
+  return NextResponse.json(created.rows[0], { status: 201 });
 }
