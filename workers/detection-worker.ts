@@ -17,6 +17,7 @@ import {
 import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
 import { persistDetections } from "@/lib/detection/persistence/detection-repository";
 import {
+  filterEligibleSymbols,
   legendTagPatterns,
   loadLegendDefs,
   processPageDeterministic,
@@ -88,7 +89,9 @@ export const worker = new Worker(
       });
 
       const legendSymbols = effectiveLegendId
-        ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
+        ? filterEligibleSymbols(
+            (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1", [effectiveLegendId])).rows
+          )
         : [];
 
       const tagPatterns: RegExp[] = legendSymbols

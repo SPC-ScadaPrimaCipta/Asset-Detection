@@ -15,6 +15,7 @@ export const LegendSymbolSchema = z.object({
   pid_page: z.number().int().nullable().optional().default(null),
   reference_image_url: z.string().max(500).nullable().optional().default(null),
   reference_crop_hash: z.string().max(128).nullable().optional().default(null),
+  review_reason: z.string().max(500).nullable().optional().default(null),
 });
 
 export const LegendSchema = z.object({

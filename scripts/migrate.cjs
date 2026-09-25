@@ -193,6 +193,30 @@ async function migrate() {
     `);
     console.log('  006: legends/legend_symbols builtin standard columns OK');
 
+    // Migration 007: legend quality lifecycle + semantic classes (Stage 3).
+    // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
+    try {
+      const qsql = join(__dirname, '..', 'sql', 'migrate-007-legend-quality-classes.sql');
+      if (existsSync(qsql)) {
+        await p.query(readFileSync(qsql, 'utf-8'));
+        console.log('  007: legend quality + classes OK');
+      }
+    } catch (e) {
+      console.warn('  007 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 008: legend review decision reason (Stage 3.5).
+    // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
+    try {
+      const rsql = join(__dirname, '..', 'sql', 'migrate-008-legend-review.sql');
+      if (existsSync(rsql)) {
+        await p.query(readFileSync(rsql, 'utf-8'));
+        console.log('  008: legend review_reason OK');
+      }
+    } catch (e) {
+      console.warn('  008 migration warning (non-fatal):', e.message);
+    }
+
     // Migration V2-Phase2: deterministic geometry + AI-verification columns.
     // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
     try {

@@ -60,6 +60,22 @@ export interface LegendDefinitionText {
   confidence?: number;
 }
 
+/** Stage 1: explicit box roles. rowBBox ⊇ referenceBBox ⊇ symbolBBox; textBBox separate. */
+export interface LegendBBoxSet {
+  rowBBox?: PageBox | null;
+  referenceBBox?: PageBox | null;
+  symbolBBox?: PageBox | null;
+  textBBox?: PageBox | null;
+}
+
+/** Stage 1: pipeline versions carried per definition (all optional, additive). */
+export interface LegendVersions {
+  legendPipeline?: string;
+  schema?: string;
+  cv?: string;
+  ocr?: string;
+}
+
 export interface LegendDefinition {
   id?: string;
   legendId: string;
@@ -84,6 +100,11 @@ export interface LegendDefinition {
   rotationInvariant: boolean;
   provenance: string[];
   version: string;
+  /** Stage 1 (additive): explicit box roles; null = not provided by source. */
+  rowBBox?: PageBox | null;
+  referenceBBox?: PageBox | null;
+  /** Stage 1 (additive): per-definition pipeline versions. */
+  versions?: LegendVersions;
 }
 
 export function normalizeLegendLabel(value: string | null | undefined): string {
@@ -140,7 +161,7 @@ export function coerceLegendDefinition(raw: Partial<LegendDefinition> = {}): Leg
     },
     variants: Array.isArray(raw.variants) ? raw.variants as LegendTemplateVariant[] : [],
     sourcePage: Number.isFinite(pageNumber) ? pageNumber : 1,
-    source: raw.source ?? {
+    source: {
       pageNumber: Number.isFinite(pageNumber) ? pageNumber : 1,
       bbox: symbolBox,
     },
@@ -162,10 +183,81 @@ export function coerceLegendDefinition(raw: Partial<LegendDefinition> = {}): Leg
     version: String(raw.version ?? 'legacy'),
   };
 
-  def.source = { ...def.source, bbox: def.bbox, pageNumber: def.sourcePage };
-  def.symbol = { ...def.symbol, bbox: def.bbox, width: def.bbox.width, height: def.bbox.height };
-  def.text = { ...def.text, value: def.label, normalizedValue: def.normalizedLabel ?? normalizeLegendLabel(def.label), bbox: def.bbox };
+  // Stage 1: NEVER collapse distinct boxes. Each role keeps its own valid box;
+  // fallback to the shared box ONLY when the individual box is missing/invalid.
+  // Asset Type stays derived from label (Legend Description) — untouched here.
+  const rawSource = (raw.source ?? {}) as {
+    bbox?: unknown;
+    pageNumber?: unknown;
+    documentId?: unknown;
+    regionId?: unknown;
+    rowId?: unknown;
+  };
+  const rawSymbol = (raw.symbol ?? {}) as {
+    bbox?: unknown;
+    center?: unknown;
+    width?: unknown;
+    height?: unknown;
+  };
+  const rawText = (raw.text ?? {}) as { bbox?: unknown; confidence?: unknown };
+  const keepBox = (own: unknown, fb: PageBox): PageBox =>
+    isValidPageBox(own) ? (own as PageBox) : fb;
+  const asCenter = (v: unknown, fb: { x: number; y: number }) =>
+    v && typeof v === 'object' &&
+    Number.isFinite((v as Record<string, unknown>).x) &&
+    Number.isFinite((v as Record<string, unknown>).y)
+      ? (v as { x: number; y: number })
+      : fb;
+  const symbolBbox = keepBox(rawSymbol.bbox, symbolBox);
+  def.source = {
+    ...(typeof rawSource.documentId === 'string' ? { documentId: rawSource.documentId } : {}),
+    ...(typeof rawSource.regionId === 'string' ? { regionId: rawSource.regionId } : {}),
+    ...(typeof rawSource.rowId === 'string' ? { rowId: rawSource.rowId } : {}),
+    pageNumber: def.sourcePage,
+    bbox: keepBox(rawSource.bbox, symbolBox),
+  };
+  def.symbol = {
+    bbox: symbolBbox,
+    center: asCenter((def.symbol as { center?: unknown } | undefined)?.center, {
+      x: symbolBbox.x + symbolBbox.width / 2,
+      y: symbolBbox.y + symbolBbox.height / 2,
+    }),
+    width: Number(rawSymbol.width ?? symbolBbox.width),
+    height: Number(rawSymbol.height ?? symbolBbox.height),
+  };
+  def.text = {
+    ...def.text,
+    value: def.label,
+    normalizedValue: def.normalizedLabel ?? normalizeLegendLabel(def.label),
+    bbox: keepBox(rawText.bbox, symbolBox),
+  };
+  // classId: preserved only when already present on input — Stage 1 creates
+  // no classes/groups (grouping is Stage 3).
+  def.classId = String(
+    (raw as { classId?: unknown }).classId ?? def.classId ?? def.symbolId
+  );
+  def.rowBBox = isValidPageBox(raw.rowBBox) ? (raw.rowBBox as PageBox) : null;
+  def.referenceBBox = isValidPageBox(raw.referenceBBox)
+    ? (raw.referenceBBox as PageBox)
+    : null;
+  const rawVersions = (raw as { versions?: unknown }).versions as
+    | LegendVersions
+    | undefined;
+  def.versions = rawVersions ? { ...rawVersions } : undefined;
   return def;
+}
+
+function isValidPageBox(b: unknown): b is PageBox {
+  if (!b || typeof b !== 'object') return false;
+  const v = b as Record<string, unknown>;
+  return (
+    Number.isFinite(v.x) &&
+    Number.isFinite(v.y) &&
+    Number.isFinite(v.width) &&
+    Number.isFinite(v.height) &&
+    (v.width as number) > 0 &&
+    (v.height as number) > 0
+  );
 }
 
 export function summarizeLegendDefinitions(defs: Array<Partial<LegendDefinition>>): {

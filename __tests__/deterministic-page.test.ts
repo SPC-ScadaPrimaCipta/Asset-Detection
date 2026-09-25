@@ -1,4 +1,5 @@
 import {
+  filterEligibleSymbols,
   legendTagPatterns,
   processPageDeterministic,
 } from '@/lib/detection/pipeline/deterministic-page';
@@ -14,6 +15,27 @@ describe('legendTagPatterns', () => {
     expect(new RegExp(out[0].regex).test('P-101')).toBe(true);
     expect(new RegExp(out[0].regex).test('P-101A')).toBe(false);
     expect(new RegExp(out[1].regex).test('VLV-380795')).toBe(true);
+  });
+});
+
+describe('filterEligibleSymbols (matcher eligibility gate)', () => {
+  const base = { id: 'a', asset_type: 'Valve' };
+  it('excludes REJECTED status', () => {
+    expect(filterEligibleSymbols([{ ...base, status: 'REJECTED' }])).toEqual([]);
+  });
+  it('excludes quality-rejected rows', () => {
+    expect(filterEligibleSymbols([{ ...base, quality_status: 'rejected' }])).toEqual([]);
+  });
+  it('excludes superseded versions (raw preserved, never fed)', () => {
+    expect(filterEligibleSymbols([{ ...base, superseded_by: 'new-id' }])).toEqual([]);
+  });
+  it('keeps review/unassessed rows (no silent working-set reduction)', () => {
+    const rows = [
+      { ...base, id: 'r1', quality_status: 'review' },
+      { ...base, id: 'r2', quality_status: null },
+      { ...base, id: 'r3' },
+    ];
+    expect(filterEligibleSymbols(rows).map((r) => r.id)).toEqual(['r1', 'r2', 'r3']);
   });
 });
 

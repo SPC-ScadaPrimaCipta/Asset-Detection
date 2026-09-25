@@ -102,6 +102,26 @@ export interface LegendSymbolRow {
   tag_pattern?: string | null;
   aliases?: string[] | null;
   reference_image_url?: string | null;
+  status?: string | null;
+  quality_status?: string | null;
+  superseded_by?: string | null;
+}
+
+/**
+ * Matcher eligibility gate (Stage 3 rule, enforced at runtime).
+ * Excludes: human-rejected rows, quality-rejected rows, superseded versions.
+ * Everything else passes through (including `review` and unassessed rows —
+ * strict validated-only gating happens via user curation + finalize gate,
+ * not by silently dropping the working set here).
+ * Migration-tolerant: missing columns read as undefined → pass-through.
+ */
+export function filterEligibleSymbols<T extends LegendSymbolRow>(symbols: T[]): T[] {
+  return symbols.filter(
+    (s) =>
+      s.status !== 'REJECTED' &&
+      s.quality_status !== 'rejected' &&
+      !s.superseded_by
+  );
 }
 
 export async function loadLegendDefs(
@@ -110,7 +130,8 @@ export async function loadLegendDefs(
   symbols: LegendSymbolRow[] = []
 ): Promise<LegendDefinition[]> {
   // Preferred: human-reviewed DB reference crops (approved labels, no OCR).
-  const withCrops = symbols.filter((s) => s.reference_image_url);
+  // Eligibility gate: superseded versions and rejected rows never feed matching.
+  const withCrops = filterEligibleSymbols(symbols).filter((s) => s.reference_image_url);
   if (withCrops.length > 0) {
     try {
       const inputs = [];

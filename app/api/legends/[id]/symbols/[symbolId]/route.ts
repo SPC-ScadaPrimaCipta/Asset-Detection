@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { LegendSymbolSchema } from '@/lib/legend-schemas';
+import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
 
 export async function PUT(
   request: NextRequest,
@@ -10,6 +10,8 @@ export async function PUT(
   const body = await request.json();
   const parsed = LegendSymbolSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.format() }, { status: 400 });
+  const patternErr = validateTagPattern(parsed.data.tag_pattern);
+  if (patternErr) return NextResponse.json({ error: patternErr }, { status: 400 });
 
   // Block modification of built-in legends (tolerant: skip if column not migrated yet)
   try {
@@ -22,18 +24,30 @@ export async function PUT(
     }
   } catch { /* is_builtin column missing — allow edit */ }
 
-  const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page } = parsed.data;
+  const { asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, review_reason } = parsed.data;
 
   try {
     await db.query(
       `UPDATE legend_symbols SET
         asset_type = $1, symbol_name = $2, tag_pattern = $3, description = $4,
-        aliases = $5::text[], status = $6, bbox_x = $7, bbox_y = $8, bbox_w = $9, bbox_h = $10, pid_page = $11
-      WHERE id = $12 AND legend_id = $13`,
-      [asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, symbolId, legendId]
+        aliases = $5::text[], status = $6, bbox_x = $7, bbox_y = $8, bbox_w = $9, bbox_h = $10, pid_page = $11,
+        review_reason = $12, updated_at = NOW()
+      WHERE id = $13 AND legend_id = $14`,
+      [asset_type, symbol_name, tag_pattern, description, aliases, status, bbox_x ?? null, bbox_y ?? null, bbox_w ?? null, bbox_h ?? null, pid_page ?? null, review_reason ?? null, symbolId, legendId]
     );
 
-    const res = await db.query('SELECT * FROM legend_symbols WHERE id = $1', [symbolId]);
+    let res;
+    try {
+      res = await db.query(
+        `SELECT ls.*, lc.label AS class_label, lc.normalized_label AS class_key
+         FROM legend_symbols ls LEFT JOIN legend_classes lc ON lc.id = ls.class_id
+         WHERE ls.id = $1`,
+        [symbolId]
+      );
+    } catch {
+      // legend_classes table not migrated yet — fall back without class labels.
+      res = await db.query('SELECT * FROM legend_symbols WHERE id = $1', [symbolId]);
+    }
     return NextResponse.json(res.rows[0]);
   } catch (err: any) {
     console.error('[PUT symbol]', err);

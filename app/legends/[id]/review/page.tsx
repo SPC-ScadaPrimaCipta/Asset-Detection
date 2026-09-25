@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import * as pdfjsLib from 'pdfjs-dist';
+import { validateTagPattern } from '@/lib/legend-schemas';
 
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -15,7 +16,22 @@ interface LegendSymbol {
   aliases: string[]; status: string;
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
   pid_page: number | null;
+  reference_image_url: string | null;
+  computed_features: Record<string, unknown> | null;
+  quality_status: 'validated' | 'review' | 'rejected' | null;
+  quality_reasons: string[] | null;
+  pipeline_version: string | null;
+  review_reason: string | null;
+  class_id: string | null;
+  class_label?: string | null;
+  class_key?: string | null;
+  superseded_by?: string | null;
 }
+
+type QualityTab = 'all' | 'validated' | 'review' | 'rejected' | 'missing';
+type ReasonFilter = '' | 'text' | 'border' | 'blank' | 'duplicate' | 'missing';
+
+const REJECT_REASONS = ['Note / annotation', 'Invalid symbol', 'Wrong OCR', 'Wrong crop', 'Other'];
 
 const cardStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' };
 const SYMS_PER_PAGE = 12;
@@ -25,6 +41,28 @@ function StatusBadge({ s }: { s: string }) {
   if (s === 'ACTIVE') return <span style={{ ...base, background: 'var(--success-soft)', color: 'var(--success)' }}>ACTIVE</span>;
   if (s === 'REJECTED') return <span style={{ ...base, background: 'var(--danger-soft)', color: 'var(--danger)' }}>REJECTED</span>;
   return <span style={{ ...base, background: 'var(--warning-soft)', color: 'var(--warning)' }}>DRAFT</span>;
+}
+
+function QualityBadge({ s, missing }: { s: string | null; missing?: boolean }) {
+  const base: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 600, lineHeight: '14px' };
+  if (missing) return <span style={{ ...base, background: '#e5e7eb', color: '#6b7280' }}>MISSING</span>;
+  if (s === 'validated') return <span style={{ ...base, background: 'var(--success-soft)', color: 'var(--success)' }}>✓ VALIDATED</span>;
+  if (s === 'rejected') return <span style={{ ...base, background: 'var(--danger-soft)', color: 'var(--danger)' }}>✕ REJECTED</span>;
+  if (s === 'review') return <span style={{ ...base, background: '#fef3c7', color: '#b45309' }}>⚠ REVIEW</span>;
+  return <span style={{ ...base, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>UNASSESSED</span>;
+}
+
+function qualityReasonKind(sym: LegendSymbol): string[] {
+  // Derive filterable reason kinds from diagnostics evidence (no guessing).
+  const kinds: string[] = [];
+  const reasons = Array.isArray(sym.quality_reasons) ? sym.quality_reasons.join(' ').toLowerCase() : '';
+  if (!sym.reference_image_url) kinds.push('missing');
+  if (reasons.includes('text-dominant') || reasons.includes('text crop')) kinds.push('text');
+  if (reasons.includes('border contamination')) kinds.push('border');
+  if (reasons.includes('blank')) kinds.push('blank');
+  const f = sym.computed_features as Record<string, unknown> | null;
+  if (f && f.duplicateGroup) kinds.push('duplicate');
+  return kinds;
 }
 
 export default function LegendReviewPage() {
@@ -74,6 +112,16 @@ export default function LegendReviewPage() {
   // Set true once a real drag happens — used to swallow the click event that
   // follows mouseup after moving/resizing (so the sidebar doesn't jump).
   const suppressClickRef = useRef(false);
+
+  // ── Stage 3.5: quality review state ───────────────────────────────────────
+  const [qualityTab, setQualityTab] = useState<QualityTab>('all');
+  const [reasonFilter, setReasonFilter] = useState<ReasonFilter>('');
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [rejectModalId, setRejectModalId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
+  const [rejectNote, setRejectNote] = useState('');
+  const [recropTargetId, setRecropTargetId] = useState<string | null>(null);
+  const [recropping, setRecropping] = useState(false);
 
   // ---- PDF preview zoom: pure-ref math, zero DOM reads in the hot path ----
   // viewRef   = what is displayed (eased toward target every frame)
@@ -230,6 +278,12 @@ export default function LegendReviewPage() {
         const by = Math.round((y / cssH) * 1000);
         const bw = Math.round((w / cssW) * 1000);
         const bh = Math.round((h / cssH) * 1000);
+        // Re-crop mode: drawn box becomes a versioned reference (raw preserved).
+        if (recropTargetId) {
+          setDrawMode(false);
+          handleRecropSave({ x: bx, y: by, w: bw, h: bh });
+          return;
+        }
         setAddModalBbox({ x: bx, y: by, w: bw, h: bh });
         setAddForm({ assetType: '', symbolName: '', tagPattern: '', description: '' });
         setAddModalOpen(true);
@@ -367,6 +421,9 @@ export default function LegendReviewPage() {
       bbox_w: toInt(patch.bbox_w !== undefined ? patch.bbox_w : sym.bbox_w),
       bbox_h: toInt(patch.bbox_h !== undefined ? patch.bbox_h : sym.bbox_h),
       pid_page: toInt(patch.pid_page !== undefined ? patch.pid_page : sym.pid_page),
+      review_reason: (patch as Partial<LegendSymbol>).review_reason !== undefined
+        ? (patch as Partial<LegendSymbol>).review_reason
+        : (sym as Partial<LegendSymbol>).review_reason ?? null,
     };
     const res = await fetch(`/api/legends/${legendId}/symbols/${sym.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as any).error || `Save failed (${res.status})`); }
@@ -374,8 +431,68 @@ export default function LegendReviewPage() {
     setSymbols(prev => prev.map(s => s.id === updated.id ? updated : s));
   };
 
-  const handleApprove = async (id: string) => { const s = symbols.find(x => x.id === id); if (s) try { await persistSymbol(s, { status: 'ACTIVE' }); } catch (e: any) { setError(e.message); } };
-  const handleReject = async (id: string) => { const s = symbols.find(x => x.id === id); if (s) try { await persistSymbol(s, { status: 'REJECTED' }); } catch (e: any) { setError(e.message); } };
+  const handleApprove = async (id: string) => {
+    const s = symbols.find(x => x.id === id); if (!s) return;
+    // Restore from REJECTED clears the stale review reason; plain DRAFT→ACTIVE keeps it.
+    const patch = s.status === 'REJECTED' ? { status: 'ACTIVE', review_reason: null } : { status: 'ACTIVE' };
+    try { await persistSymbol(s, patch as Partial<LegendSymbol>); } catch (e: any) { setError(e.message); }
+  };
+  const [validatingId, setValidatingId] = useState<string | null>(null);
+  const handleValidate = async (id: string) => {
+    setValidatingId(id); setError('');
+    try {
+      const res = await fetch(`/api/legends/${legendId}/symbols/${id}/validate`, { method: 'POST' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((d as any).error || `Validate failed (${res.status})`);
+      setSymbols(prev => prev.map(x => x.id === id ? d as LegendSymbol : x));
+    } catch (e: any) { setError(e.message || 'Validate failed'); }
+    finally { setValidatingId(null); }
+  };
+
+  const handleRejectWithReason = async () => {
+    if (!rejectModalId) return;
+    const s = symbols.find(x => x.id === rejectModalId);
+    if (!s) { setRejectModalId(null); return; }
+    const reason = rejectNote.trim() ? `${rejectReason} — ${rejectNote.trim()}` : rejectReason;
+    try {
+      await persistSymbol(s, { status: 'REJECTED', review_reason: reason });
+      setRejectModalId(null); setRejectNote(''); setRejectReason(REJECT_REASONS[0]);
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const handleRecropSave = async (bbox: { x: number; y: number; w: number; h: number }) => {
+    if (!recropTargetId) return;
+    setRecropping(true);
+    try {
+      const res = await fetch(`/api/legends/${legendId}/symbols/${recropTargetId}/recrop`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bbox_x: bbox.x, bbox_y: bbox.y, bbox_w: bbox.w, bbox_h: bbox.h }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((d as any).error || `Re-crop failed (${res.status})`);
+      const created = (d as any).new as LegendSymbol;
+      setSymbols(prev => {
+        const next = prev.map(x => x.id === recropTargetId ? { ...x, superseded_by: created.id } : x);
+        next.push(created);
+        return next;
+      });
+      setSelectedId(created.id);
+      setRecropTargetId(null);
+    } catch (e: any) { setError(e.message || 'Re-crop failed'); }
+    finally { setRecropping(false); }
+  };
+
+  const handleDiagnose = async () => {
+    setDiagnosing(true);
+    try {
+      const res = await fetch(`/api/legends/${legendId}/diagnose`, { method: 'POST' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((d as any).error || `Diagnose failed (${res.status})`);
+      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
+      if (sr.ok) { const j = await sr.json(); if (Array.isArray(j)) setSymbols(j); }
+    } catch (e: any) { setError(e.message || 'Diagnose failed'); }
+    finally { setDiagnosing(false); }
+  };
   const handleDeleteSymbol = async (id: string) => {
     if (!confirm('Delete this symbol permanently?')) return;
     try {
@@ -396,6 +513,8 @@ export default function LegendReviewPage() {
   };
   const handleSaveEdit = async () => {
     if (!editForm.asset_type?.trim()) { setError('Asset type required'); return; }
+    const tpErr = validateTagPattern(editForm.tag_pattern ?? null);
+    if (tpErr) { setError(tpErr); return; }
     try {
       // normalize aliases — DB may return string/object
       let aliases: string[] = [];
@@ -447,13 +566,25 @@ export default function LegendReviewPage() {
     const drafts = symbols.filter(s => s.status === 'DRAFT').length;
     if (drafts > 0 && !confirm(`${drafts} symbols still in draft. Finalize anyway?`)) return;
     setFinalizing(true);
-    try { const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE' }) }); if (!r.ok) throw new Error(); router.push(`/legends/${legendId}`); } catch { setError('Finalize failed'); } finally { setFinalizing(false); }
+    try {
+      const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE', strictQuality: true }) });
+      if (r.status === 409) {
+        const d = await r.json().catch(() => ({}));
+        const msg = `Quality gate: ${(d as any).unassessed ?? 0} unassessed, ${(d as any).in_review ?? 0} in review, ${(d as any).drafts ?? 0} drafts. Only VALIDATED references feed the matcher.\n\nFinalize anyway?`;
+        if (!confirm(msg)) return;
+        const r2 = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE', strictQuality: true, force: true }) });
+        if (!r2.ok) throw new Error();
+      } else if (!r.ok) throw new Error();
+      router.push(`/legends/${legendId}`);
+    } catch { setError('Finalize failed'); } finally { setFinalizing(false); }
   };
 
   // ── Add Symbol modal save handler ────────────────────────────────────────
   const handleAddSymbolSave = async () => {
     if (addSaving) return; // guard against double-click / StrictMode double-invoke
     if (!addForm.assetType.trim()) { setError('Asset Type is required'); return; }
+    const tpErr = validateTagPattern(addForm.tagPattern || null);
+    if (tpErr) { setError(tpErr); return; }
     setAddSaving(true);
     try {
       const body = {
@@ -489,17 +620,31 @@ export default function LegendReviewPage() {
   if (loading) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-subtle)' }}>Loading…</div>;
   if (!legend) return <div style={{ padding: 64, textAlign: 'center', color: 'var(--foreground-muted)' }}>Legend not found</div>;
 
-  const filteredSymbols = symSearch.trim()
-    ? symbols.filter(s => {
-        const q = symSearch.toLowerCase();
-        return (
-          s.asset_type.toLowerCase().includes(q) ||
-          (s.symbol_name ?? '').toLowerCase().includes(q) ||
-          (s.tag_pattern ?? '').toLowerCase().includes(q) ||
-          (s.description ?? '').toLowerCase().includes(q)
-        );
-      })
-    : symbols;
+  const qualityCounts = {
+    total: symbols.length,
+    validated: symbols.filter(s => s.quality_status === 'validated').length,
+    review: symbols.filter(s => s.quality_status === 'review').length,
+    rejected: symbols.filter(s => s.quality_status === 'rejected').length,
+    missing: symbols.filter(s => !s.reference_image_url).length,
+  };
+  const filteredSymbols = symbols.filter(s => {
+    if (symSearch.trim()) {
+      const q = symSearch.toLowerCase();
+      const hit = (
+        s.asset_type.toLowerCase().includes(q) ||
+        (s.symbol_name ?? '').toLowerCase().includes(q) ||
+        (s.tag_pattern ?? '').toLowerCase().includes(q) ||
+        (s.description ?? '').toLowerCase().includes(q)
+      );
+      if (!hit) return false;
+    }
+    if (qualityTab === 'validated' && s.quality_status !== 'validated') return false;
+    if (qualityTab === 'review' && s.quality_status !== 'review') return false;
+    if (qualityTab === 'rejected' && s.quality_status !== 'rejected') return false;
+    if (qualityTab === 'missing' && s.reference_image_url) return false;
+    if (reasonFilter && !qualityReasonKind(s).includes(reasonFilter)) return false;
+    return true;
+  });
   const totalSymPages = Math.max(1, Math.ceil(filteredSymbols.length / SYMS_PER_PAGE));
   const pagedSymbols = filteredSymbols.slice((symPage - 1) * SYMS_PER_PAGE, symPage * SYMS_PER_PAGE);
 
@@ -565,11 +710,18 @@ export default function LegendReviewPage() {
         <div style={{ minWidth: 0 }}>
           <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)', margin: 0, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{legend.name}</h1>
           <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
+          <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>
+            <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓{qualityCounts.validated} Valid</span>
+            {' · '}<span style={{ color: '#b45309', fontWeight: 700 }}>⚠{qualityCounts.review} Review</span>
+            {' · '}<span style={{ color: 'var(--danger)', fontWeight: 700 }}>✕{qualityCounts.rejected} Rejected</span>
+            {' · '}<span style={{ fontWeight: 700 }}>?{qualityCounts.missing} Missing</span>
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={handleDiagnose} disabled={diagnosing} title="Run deterministic quality diagnostics (ink/border/text/geometry/duplicates)" style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: diagnosing ? 'var(--surface-muted)' : 'var(--surface)', color: 'var(--primary)', fontSize: 12, fontWeight: 600, cursor: diagnosing ? 'wait' : 'pointer', opacity: diagnosing ? 0.6 : 1 }}>{diagnosing ? 'Diagnosing…' : '◉ Diagnose'}</button>
           <button onClick={handleReparse} disabled={reparsing} style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: reparsing ? 0.6 : 1 }}>{reparsing ? 'Re-parsing…' : '↺ Re-parse'}</button>
           <button
-            onClick={() => setDrawMode(v => !v)}
+            onClick={() => { setDrawMode(v => !v); setRecropTargetId(null); }}
             title={drawMode ? 'Cancel draw mode' : 'Drag on the PDF to mark a new symbol area'}
             style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: `1px solid ${drawMode ? '#dc2626' : 'var(--border)'}`, background: drawMode ? '#dc2626' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
           >{drawMode ? '✕ Cancel' : '✏ Add Symbol'}</button>
@@ -634,7 +786,7 @@ export default function LegendReviewPage() {
                       const isSel = sym.id === selectedId;
                       const x = (sym.bbox_x! / 1000) * cssW; const y = (sym.bbox_y! / 1000) * cssH;
                       const w = (sym.bbox_w! / 1000) * cssW; const h = (sym.bbox_h! / 1000) * cssH;
-                      const color = sym.status === 'REJECTED' ? 'var(--success)' : 'var(--success)';
+                      const color = sym.status === 'REJECTED' ? 'var(--danger)' : 'var(--success)';
                       const rx = dragBbox?.id === sym.id ? dragBbox.x : x; const ry = dragBbox?.id === sym.id ? dragBbox.y : y;
                       const rw = dragBbox?.id === sym.id ? dragBbox.w : w; const rh = dragBbox?.id === sym.id ? dragBbox.h : h;
                       const label = (sym.symbol_name || sym.asset_type).slice(0, 16);
@@ -723,6 +875,80 @@ export default function LegendReviewPage() {
                     style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1, padding: 0 }}>×</button>
                 )}
               </div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {(['all', 'validated', 'review', 'rejected', 'missing'] as QualityTab[]).map(t => {
+                  const n = t === 'all' ? qualityCounts.total : qualityCounts[t];
+                  const active = qualityTab === t;
+                  return (
+                    <button key={t} onClick={() => { setQualityTab(t); setSymPage(1); }}
+                      style={{ padding: '3px 8px', fontSize: 10, fontWeight: 700, borderRadius: 999, border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`, background: active ? 'var(--primary)' : 'var(--surface)', color: active ? '#fff' : 'var(--foreground-muted)', cursor: 'pointer', textTransform: 'uppercase' }}>
+                      {t} {n}
+                    </button>
+                  );
+                })}
+                <select value={reasonFilter} onChange={e => { setReasonFilter(e.target.value as ReasonFilter); setSymPage(1); }}
+                  title="Filter by diagnostics reason"
+                  style={{ padding: '3px 6px', fontSize: 10, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground-muted)', cursor: 'pointer' }}>
+                  <option value="">all reasons</option>
+                  <option value="text">text dominant</option>
+                  <option value="border">border contamination</option>
+                  <option value="blank">blank</option>
+                  <option value="duplicate">possible duplicate</option>
+                  <option value="missing">missing crop</option>
+                </select>
+              </div>
+              {(() => {
+                const sel = symbols.find(x => x.id === selectedId);
+                if (!sel) return null;
+                const f = (sel.computed_features ?? {}) as Record<string, unknown>;
+                return (
+                  <div style={{ border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', padding: 8, background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sel.symbol_name || sel.asset_type}</span>
+                      <QualityBadge s={sel.quality_status} missing={!sel.reference_image_url} />
+                    </div>
+                    {sel.reference_image_url ? (
+                      <img src={`/api/legends/${legendId}/symbols/${sel.id}/crop`} alt="reference crop"
+                        style={{ width: '100%', maxHeight: 120, objectFit: 'contain', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 8, border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)' }}>No crop file</div>
+                    )}
+                    <div style={{ fontSize: 10, color: 'var(--foreground-muted)', fontFamily: 'ui-monospace,monospace' }}>
+                      bbox {sel.bbox_x ?? '–'},{sel.bbox_y ?? '–'},{sel.bbox_w ?? '–'},{sel.bbox_h ?? '–'} · p{sel.pid_page ?? '?'}
+                      {typeof f.inkDensity === 'number' && <> · ink {Number(f.inkDensity).toFixed(3)}</>}
+                      {typeof f.borderScore === 'number' && <> · brd {Number(f.borderScore).toFixed(2)}</>}
+                      {typeof f.textScore === 'number' && <> · txt {Number(f.textScore).toFixed(2)}</>}
+                    </div>
+                    {sel.class_label && <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>Class: <strong>{sel.class_label as string}</strong></div>}
+                    {Array.isArray(sel.quality_reasons) && sel.quality_reasons.length > 0 && (
+                      <ul style={{ margin: 0, paddingLeft: 16, fontSize: 10, color: '#b45309' }}>
+                        {(sel.quality_reasons as string[]).slice(0, 4).map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                    )}
+                    {sel.review_reason && <div style={{ fontSize: 10, color: 'var(--danger)' }}>Review: {sel.review_reason}</div>}
+                    {sel.superseded_by && <div style={{ fontSize: 10, color: 'var(--foreground-subtle)' }}>Superseded by newer version</div>}
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => { setRecropTargetId(sel.id); setDrawMode(true); }} disabled={recropping}
+                        title="Draw a new symbol area on the PDF — creates a versioned reference, raw preserved"
+                        style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--surface)', color: 'var(--primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                        {recropping && recropTargetId === sel.id ? 'Saving…' : recropTargetId === sel.id ? '✏ Drawing… click PDF' : '✂ Re-crop'}
+                      </button>
+                      <button onClick={() => { setRejectModalId(sel.id); setRejectReason(REJECT_REASONS[0]); setRejectNote(sel.review_reason ?? ''); }}
+                        style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
+                        ✕ Reject…
+                      </button>
+                    </div>
+                    {sel.quality_status !== 'validated' && (
+                      <button onClick={() => handleValidate(sel.id)} disabled={!sel.reference_image_url || validatingId === sel.id}
+                        title={sel.reference_image_url ? 'Confirm this corrected reference as matcher-eligible' : 'Missing crop — cannot validate'}
+                        style={{ width: '100%', padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: !sel.reference_image_url ? 'not-allowed' : 'pointer', opacity: !sel.reference_image_url ? 0.45 : 1 }}>
+                        {validatingId === sel.id ? 'Validating…' : '✓ Mark Validated'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {pagedSymbols.length === 0 ? (
@@ -736,13 +962,17 @@ export default function LegendReviewPage() {
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{sym.asset_type}</span>
                     <StatusBadge s={sym.status} />
                   </div>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                    <QualityBadge s={sym.quality_status} missing={!sym.reference_image_url} />
+                    {sym.class_label && <span style={{ fontSize: 10, color: 'var(--foreground-subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.class_label as string}</span>}
+                  </div>
                   {sym.symbol_name && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.symbol_name}</div>}
                   {sym.tag_pattern && <div style={{ fontSize: 10, fontFamily: 'ui-monospace,monospace', color: 'var(--foreground-subtle)', marginBottom: 6 }}>Tag: {sym.tag_pattern}</div>}
                   <div style={{ display: 'flex', gap: 4 }}>
                     {sym.status === 'DRAFT' && <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--success)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Approve</button>}
                     <button onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }} style={{ flex: 2, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
                     {sym.status !== 'REJECTED'
-                      ? <button onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>✕</button>
+                      ? <button onClick={e => { e.stopPropagation(); setRejectModalId(sym.id); setRejectReason(REJECT_REASONS[0]); setRejectNote(sym.review_reason ?? ''); }} title="Reject with reason" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>✕</button>
                       : <button onClick={e => { e.stopPropagation(); handleApprove(sym.id); }} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 11, cursor: 'pointer' }}>Restore</button>}
                     <button onClick={e => { e.stopPropagation(); handleDeleteSymbol(sym.id); }} title="Delete permanently" style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 12, cursor: 'pointer' }}>🗑</button>
                   </div>
@@ -752,12 +982,42 @@ export default function LegendReviewPage() {
             {/* Pagination — compact */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 8px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)', flexShrink: 0, gap: 6 }}>
               <button onClick={() => setSymPage(p => Math.max(1, p - 1))} disabled={symPage === 1} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === 1 ? 'not-allowed' : 'pointer', opacity: symPage === 1 ? 0.4 : 1 }}>‹ Prev</button>
-              <span style={{ fontSize: 11, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>{symPage} / {totalSymPages} · {(symPage - 1) * SYMS_PER_PAGE + 1}-{Math.min(symPage * SYMS_PER_PAGE, symbols.length)} of {symbols.length}</span>
+              <span style={{ fontSize: 11, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>{symPage} / {totalSymPages} · {(symPage - 1) * SYMS_PER_PAGE + 1}-{Math.min(symPage * SYMS_PER_PAGE, filteredSymbols.length)} of {filteredSymbols.length}</span>
               <button onClick={() => setSymPage(p => Math.min(totalSymPages, p + 1))} disabled={symPage === totalSymPages} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: symPage === totalSymPages ? 'not-allowed' : 'pointer', opacity: symPage === totalSymPages ? 0.4 : 1 }}>Next ›</button>
             </div>
           </aside>
         )}
       </div>
+
+      {/* Reject modal — reason required for audit */}
+      {rejectModalId && (() => {
+        const sym = symbols.find(x => x.id === rejectModalId);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
+            onClick={e => { if (e.target === e.currentTarget) setRejectModalId(null); }}>
+            <div style={{ ...cardStyle, padding: 16, width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 16px 40px rgba(0,0,0,0.18)' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
+                Reject “{(sym?.symbol_name || sym?.asset_type || '').slice(0, 40)}”
+              </h3>
+              <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: 0 }}>The reference stays in the database for audit — it will never feed the matcher.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {REJECT_REASONS.map(r => (
+                  <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', color: 'var(--foreground)' }}>
+                    <input type="radio" name="reject-reason" checked={rejectReason === r} onChange={() => setRejectReason(r)} />
+                    {r}
+                  </label>
+                ))}
+              </div>
+              <input value={rejectNote} onChange={e => setRejectNote(e.target.value)} placeholder="Optional note…"
+                style={{ padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleRejectWithReason} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                <button onClick={() => setRejectModalId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Edit modal */}
       {editingId && (

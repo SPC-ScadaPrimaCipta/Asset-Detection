@@ -675,6 +675,145 @@ def legend_defs_from_crops_endpoint(body: dict) -> JSONResponse:
         return _err(ERR_INTERNAL, f"defs-from-crops failed: {exc}", 500)
 
 
+@app.post("/legend/diagnostics")
+def legend_diagnostics_endpoint(body: dict) -> JSONResponse:
+    """Stage 2 — quality assessment of existing legend reference crops.
+
+    Input: {legendId, symbols:[{symbolId,label,cropPngBase64,
+             pageBBox?, pageNumber?}], pagePngBase64?, pageNumber?}.
+    Output: per-reference quality (ink/border/text/whitespace/geometry +
+      validated|review|rejected + reasons), duplicate groups, statistics,
+      contact-sheet.png + page-overlay.png (base64). Read-only: nothing is
+      deleted, overwritten, or grouped into classes here.
+    """
+    from legend_diagnostics import (
+        analyze_crop,
+        cluster_duplicates,
+        draw_contact_sheet,
+        draw_page_overlay,
+    )
+    from preprocess import to_grayscale
+    timer = Timer()
+    try:
+        legend_id = str(body.get("legendId", ""))
+        symbols = body.get("symbols") or []
+        if not legend_id or not symbols:
+            return _err(ERR_INVALID_IMAGE, "legendId and symbols[] required", 400)
+        qualities: list[dict] = []
+        thumbs: dict[str, object] = {}
+        gray_crops: dict[str, object] = {}
+        labels: dict[str, str] = {}
+        with timer.stage("analyze"):
+            for s in symbols:
+                sid = str(s.get("symbolId", ""))
+                label = str(s.get("label", ""))
+                b64 = s.get("cropPngBase64", "")
+                q = analyze_crop(sid, label, b64)
+                qualities.append({**q.to_dict(),
+                                  "pageNumber": int(s.get("pageNumber", 1)),
+                                  "pageBBox": s.get("pageBBox"),
+                                  "cropPath": s.get("cropPath")})
+                labels[sid] = label
+                try:
+                    import base64 as _b64
+                    import numpy as _np
+                    import cv2 as _cv2
+                    raw = _b64.b64decode(b64)
+                    g = _cv2.imdecode(_np.frombuffer(raw, dtype=_np.uint8),
+                                      _cv2.IMREAD_GRAYSCALE)
+                    if g is not None:
+                        gray_crops[sid] = g
+                        thumbs[sid] = g
+                except Exception:
+                    pass
+        with timer.stage("duplicates"):
+            groups = cluster_duplicates(
+                {k: v for k, v in gray_crops.items()}, labels) \
+                if gray_crops else {}
+            for q in qualities:
+                q["duplicateGroup"] = groups.get(q["symbolId"])
+        counts = {"validated": 0, "review": 0, "rejected": 0}
+        for q in qualities:
+            counts[q["status"]] = counts.get(q["status"], 0) + 1
+        uniq_groups = len(set(groups.values())) if groups else 0
+        dupe_refs = sum(1 for q in qualities if q["duplicateGroup"]) - uniq_groups \
+            if groups else 0
+        stats = {
+            "totalReferences": len(qualities),
+            "validated": counts.get("validated", 0),
+            "review": counts.get("review", 0),
+            "rejected": counts.get("rejected", 0),
+            "uniqueGroups": uniq_groups,
+            "duplicateReferences": max(0, dupe_refs),
+            "pipelineVersion": PIPELINE_VERSION,
+            "legendPipelineVersion": "legend-diag-v1",
+        }
+        artifacts: dict[str, str | None] = {
+            "contactSheetPng": None, "pageOverlayPng": None}
+        with timer.stage("artifacts"):
+            import base64 as _b64
+            import cv2 as _cv2
+            items = [{
+                "ref": q["symbolId"][:8], "label": q["label"],
+                "status": q["status"], "ink": q["inkDensity"],
+                "border": q["borderScore"], "text": q["textScore"],
+                "group": q["duplicateGroup"] or "-",
+                "_thumb": thumbs.get(q["symbolId"]),
+            } for q in qualities]
+            sheet = draw_contact_sheet([it for it in items
+                                        if it["_thumb"] is not None])
+            ok, buf = _cv2.imencode(".png", sheet)
+            if ok:
+                artifacts["contactSheetPng"] = _b64.b64encode(
+                    buf.tobytes()).decode()
+            page_b64 = body.get("pagePngBase64", "")
+            if page_b64:
+                try:
+                    page = to_grayscale(_decode_png(page_b64))
+                    import numpy as _np2
+                    page_bgr = _np2.stack([page, page, page], axis=-1)
+                    boxes = []
+                    for q in qualities:
+                        pb = q.get("pageBBox") or {}
+                        if pb.get("width") and pb.get("height"):
+                            boxes.append({
+                                "kind": "REFERENCE",
+                                "ref": q["symbolId"][:8],
+                                "bbox": pb,
+                            })
+                            ib = q.get("inkBBox") or {}
+                            if ib.get("width") and ib.get("height"):
+                                # Ink box is crop-local; map via pageBBox
+                                # origin (crop == pageBBox region).
+                                boxes.append({
+                                    "kind": "SYMBOL",
+                                    "ref": q["symbolId"][:8],
+                                    "bbox": {
+                                        "x": pb["x"] + ib["x"],
+                                        "y": pb["y"] + ib["y"],
+                                        "width": ib["width"],
+                                        "height": ib["height"],
+                                    },
+                                })
+                    over = draw_page_overlay(page_bgr, boxes)
+                    ok2, buf2 = _cv2.imencode(".png", over)
+                    if ok2:
+                        artifacts["pageOverlayPng"] = _b64.b64encode(
+                            buf2.tobytes()).decode()
+                except Exception:
+                    pass
+        return JSONResponse({
+            "legendId": legend_id,
+            "qualities": qualities,
+            "statistics": stats,
+            "artifacts": artifacts,
+            "timings": timer.as_dicts(),
+            "pipelineVersion": PIPELINE_VERSION,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return _err(ERR_INTERNAL, f"legend diagnostics failed: {exc}", 500)
+
+
 @app.post("/legend/label-match")
 def legend_label_match_endpoint(body: dict) -> JSONResponse:
     """Deterministic label/alias matching (explicit aliases only)."""
