@@ -2507,21 +2507,58 @@ function DetectionWorkspace() {
   const searchParams = useSearchParams();
   const initProjectId = searchParams.get("project_id") ?? "";
 
+  // Load from localStorage on mount
+  const [projectId, setProjectId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_projectId') || initProjectId;
+    return initProjectId;
+  });
+  const [documentId, setDocumentId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_documentId') || "";
+    return "";
+  });
+  const [legendId, setLegendId] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('det_legendId') || "";
+    return "";
+  });
+  const [currentPage, setCurrentPage] = useState<number | null>(() => {
+    if (typeof window !== 'undefined') {
+      const p = localStorage.getItem('det_currentPage');
+      return p ? parseInt(p, 10) : null;
+    }
+    return null;
+  });
+
+  // Sync to localStorage
+  useEffect(() => {
+    if (projectId) localStorage.setItem('det_projectId', projectId);
+    else localStorage.removeItem('det_projectId');
+  }, [projectId]);
+
+  useEffect(() => {
+    if (documentId) localStorage.setItem('det_documentId', documentId);
+    else localStorage.removeItem('det_documentId');
+  }, [documentId]);
+
+  useEffect(() => {
+    if (legendId) localStorage.setItem('det_legendId', legendId);
+    else localStorage.removeItem('det_legendId');
+  }, [legendId]);
+
+  useEffect(() => {
+    if (currentPage) localStorage.setItem('det_currentPage', String(currentPage));
+    else localStorage.removeItem('det_currentPage');
+  }, [currentPage]);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [legends, setLegends] = useState<Legend[]>([]);
   const [detections, setDetections] = useState<Detection[]>([]);
-
-  const [projectId, setProjectId] = useState(initProjectId);
-  const [documentId, setDocumentId] = useState("");
-  const [legendId, setLegendId] = useState("");
 
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(
     null,
   );
-  const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
   // Draw-to-add: tekan Add Assets Manually → mode draw di viewer → konfirmasi kotak → modal
   const [drawMode, setDrawMode] = useState(false);
