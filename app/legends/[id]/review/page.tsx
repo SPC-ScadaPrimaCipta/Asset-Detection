@@ -1076,7 +1076,7 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
                       <PencilSimple size={12} />Edit
                     </Button>
                     {sym.status !== 'REJECTED' ? (
-                      <Button variant="danger" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleReject(sym.id); }} title="Reject">
+                      <Button variant="danger" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); setRejectModalId(sym.id); }} title="Reject">
                         <XCircle size={12} />Reject
                       </Button>
                     ) : (

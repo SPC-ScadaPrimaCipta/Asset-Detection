@@ -7,6 +7,7 @@ import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { extractLegendSymbolsRobust } from '@/lib/legend-extract';
 import { cropPageRegion } from '@/lib/image-crop';
 import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
+import { hashImage } from '@/lib/symbol-cache';
 import { cropAndSaveSymbol } from '@/lib/legend-crop';
 
 export async function POST(request: NextRequest) {

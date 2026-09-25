@@ -40,16 +40,6 @@ CREATE TABLE legend_symbols (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE legend_symbol_edits (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    symbol_id UUID REFERENCES legend_symbols(id) ON DELETE CASCADE,
-    legend_id UUID REFERENCES legends(id) ON DELETE CASCADE,
-    action TEXT NOT NULL CHECK (action IN ('CREATE','UPDATE','DELETE','APPROVE','REJECT')),
-    old_values JSONB,
-    new_values JSONB,
-    performed_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,

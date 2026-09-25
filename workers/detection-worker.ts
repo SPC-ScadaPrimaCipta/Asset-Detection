@@ -28,8 +28,6 @@ import {
   processPageDeterministic,
   type DetStageCounts,
 } from "@/lib/detection/pipeline/deterministic-page";
-import { buildKnownTagSet } from "@/lib/ocr-candidate";
-import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
 import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
 
 /**
@@ -318,6 +316,10 @@ export const worker = new Worker(
         try {
           // ── HYBRID PIPELINE: CV first, Gemini fills gaps ─────────────────
           if (cvAvailable && pageImageBase64 && pngDimensions) {
+            // Const copies: narrowing on `let` is lost across awaits below.
+            // `as` casts are safe here — guarded by the `if` above.
+            const pageB64 = pageImageBase64 as string;
+            const pngDims = pngDimensions as { width: number; height: number };
             // Step 1: CV deterministic detection (persist ke DB sendiri)
             const cvResult = await cvDetectPage({
               buf,
@@ -383,9 +385,9 @@ export const worker = new Worker(
               // Step 3: Gemini gap-filler — hanya untuk area CV tidak confident
               const fused = await fillGapsWithGemini({
                 page,
-                pageImageBase64,
-                pngWidth: pngDimensions.width,
-                pngHeight: pngDimensions.height,
+                pageImageBase64: pageB64,
+                pngWidth: pngDims.width,
+                pngHeight: pngDims.height,
                 legendId: effectiveLegendId ?? '',
                 legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
                 cvDetections: cvDets,
