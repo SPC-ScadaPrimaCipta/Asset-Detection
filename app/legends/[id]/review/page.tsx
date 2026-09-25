@@ -48,10 +48,10 @@ function StatusBadge({ s }: { s: string }) {
 function QualityBadge({ s, missing }: { s: string | null; missing?: boolean }) {
   const base: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 600, lineHeight: '14px' };
   if (missing) return <span style={{ ...base, background: '#e5e7eb', color: '#6b7280' }}>MISSING</span>;
-  if (s === 'validated') return <span style={{ ...base, background: 'var(--success-soft)', color: 'var(--success)' }}>✓ VALIDATED</span>;
-  if (s === 'rejected') return <span style={{ ...base, background: 'var(--danger-soft)', color: 'var(--danger)' }}>✕ REJECTED</span>;
-  if (s === 'review') return <span style={{ ...base, background: '#fef3c7', color: '#b45309' }}>⚠ REVIEW</span>;
-  return <span style={{ ...base, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>UNASSESSED</span>;
+  if (s === 'validated') return <span style={{ ...base, background: 'var(--success-soft)', color: 'var(--success)' }}>VALIDATED</span>;
+  if (s === 'rejected') return <span style={{ ...base, background: 'var(--danger-soft)', color: 'var(--danger)' }}>REJECTED</span>;
+  if (s === 'review') return <span style={{ ...base, background: '#fef3c7', color: '#b45309' }}>REVIEW</span>;
+  return <span style={{ ...base, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>REVIEW</span>;
 }
 
 function qualityReasonKind(sym: LegendSymbol): string[] {
@@ -946,9 +946,9 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
           </div>
         </div>
 
-        {/* Symbols ΓÇö paginated, no page scroll */}
+        {/* Symbols — paginated, no page scroll */}
         {showCards && (
-          <aside style={{ ...cardStyle, width: 300, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+          <aside style={{ ...cardStyle, width: 360, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>Symbols</span>
@@ -1066,25 +1066,25 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
                   </div>
                   {sym.symbol_name && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sym.symbol_name}</div>}
                   {sym.tag_pattern && <div style={{ fontSize: 10, fontFamily: 'ui-monospace,monospace', color: 'var(--foreground-subtle)', marginBottom: 6 }}>Tag: {sym.tag_pattern}</div>}
-                  <div style={{ display: 'flex', gap: 4 }}>
-{sym.status === 'DRAFT' && (
-                      <Button variant="approve" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }}>
+                    {sym.status === 'DRAFT' && (
+                      <Button variant="approve" size="sm" style={{ width: '100%', padding: '0 6px', fontSize: 11 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
                         <CheckCircle size={12} />Approve
                       </Button>
                     )}
-                    <Button variant="edit" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }}>
+                    <Button variant="edit" size="sm" style={{ width: '100%', padding: '0 6px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setEditingId(sym.id); setEditForm(sym); }}>
                       <PencilSimple size={12} />Edit
                     </Button>
                     {sym.status !== 'REJECTED' ? (
-                      <Button variant="danger" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); setRejectModalId(sym.id); }} title="Reject">
+                      <Button variant="danger" size="sm" style={{ flex: 1, width: '100%', padding: '0 6px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setRejectModalId(sym.id); setRejectReason(REJECT_REASONS[0]); setRejectNote(sym.review_reason ?? ''); }} title="Reject">
                         <XCircle size={12} />Reject
                       </Button>
                     ) : (
-                      <Button variant="secondary" size="sm" style={{ flex: 1 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
+                      <Button variant="secondary" size="sm" style={{ width: '100%', padding: '0 6px', fontSize: 11 }} onClick={e => { e.stopPropagation(); handleApprove(sym.id); }}>
                         <ArrowCounterClockwise size={12} />Restore
                       </Button>
                     )}
-                    <Button variant="danger" size="sm" style={{ flex: 1, background: '#8B3A38', borderColor: '#8B3A38' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(sym.id); }} title="Delete permanently">
+                    <Button variant="danger" size="sm" style={{ width: '100%', padding: '0 6px', fontSize: 11, background: '#8B3A38', borderColor: '#8B3A38' }} onClick={e => { e.stopPropagation(); setConfirmDeleteId(sym.id); }} title="Delete permanently">
                       <Trash size={12} />Delete
                     </Button>
                   </div>

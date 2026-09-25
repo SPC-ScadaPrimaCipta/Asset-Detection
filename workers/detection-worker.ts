@@ -17,17 +17,21 @@ import {
 import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
 // ── Hybrid CV + Gemini pipeline ──────────────────────────────────────────────
 import { cvHealth } from "@/lib/detection/cv-client";
-import { processPageDeterministic as cvDetectPage, loadLegendDefs } from "@/lib/detection/pipeline/deterministic-page";
-import { fillGapsWithGemini, toCvDetections } from "@/lib/detection/fusion/gemini-gap-filler";
-import { detectionConfig } from "@/lib/detection/config";
-import { persistDetections } from "@/lib/detection/persistence/detection-repository";
 import {
   filterEligibleSymbols,
   legendTagPatterns,
-  loadLegendDefs as loadLegendDefsAlias,
+  loadLegendDefs,
   processPageDeterministic,
   type DetStageCounts,
 } from "@/lib/detection/pipeline/deterministic-page";
+import {
+  processPageDeterministic,
+  type DetStageCounts,
+} from "@/lib/detection/pipeline/deterministic-page";
+import { fillGapsWithGemini, toCvDetections } from "@/lib/detection/fusion/gemini-gap-filler";
+import { detectionConfig } from "@/lib/detection/config";
+import { persistDetections } from "@/lib/detection/persistence/detection-repository";
+import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
 import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
 
 /**
@@ -321,7 +325,7 @@ export const worker = new Worker(
             const pageB64 = pageImageBase64 as string;
             const pngDims = pngDimensions as { width: number; height: number };
             // Step 1: CV deterministic detection (persist ke DB sendiri)
-            const cvResult = await cvDetectPage({
+            const cvResult = await processPageDeterministic({
               buf,
               page,
               jobId,
@@ -385,9 +389,9 @@ export const worker = new Worker(
               // Step 3: Gemini gap-filler — hanya untuk area CV tidak confident
               const fused = await fillGapsWithGemini({
                 page,
-                pageImageBase64: pageB64,
-                pngWidth: pngDims.width,
-                pngHeight: pngDims.height,
+                pageImageBase64: pageImageBase64 ?? pageB64,
+                pngWidth: pngDimensions?.width ?? pngDims.width,
+                pngHeight: pngDimensions?.height ?? pngDims.height,
                 legendId: effectiveLegendId ?? '',
                 legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
                 cvDetections: cvDets,
