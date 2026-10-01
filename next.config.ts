@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
 
 module.exports = {
   ...nextConfig,
-  allowedDevOrigins: ['192.168.68.86'],
+  allowedDevOrigins: ['192.168.68.69'],
   serverExternalPackages: ['mupdf', 'sharp', 'canvas'],
 }
 

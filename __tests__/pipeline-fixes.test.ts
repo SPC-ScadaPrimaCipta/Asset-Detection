@@ -1,22 +1,16 @@
 /**
- * Regression tests for pipeline fixes #1–5
+ * Regression tests for pipeline fixes #2, #4, #5
  *
- * Fix #1: buildKnownTagSet stores full asset_tag, not just prefix
  * Fix #2: ocrScore uses full asset tag match (not prefix+dash)
- * Fix #3: sectionSpatialScore replaces flat 0.5 for position-less tokens
  * Fix #4: confirm route copies main_equipment/field_confidence/field_provenance to assets
  * Fix #5: field-level null enforcement threshold before persisting detections
  *
+ * Fixes #1 and #3 (buildKnownTagSet, sectionSpatialScore) belonged to the OCR
+ * tag-candidate pipeline and were removed with it — detection is 100% Gemini
+ * Vision now.
+ *
  * All tests use pure functions / stubs — no real DB, no real AI API calls.
  */
-
-import {
-  buildKnownTagSet,
-  rankTagCandidates,
-  extractTagTokens,
-  normalizeTag,
-  sectionSpatialScore,
-} from '@/lib/ocr-candidate';
 
 import {
   fuseConfidence,
@@ -31,86 +25,6 @@ import {
 } from '@/lib/ai-agent';
 
 import type { ResolvedDetection } from '@/lib/ai-agent';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FIX #1 — buildKnownTagSet: full tags, not just prefix
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Fix #1 — buildKnownTagSet full tag support', () => {
-  it('includes full asset_tag in known set', () => {
-    const set = buildKnownTagSet([
-      { asset_tag: 'P-101', tag_prefix: 'P' },
-      { asset_tag: 'XV-301', tag_prefix: 'XV' },
-    ]);
-    expect(set.has('P-101')).toBe(true);
-    expect(set.has('XV-301')).toBe(true);
-  });
-
-  it('does NOT include prefix when asset_tag is present', () => {
-    const set = buildKnownTagSet([{ asset_tag: 'P-101', tag_prefix: 'P' }]);
-    expect(set.has('P')).toBe(false);
-    expect(set.size).toBe(1);
-  });
-
-  it('includes prefix as fallback when asset_tag is null', () => {
-    const set = buildKnownTagSet([{ asset_tag: null, tag_prefix: 'XV' }]);
-    expect(set.has('XV')).toBe(true);
-    expect(set.size).toBe(1);
-  });
-
-  it('mixed: full tag + prefix-only entries', () => {
-    const set = buildKnownTagSet([
-      { asset_tag: 'P-101', tag_prefix: 'P' },  // full tag → prefix suppressed
-      { asset_tag: null, tag_prefix: 'XV' },      // no full tag → prefix added
-    ]);
-    expect(set.has('P-101')).toBe(true);
-    expect(set.has('XV')).toBe(true);
-    expect(set.has('P')).toBe(false);
-    expect(set.size).toBe(2);
-  });
-
-  it('uppercases and trims all entries', () => {
-    const set = buildKnownTagSet([{ asset_tag: ' p-101 ', tag_prefix: null }]);
-    expect(set.has('P-101')).toBe(true);
-  });
-
-  it('FIX: edit distance "P-10I" → "P-101" works with full tag set', () => {
-    // Root cause: prefix-only set {"P"} → editDistance("P-10I","P")=4 → no match
-    // Fix: full tag set {"P-101"} → editDistance("P-10I","P-101")=1 → match
-    const known = buildKnownTagSet([{ asset_tag: 'P-101', tag_prefix: null }]);
-    const result = normalizeTag('P-10I', known);
-    expect(result.normalized).toBe('P-101');
-    expect(result.normalized_by).not.toBe('none');
-  });
-
-  it('BUG DEMO: prefix-only set cannot normalize "P-10I"', () => {
-    const prefixOnly = new Set(['P']);
-    const result = normalizeTag('P-10I', prefixOnly);
-    // editDistance("P-10I","P")=4 — threshold is 1 → no match → no normalization
-    expect(result.normalized_by).toBe('none');
-  });
-
-  it('char_substitution I→1 works with full tag set', () => {
-    const known = buildKnownTagSet([{ asset_tag: 'XV-301', tag_prefix: null }]);
-    const result = normalizeTag('XV-30I', known);
-    expect(result.normalized).toBe('XV-301');
-    expect(['char_substitution', 'edit_distance_1']).toContain(result.normalized_by);
-  });
-
-  it('knowledge_match=true when full tag matches', () => {
-    const tokens = extractTagTokens('P-101 V-201');
-    const known = buildKnownTagSet([{ asset_tag: 'P-101', tag_prefix: null }]);
-    const candidates = rankTagCandidates(
-      tokens,
-      { x: 100, y: 100, width: 50, height: 50 },
-      known
-    );
-    const p = candidates.find(c => c.original === 'P-101');
-    const v = candidates.find(c => c.original === 'V-201');
-    expect(p?.knowledge_match).toBe(true);
-    expect(v?.knowledge_match).toBe(false);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX #2 — computeOcrScore: full tag match, not prefix+dash
@@ -160,81 +74,6 @@ describe('Fix #2 — computeOcrScore full tag accuracy', () => {
 
   it('empty OCR string → null (no text to check)', () => {
     expect(computeOcrScore('P-101', '')).toBeNull();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FIX #3 — sectionSpatialScore: page grid, not flat 0.5
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Fix #3 — sectionSpatialScore page grid scoring', () => {
-  const topLeft = { x: 0, y: 0, width: 200, height: 200 };
-  const bottomRight = { x: 800, y: 800, width: 200, height: 200 };
-  const center = { x: 400, y: 400, width: 100, height: 100 };
-
-  it('same section (idx=0, total=1, symbol at top-left) → 0.80', () => {
-    expect(sectionSpatialScore(topLeft, 0, 1)).toBe(0.80);
-  });
-
-  it('opposite corner (symbol bottom-right, token at idx=0 of 1) → 0.10 (6x6 grid)', () => {
-    // M6 fix: 6x6 grid. Symbol col=5,row=5. Token idx=0 of 1 → col=0,row=0.
-    // gridDist = |5-0|+|5-0| = 10 → 0.80 - 10*0.07 = 0.10 (min clamped)
-    expect(sectionSpatialScore(bottomRight, 0, 1)).toBe(0.10);
-  });
-
-  it('total=0 → fallback 0.5', () => {
-    expect(sectionSpatialScore(topLeft, 0, 0)).toBe(0.5);
-  });
-
-  it('always in [0.10, 0.80] for non-zero total', () => {
-    const bboxes = [topLeft, bottomRight, center];
-    for (const bbox of bboxes) {
-      for (let t = 1; t <= 10; t++) {
-        for (let i = 0; i < t; i++) {
-          const s = sectionSpatialScore(bbox, i, t);
-          expect(s).toBeGreaterThanOrEqual(0.10);
-          expect(s).toBeLessThanOrEqual(0.80);
-        }
-      }
-    }
-  });
-
-  it('never returns 0.5 for non-zero total', () => {
-    // 0.5 was the old flat value — must not appear in section scoring
-    for (let t = 1; t <= 5; t++) {
-      for (let i = 0; i < t; i++) {
-        expect(sectionSpatialScore(topLeft, i, t)).not.toBe(0.5);
-      }
-    }
-  });
-
-  it('tokens closer to symbol section score higher', () => {
-    // Symbol at top-left. In 10 tokens, first tokens are estimated near top.
-    const scoreFirst = sectionSpatialScore(topLeft, 0, 10);
-    const scoreLast = sectionSpatialScore(topLeft, 9, 10);
-    expect(scoreFirst).toBeGreaterThanOrEqual(scoreLast);
-  });
-
-  it('rankTagCandidates uses section scores (not flat 0.5)', () => {
-    const tokens = extractTagTokens('P-101 V-201 XV-301 FIC-401 LT-501 PT-601');
-    const candidates = rankTagCandidates(
-      tokens,
-      bottomRight,
-      new Set(),
-      6
-    );
-    candidates.forEach(c => {
-      expect(c.spatial_score).not.toBe(0.5);
-      expect(c.spatial_score).toBeGreaterThanOrEqual(0.10);
-      expect(c.spatial_score).toBeLessThanOrEqual(0.80);
-    });
-  });
-
-  it('multiple tokens produce differentiated section scores', () => {
-    const tokens = extractTagTokens('P-101 V-201 XV-301 FIC-401 LT-501');
-    const candidates = rankTagCandidates(tokens, bottomRight, new Set(), 5);
-    const scores = new Set(candidates.map(c => c.spatial_score));
-    expect(scores.size).toBeGreaterThan(1); // not all identical
   });
 });
 
@@ -414,7 +253,7 @@ describe('Confidence Fusion — evidence combination', () => {
 // CALIBRATION — confidence penalty logic
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('calibrateConfidence — OCR + bbox penalties', () => {
+describe('calibrateConfidence — tag + bbox penalties', () => {
   function makeResolved(overrides: Partial<ResolvedDetection> = {}): ResolvedDetection {
     return {
       assetType: 'Pump',
@@ -429,6 +268,12 @@ describe('calibrateConfidence — OCR + bbox penalties', () => {
       location: null,
       unit: null,
       area: null,
+      size: null,
+      fromRef: null,
+      toRef: null,
+      ofOrAtRef: null,
+      descriptionProposed: null,
+      tagNoProposed: null,
       legendSymbol: null,
       detection_source: 'LEGEND',
       rule_applied: 'Step 2: Legend match',
@@ -446,15 +291,15 @@ describe('calibrateConfidence — OCR + bbox penalties', () => {
     };
   }
 
-  it('no penalty when tag confirmed in OCR', () => {
-    const [r] = calibrateConfidence([makeResolved()], 'P-101 pump inlet valve');
+  it('no penalty for a clean detection with a tag', () => {
+    const [r] = calibrateConfidence([makeResolved()]);
     expect(r.confidence).toBe(0.90);
     expect(r.validation_status).toBe('VALID');
   });
 
-  it('OCR penalty when tag NOT in OCR text', () => {
-    const [r] = calibrateConfidence([makeResolved({ assetTag: 'P-101' })], 'XV-301 outlet');
-    expect(r.confidence).toBeLessThan(0.90);
+  it('missing tag → small penalty and NEEDS_REVIEW', () => {
+    const [r] = calibrateConfidence([makeResolved({ assetTag: null, confidence: 0.70 })]);
+    expect(r.confidence).toBeLessThan(0.70);
     expect(r.validation_status).toBe('NEEDS_REVIEW');
   });
 

@@ -17,7 +17,8 @@
 import { createHash } from 'crypto';
 import { getAiConfig } from '@/lib/ai-config';
 import { getGeminiClient } from '@/lib/gemini';
-import { detectionConfig } from '@/lib/detection/config';
+import { getGenerationConfig } from '@/lib/ai-generation';
+import { env } from '@/lib/env';
 import {
   extractVerdictJson,
   GeminiVerdictSchema,
@@ -98,8 +99,6 @@ export type GenerateFn = (
   images: { mimeType: string; data: string }[]
 ) => Promise<{ text: string; model: string }>;
 
-const DEFAULT_TIMEOUT_MS = 60_000;
-
 async function defaultTransport(
   prompt: string,
   images: { mimeType: string; data: string }[],
@@ -107,7 +106,10 @@ async function defaultTransport(
 ): Promise<{ text: string; model: string }> {
   const cfg = await getAiConfig();
   const client = await getGeminiClient();
-  const model = client.getGenerativeModel({ model: cfg.geminiModel });
+  const model = client.getGenerativeModel({
+    model: cfg.geminiModel,
+    generationConfig: await getGenerationConfig('verifier'),
+  });
   const parts: unknown[] = [{ text: prompt }];
   for (const img of images) {
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
@@ -115,11 +117,6 @@ async function defaultTransport(
   const res = await Promise.race([
     model.generateContent({
       contents: [{ role: 'user', parts: parts as never[] }],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json',
-      },
     }),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('gemini timeout')), timeoutMs)
@@ -130,7 +127,13 @@ async function defaultTransport(
 
 // Module-level verdict cache: same crop + legend + prompt + pipeline ⇒ same ask.
 const verdictCache = new Map<string, GeminiSection>();
-const CACHE_MAX = 500;
+
+/**
+ * Static scope marker for the verdict cache key. Bump only when the verifier
+ * prompt or verdict schema changes in a way that invalidates old verdicts —
+ * VERIFIER_PROMPT_VERSION already covers the prompt.
+ */
+const CACHE_KEY_SCOPE = 'verifier-v1';
 
 export function cacheKeyFor(req: VerifierRequest): string {
   return createHash('sha256')
@@ -140,7 +143,10 @@ export function cacheKeyFor(req: VerifierRequest): string {
         req.selectedLegend.legendId,
         req.selectedLegend.version,
         VERIFIER_PROMPT_VERSION,
-        detectionConfig.pipelineVersion,
+        // The verdict depends on the prompt, the crop and the legend. It does
+        // NOT depend on the detection pipeline, so a pipeline rename must not
+        // silently invalidate every cached verdict.
+        CACHE_KEY_SCOPE,
       ].join('|')
     )
     .digest('hex');
@@ -223,8 +229,12 @@ export function createVerifierSession(
   config: VerifierConfig = {},
   transport?: GenerateFn
 ): VerifierSession {
-  const maxCalls = config.maxCallsPerPage ?? detectionConfig.geminiBudget.maxCallsPerPage;
-  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // This factory is synchronous, so it reads the env layer rather than awaiting
+  // tuning (which may hit the DB). An explicit VerifierConfig argument still
+  // wins, so callers and tests can override anything.
+  const maxCalls = config.maxCallsPerPage ?? env.VERIFIER_MAX_CALLS_PER_PAGE;
+  const timeoutMs = config.timeoutMs ?? env.VERIFIER_TIMEOUT_MS;
+  const cacheMax = env.VERIFIER_CACHE_MAX_ENTRIES;
   const verifyLow = config.verifyLowBand ?? false;
   let calls = 0;
   let cacheHits = 0;
@@ -339,7 +349,7 @@ export function createVerifierSession(
         model, promptVersion: VERIFIER_PROMPT_VERSION, coerced,
       };
       verdictCache.set(key, { ...section });
-      if (verdictCache.size > CACHE_MAX) {
+      if (verdictCache.size > cacheMax) {
         const oldest = verdictCache.keys().next();
         if (!oldest.done) verdictCache.delete(oldest.value);
       }

@@ -1,89 +1,89 @@
 /**
  * model-resolver.ts
  *
- * Auto-discovers valid models from the provider's API at runtime.
- * Caches result per API key (TTL: 10 min) so detection jobs don't
- * hammer the models endpoint on every page.
+ * Auto-discovers valid models from the provider's API at runtime, so no model id
+ * is baked into the app: Settings (DB) → .env → discovery. Caches the result
+ * per API key to avoid hammering the models endpoint on every page.
  *
  * Priority order for Gemini:
  *   1. User-configured geminiModel (from Settings/env) — if it appears in API list
- *   2. Best available flash model from API (ordered by preference)
- *   3. Any generateContent-capable model from API
+ *   2. Preferred models in configured order (GEMINI_PREFERRED_MODELS)
+ *   3. Any generateContent-capable model from the API
  *
- * Never throws — always returns at least the configured model as fallback
- * so existing behavior is preserved even if API is unreachable.
+ * Never throws — always returns at least the configured model so a discovery
+ * outage degrades to the current setting instead of failing the job.
  */
-
 import { getAiConfig } from '@/lib/ai-config';
+import { getTuning } from '@/lib/tuning';
 
-// In-memory cache: apiKey → { models, expiresAt }
-const cache = new Map<string, { models: string[]; expiresAt: number }>();
-const TTL_MS = 10 * 60 * 1000; // 10 minutes
+interface ModelCacheEntry {
+  models: string[];
+  expiresAt: number;
+}
 
-// Preferred Gemini flash models in priority order
-// Must support: generateContent + image input + responseMimeType: application/json
-// Updated: gemini-2.0/2.5-flash deprecated. gemini-3.5-flash ignores responseMimeType.
-// gemini-3.6-flash is current recommended but can 503; fallback to lite variants.
-const GEMINI_PREFERRED = [
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-lite-latest',
-  'gemini-3.7-flash',
-  'gemini-1.5-flash',
-];
+// In-memory cache: apiKey → entry
+const cache = new Map<string, ModelCacheEntry>();
 
 /**
  * Fetch available Gemini models from REST API.
- * Returns model id list (without "models/" prefix).
- * Returns [] on error.
+ * Returns model id list (without "models/" prefix), or [] on error.
  */
-async function fetchGeminiModels(apiKey: string): Promise<string[]> {
+async function fetchGeminiModels(
+  apiKey: string,
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<string[]> {
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`,
-      { signal: AbortSignal.timeout(8000) }
-    );
+    const res = await fetch(`${baseUrl}/v1beta/models?key=${apiKey}&pageSize=100`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return [];
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       models?: Array<{ name: string; supportedGenerationMethods?: string[] }>;
     };
     return (data.models ?? [])
-      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-      .map(m => m.name.replace('models/', ''));
+      .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+      .map((m) => m.name.replace('models/', ''));
   } catch {
     return [];
   }
 }
 
-/**
- * Fetch available DeepSeek models from REST API.
- * Returns model id list.
- * Returns [] on error.
- */
-async function fetchDeepSeekModels(apiKey: string): Promise<string[]> {
+/** Fetch available DeepSeek models from REST API. Returns [] on error. */
+async function fetchDeepSeekModels(
+  apiKey: string,
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<string[]> {
   try {
-    const res = await fetch('https://api.deepseek.com/models', {
+    const res = await fetch(`${baseUrl}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return [];
-    const data = await res.json() as { data?: Array<{ id: string; object?: string }> };
+    const data = (await res.json()) as { data?: Array<{ id: string; object?: string }> };
     return (data.data ?? [])
-      .filter(m => m.object === 'model')
-      .map(m => m.id);
+      .filter((m) => m.object === 'model')
+      .map((m) => m.id);
   } catch {
     return [];
   }
 }
 
-async function getCachedModels(apiKey: string, fetcher: (k: string) => Promise<string[]>): Promise<string[]> {
+async function getCachedModels(
+  apiKey: string,
+  ttlMs: number,
+  fetcher: () => Promise<string[]>,
+): Promise<string[]> {
   const now = Date.now();
-  const cached = cache.get(apiKey);
-  if (cached && cached.expiresAt > now) return cached.models;
+  const hit = cache.get(apiKey);
+  if (hit && hit.expiresAt > now) return hit.models;
 
-  const models = await fetcher(apiKey);
+  const models = await fetcher();
+  // Only cache a non-empty result: a transient outage must not pin an empty list
+  // for the whole TTL and disable discovery.
   if (models.length > 0) {
-    cache.set(apiKey, { models, expiresAt: now + TTL_MS });
+    cache.set(apiKey, { models, expiresAt: now + ttlMs });
   }
   return models;
 }
@@ -91,80 +91,82 @@ async function getCachedModels(apiKey: string, fetcher: (k: string) => Promise<s
 /**
  * Resolve ordered list of Gemini model candidates to try.
  *
- * Returns: [configuredModel, ...validFallbacks] deduplicated.
- * Always includes configuredModel first so user setting is respected.
- * If API is unreachable, returns hardcoded safe fallbacks.
+ * Returns: [configuredModel, ...validFallbacks], deduplicated.
+ * The configured model is always tried first so the user's choice is respected;
+ * the preferred list and then the full discovered list act as fallbacks.
  */
 export async function resolveGeminiModels(): Promise<string[]> {
   const cfg = await getAiConfig();
+  const tuning = await getTuning();
   const configuredModel = cfg.geminiModel;
+  const { preferred, cacheTtlMs, listTimeoutMs, geminiBaseUrl } = tuning.model;
 
-  const hardcodedFallback = [
-    configuredModel,
-    'gemini-3.6-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
-  ].filter((m, i, a) => a.indexOf(m) === i);
+  // Discovery unavailable → configured model, then the configured preference
+  // order. These ARE fallbacks by design, so a literal here is acceptable.
+  const fallbackList = [configuredModel, ...preferred].filter(
+    (m, i, a) => a.indexOf(m) === i,
+  );
 
-  if (!cfg.geminiKey) return hardcodedFallback;
+  if (!cfg.geminiKey) return fallbackList;
 
-  const available = await getCachedModels(cfg.geminiKey, fetchGeminiModels);
+  const available = await getCachedModels(cfg.geminiKey, cacheTtlMs, () =>
+    fetchGeminiModels(cfg.geminiKey!, geminiBaseUrl, listTimeoutMs),
+  );
   if (available.length === 0) {
-    // API unreachable — use hardcoded fallback
-    console.warn('[model-resolver] Gemini model list unavailable, using hardcoded fallback');
-    return hardcodedFallback;
+    console.warn(
+      '[model-resolver] Gemini model list unavailable, using configured fallback order',
+    );
+    return fallbackList;
   }
 
   const availableSet = new Set(available);
-
-  // Build ordered candidate list:
-  // 1. User-configured model (if valid)
-  // 2. Preferred flash models (if available)
-  // 3. Any remaining available models
   const candidates: string[] = [];
 
   if (availableSet.has(configuredModel)) {
     candidates.push(configuredModel);
   } else {
-    console.warn(`[model-resolver] Configured model "${configuredModel}" not in API model list — will skip`);
+    console.warn(
+      `[model-resolver] Configured model "${configuredModel}" not in API model list — will skip`,
+    );
   }
 
-  for (const m of GEMINI_PREFERRED) {
-    if (availableSet.has(m) && !candidates.includes(m)) {
-      candidates.push(m);
-    }
+  for (const m of preferred) {
+    if (availableSet.has(m) && !candidates.includes(m)) candidates.push(m);
   }
-
-  // Add remaining available models not already in list (last resort)
+  // Anything the API offers is still better than failing the page.
   for (const m of available) {
     if (!candidates.includes(m)) candidates.push(m);
   }
 
-  if (candidates.length === 0) return hardcodedFallback;
-
+  if (candidates.length === 0) return fallbackList;
   console.log(`[model-resolver] Gemini candidates: ${candidates.slice(0, 5).join(', ')}`);
   return candidates;
 }
 
-/**
- * Resolve ordered list of DeepSeek model candidates.
- */
+/** Resolve ordered list of DeepSeek model candidates. */
 export async function resolveDeepSeekModels(): Promise<string[]> {
   const cfg = await getAiConfig();
-  const configuredModel = cfg.deepseekModel ?? 'deepseek-chat';
+  const tuning = await getTuning();
+  const configuredModel = cfg.deepseekModel;
+  const { cacheTtlMs, listTimeoutMs, deepseekBaseUrl } = tuning.model;
 
-  const hardcodedFallback = [configuredModel, 'deepseek-chat'];
+  // Fallback order, same reasoning as Gemini.
+  const fallbackList = [configuredModel].filter(Boolean);
+  if (fallbackList.length === 0) return [];
 
-  if (!cfg.deepseekKey) return hardcodedFallback;
+  if (!cfg.deepseekKey) return fallbackList;
 
-  const available = await getCachedModels(cfg.deepseekKey, fetchDeepSeekModels);
-  if (available.length === 0) return hardcodedFallback;
+  const available = await getCachedModels(cfg.deepseekKey, cacheTtlMs, () =>
+    fetchDeepSeekModels(cfg.deepseekKey!, deepseekBaseUrl, listTimeoutMs),
+  );
+  if (available.length === 0) return fallbackList;
 
-  const candidates = [configuredModel, ...available.filter(m => m !== configuredModel)];
-  return candidates.filter((m, i, a) => a.indexOf(m) === i);
+  return [configuredModel, ...available.filter((m) => m !== configuredModel)].filter(
+    (m, i, a) => a.indexOf(m) === i,
+  );
 }
 
-/** Invalidate cache for a given API key (call after user changes key in Settings) */
-export function invalidateModelCache(apiKey: string) {
+/** Invalidate cache for a given API key (call after the user changes the key). */
+export function invalidateModelCache(apiKey: string): void {
   cache.delete(apiKey);
 }

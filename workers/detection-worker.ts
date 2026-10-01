@@ -1,33 +1,31 @@
-import { Worker, Queue, type Job } from "bullmq";
+import { Worker, Queue, type Job, type WorkerOptions } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
 import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
 import { associateTagsToSymbols, applyNMS } from "@/lib/spatial";
-import { renderPageToPng, extractPdfTextByPage } from "@/lib/pdf-render";
+import { renderPageToPng } from "@/lib/pdf-render";
 import { env } from "@/lib/env";
+import { getTuning } from "@/lib/tuning";
 import {
-  extractTagTokens,
-  rankTagCandidates,
-  normalizeTagCandidates,
-  selectBestCandidate,
-  buildKnownTagSet,
-} from "@/lib/ocr-candidate";
-import { lookupCompanyKnowledge } from "@/lib/knowledge-db";
-// ── Hybrid CV + Gemini pipeline ──────────────────────────────────────────────
-import { cvHealth } from "@/lib/detection/cv-client";
-import {
-  filterEligibleSymbols,
-  legendTagPatterns,
-  loadLegendDefs,
-  processPageDeterministic,
-  type DetStageCounts,
-} from "@/lib/detection/pipeline/deterministic-page";
-import { fillGapsWithGemini, toCvDetections } from "@/lib/detection/fusion/gemini-gap-filler";
-import { detectionConfig } from "@/lib/detection/config";
-import { persistDetections } from "@/lib/detection/persistence/detection-repository";
-import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
+  deleteDetectionsForPage,
+  persistDetections,
+} from "@/lib/detection/persistence/detection-repository";
+import { isTerminalJobStatus } from "@/lib/detection/job-status";
+
+/**
+ * Detection worker — 100% Gemini Vision, per page.
+ *
+ * Pipeline per page (mirrors Scan Legend, lib/legend-extract.ts):
+ *   render PDF page → PNG → runDetectionAgent (Gemini vision, legend in prompt)
+ *   → rule validation + confidence calibration (inside the agent)
+ *   → legend tag-pattern association + NMS
+ *   → persist
+ *
+ * No OCR, no OpenCV/CV sidecar, no tiling, no model fusion. The rendered page
+ * PNG is the only model input; provider/model come from Settings via getAiConfig().
+ */
 
 /**
  * Infer drawing type from document filename.
@@ -36,12 +34,29 @@ import type { LegendDefinition } from "@/lib/detection/legend/legend-model";
  */
 function inferDrawingType(filename: string): string | null {
   const upper = filename.toUpperCase();
-  if (/\bPFD\b/.test(upper)) return 'PFD';
-  if (/ISOMETR/i.test(upper)) return 'ISOMETRIC';
-  if (/\bPID\b|\bP&ID\b|P_ID|P-ID/.test(upper)) return 'P&ID';
+  if (/\bPFD\b/.test(upper)) return "PFD";
+  if (/ISOMETR/i.test(upper)) return "ISOMETRIC";
+  if (/\bPID\b|\bP&ID\b|P_ID|P-ID/.test(upper)) return "P&ID";
   // Default: most engineering documents are P&ID unless stated otherwise
-  if (/\.PDF$/i.test(filename)) return 'P&ID';
+  if (/\.PDF$/i.test(filename)) return "P&ID";
   return null;
+}
+
+/** Legend `tag_pattern` (P-### style) → RegExp, for tag validation. */
+function buildTagPatterns(
+  symbols: { tag_pattern?: string | null }[],
+): RegExp[] {
+  return symbols
+    .filter((s) => s.tag_pattern)
+    .map((s) => {
+      const raw = String(s.tag_pattern);
+      // Convert P-### style: # → \d, * → .* — safe identifier, no SQL interp
+      const esc = raw
+        .replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&")
+        .replace(/#/g, "\\d")
+        .replace(/\*/g, ".*");
+      return new RegExp(`^${esc}$`, "i");
+    });
 }
 
 const REDIS_URL = env.REDIS_URL;
@@ -52,553 +67,234 @@ export const detectionQueue = new Queue("detection", { connection });
 // Observability: jobId, documentId, page, model, duration, status, error — never log secrets
 export const worker = new Worker(
   "detection",
-  async (job: Job<{ jobId: string; legendId?: string }>) => {
-    const { jobId, legendId } = job.data as { jobId: string; legendId?: string };
+  async (job: Job<{ jobId: string; legendId?: string; legendIds?: string[] }>) => {
+    const { jobId, legendId, legendIds: payloadLegendIds } = job.data as {
+      jobId: string;
+      legendId?: string;
+      legendIds?: string[];
+    };
     const start = Date.now();
     const log = (msg: string, extra?: Record<string, unknown>) =>
       console.log(`[detection] job=${jobId} ${msg}`, extra ?? "");
 
-    await db.query(
-      "UPDATE detection_jobs SET status='PROCESSING', started_at=NOW(), progress_pct=5 WHERE id=$1",
-      [jobId]
-    );
     const agentRunId = uuidv4();
-    const modelName = "phase10-deterministic";
-    const promptVersion = "v1";
-    // Hoisted — referenced in both try and catch for cleanup
-    let geminiFileUri: string | undefined;
-    await db.query(
-      "INSERT INTO agent_runs (id, job_id, model, prompt_version, status, input_metadata) VALUES ($1,$2,$3,$4,'RUNNING',$5)",
-      [agentRunId, jobId, modelName, promptVersion, JSON.stringify({ pageCount: null })]
-    );
+    const modelName = "gemini-vision-only";
+    const promptVersion = "v2";
 
     try {
-      const jrow = (await db.query("SELECT * FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
-      if (!jrow) throw new Error("Job not found");
+      // Terminal-state guard, BEFORE any state write. A stalled or duplicated
+      // delivery can reach this processor for a job that already finished:
+      // BullMQ re-queues a job whose lock expired, and a manual re-trigger can
+      // enqueue one that is still running. Either way the second runner must do
+      // no work at all, otherwise it appends a duplicate copy of every detection
+      // for the whole document. Claiming the row conditionally (below) also
+      // makes the claim itself atomic: only one runner can win the transition
+      // out of a non-terminal state.
+      const claim = await db.query(
+        `UPDATE detection_jobs
+            SET status='PROCESSING', started_at=NOW(), progress_pct=5
+          WHERE id=$1 AND (status IS NULL OR status NOT IN ('COMPLETED','CANCELLED','FAILED'))
+        RETURNING status, document_id, legend_id, project_id`,
+        [jobId],
+      );
+      const claimed = claim.rows[0];
+      if (!claimed) {
+        const existing = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId]))
+          .rows[0] as { status?: string } | undefined;
+        if (!existing) throw new Error("Job not found");
+        // The claim only misses when the row is already terminal, so this branch
+        // is the duplicate-delivery path. Report which terminal state it was.
+        log(
+          `skipped: job is already ${existing.status ?? 'in a terminal state'}` +
+            (isTerminalJobStatus(existing.status) ? '' : ' (unexpected — claimed by another runner)'),
+        );
+        return { jobId, status: existing.status ?? 'SKIPPED', skipped: true };
+      }
+      const jrow = claimed;
+
       const doc = (await db.query("SELECT * FROM documents WHERE id=$1", [jrow.document_id])).rows[0];
       if (!doc) throw new Error("Document not found");
 
-      // Use legendId from job row if not passed in job data
-      const effectiveLegendId = legendId ?? jrow.legend_id ?? null;
+      // Use legendIds from the queue payload if present, else the job row
+      // (legend_ids authoritative, legend_id legacy fallback). Order = priority.
+      const { effectiveJobLegendIds, mergeLegendSymbols, buildSourcedTagPatterns, toJobLegendSymbolRows } =
+        await import("@/lib/job-legends");
+      const effectiveLegendIds =
+        Array.isArray(payloadLegendIds) && payloadLegendIds.length > 0
+          ? payloadLegendIds.filter((v): v is string => typeof v === "string" && v !== "")
+          : effectiveJobLegendIds(jrow);
+      const effectiveLegendId = effectiveLegendIds[0] ?? legendId ?? jrow.legend_id ?? null;
 
       // Infer drawing type from filename for company knowledge Level 1 hierarchy
       const drawingType = inferDrawingType(doc.filename);
 
+      const buf = (await getFile(doc.file_path)) as unknown as Buffer;
+      const pageCount: number = doc.page_count ?? 1;
+
+      // Resolve tuning once per job, before any page work.
+      const tuning = await getTuning();
+      const NULL_THRESHOLD = tuning.detection.nullFieldConfidenceThreshold;
+      const NMS_IOU = tuning.detection.nmsIouThreshold;
+      const renderScale = tuning.detection.renderScale;
+      const regionMode = tuning.regions.mode;
+
       log("start", {
         documentId: doc.id,
         legendId: effectiveLegendId ?? "none",
+        legendIds: effectiveLegendIds.length > 0 ? effectiveLegendIds : "none",
         model: modelName,
         promptVersion,
+        renderScale,
+        regionMode,
       });
-
-      const legendSymbols = effectiveLegendId
-        ? (await db.query("SELECT * FROM legend_symbols WHERE legend_id=$1 AND status='ACTIVE'", [effectiveLegendId])).rows
-        : [];
-
-      const tagPatterns: RegExp[] = legendSymbols
-        .filter((s: Record<string, unknown>) => s.tag_pattern)
-        .map((s: Record<string, unknown>) => {
-          const raw = String(s.tag_pattern);
-          // Convert P-### style: # → \d, * → .* — safe identifier, no SQL interp
-          const esc = raw
-            .replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&")
-            .replace(/#/g, "\\d")
-            .replace(/\*/g, ".*");
-          return new RegExp(`^${esc}$`, "i");
-        });
-
-      const buf = (await getFile(doc.file_path)) as unknown as Buffer;
-      const pageCount: number = doc.page_count ?? 1;
-      const phase10Totals: DetStageCounts = {
-        visualCandidates: 0,
-        ocrCandidates: 0,
-        maskedCandidates: 0,
-        splitFragments: 0,
-        reunitedCandidates: 0,
-        refinedCandidates: 0,
-        repairedMatches: 0,
-        legendMatches: 0,
-        finalDetections: 0,
-      };
-      console.log('[Detection] pipeline=phase10');
-      console.log('[Detection] masking=true');
-      console.log('[Detection] lineSplit=true');
-      console.log('[Detection] reunion=true');
-      console.log('[Detection] bboxRefine=true');
-      console.log('[Detection] matchRepair=true');
-      console.log('[Detection] gemini=false');
+      console.log(`[Detection] pipeline=gemini-vision-only regions=${regionMode}`);
+      console.log("[Detection] ocr=false");
+      console.log("[Detection] cv=false");
+      console.log(`[Detection] render scale=${renderScale}`);
       console.log(`[Detection] input pages=${pageCount}`);
 
-      // Phase 10 uses only the deterministic CV service. OCR is performed by that service.
-      let ocrPages: string[] = [];
-      let geminiFileUriFallback: string | undefined;
-
-      const [ocrResult] = await Promise.allSettled([
-        // Op 1: Extract OCR text per page
-        extractPdfTextByPage(buf).then(pages => { ocrPages = pages; }),
-        Promise.resolve(),
-      ]);
-      void ocrResult; // allSettled — errors already logged inside each op
-
-      await db.query("UPDATE agent_runs SET input_metadata=$1 WHERE id=$2", [
-        JSON.stringify({
-          pageCount,
-          legendCount: legendSymbols.length,
-          renderMode: "mupdf-png",
-          geminiFileUriFallback: geminiFileUriFallback ?? null,
-        }),
-        agentRunId,
-      ]);
-
-      // LOCAL WIRING (Phase 10 defaults): deterministic CV only.
-      // Health checked once per job; legend defs built once per job (cached).
-      // A missing sidecar is an explicit job failure; it must never switch pipelines.
-      let detAvailable = false;
-      let legendDefs: LegendDefinition[] = [];
-      try {
-        const h = await cvHealth(5000);
-        detAvailable = !!h;
-        log(detAvailable ? "deterministic CV service UP" : "deterministic CV service DOWN — Phase 10 unavailable", {
-          cvVersion: h?.version ?? null,
-        });
-      } catch {
-        detAvailable = false;
-      }
-      if (!detAvailable) throw new Error('Phase 10 CV service unavailable');
-      if (detAvailable && effectiveLegendId) {
-        try {
-          legendDefs = await loadLegendDefs(effectiveLegendId, log, legendSymbols as {
-            id: string; asset_type: string; symbol_name?: string | null;
-            tag_pattern?: string | null; aliases?: string[] | null;
-            reference_image_url?: string | null;
-          }[]);
-        } catch (e: unknown) {
-          log("legend defs failed — matching unavailable", {
-            error: (e instanceof Error ? e.message : String(e)).slice(0, 160),
-          });
-        }
-      }
-      const cvTagPatterns = legendTagPatterns(
-        legendSymbols as { tag_pattern?: string | null }[]
-      );
-      const NULL_THRESHOLD_EARLY = parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50');
-
-      // Fix #5: Pre-compute knownTagSet once per job (not per page).
-      // Previously the DB query for confirmed tags + company KB ran inside processOnePage,
-      // meaning it executed once per page. Hoist here so it runs once per job.
-      let jobKnownTagSet = new Set<string>();
-      try {
-        const kbEntries = await lookupCompanyKnowledge({ projectId: jrow.project_id ?? null });
-        const confirmedRows = jrow.project_id
-          ? (await db.query(
-              `SELECT DISTINCT asset_tag
-               FROM detections
-               WHERE asset_tag IS NOT NULL
-                 AND detection_status = 'CONFIRMED'
-                 AND job_id IN (
-                   SELECT dj.id FROM detection_jobs dj
-                   JOIN documents doc ON doc.id = dj.document_id
-                   WHERE doc.project_id = $1
-                 )
-               LIMIT 500`,
-              [jrow.project_id]
-            )).rows
-          : [];
-        const allEntries = [
-          ...confirmedRows.map((r: { asset_tag: string }) => ({ asset_tag: r.asset_tag, tag_prefix: null })),
-          ...kbEntries.map((e) => ({ asset_tag: null, tag_prefix: e.tag_prefix })),
-        ];
-        jobKnownTagSet = buildKnownTagSet(allEntries);
-      } catch {
-        // non-fatal — proceed with empty set
-      }
-
-      // PAGE_BATCH_SIZE: number of pages to process concurrently.
-      // Phase 2: default 2 saat PDF_RENDER_SCALE >= 5.0 (mitigasi OOM 25MP/page).
-      // Configurable via PAGE_BATCH_SIZE env var (explicit env selalu menang).
-      const _scale = parseFloat(process.env.PDF_RENDER_SCALE ?? '5.0');
-      const _defaultBatch = _scale >= 5.0 ? 2 : 3;
-      const PAGE_BATCH_SIZE = parseInt(process.env.PAGE_BATCH_SIZE ?? String(_defaultBatch), 10);
-
-      // ── Hybrid pipeline setup ──────────────────────────────────────────────
-      // Check CV service availability once per job (not per page).
-      // AI_MODE=assisted → coba CV dulu, fallback ke Gemini per page jika CV down.
-      // AI_MODE=disabled (default) → full Gemini only (existing behaviour).
-      const cvAvailable = detectionConfig.aiMode === 'assisted' && (await cvHealth().catch(() => false));
-      log(`pipeline mode: ${cvAvailable ? 'HYBRID (CV+Gemini)' : 'GEMINI-ONLY'}`, {
-        aiMode: detectionConfig.aiMode,
-        cvAvailable,
-      });
-
-      // Jika CV tersedia, load legend definitions sekali per job (bukan per page).
-      // loadLegendDefs: prefer reference_image_url crops → fallback legend PDF extract.
-      const legendDefsForCv = cvAvailable && effectiveLegendId
-        ? await loadLegendDefs(
-            effectiveLegendId,
-            (msg, extra) => log(`[legendDefs] ${msg}`, extra),
-            legendSymbols as Array<{
-              id: string; asset_type: string; symbol_name?: string | null;
-              tag_pattern?: string | null; aliases?: string[] | null;
-              reference_image_url?: string | null;
-            }>
-          ).catch(e => {
-            log('loadLegendDefs failed (non-fatal) — CV matching disabled', {
-              error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
-            });
-            return [];
-          })
+      // Multi-legend load, in priority order. Each symbol carries its source
+      // legend so conflicts resolve by priority and detections record the
+      // legend that actually matched.
+      const legendRows = effectiveLegendIds.length > 0
+        ? (await db.query("SELECT id, name FROM legends WHERE id = ANY($1::uuid[])", [
+            `{${effectiveLegendIds.join(",")}}`,
+          ])).rows as { id: string; name: string }[]
         : [];
+      const legendById = new Map(legendRows.map((r) => [String(r.id), String(r.name ?? "Legend")]));
+      const symbolRows = effectiveLegendIds.length > 0
+        ? (await db.query(
+            "SELECT * FROM legend_symbols WHERE legend_id = ANY($1::uuid[]) AND status='ACTIVE'",
+            [`{${effectiveLegendIds.join(",")}}`],
+          )).rows
+        : [];
+      const legendsInPriorityOrder = effectiveLegendIds.map((id) => ({
+        id,
+        name: legendById.get(id) ?? "Legend",
+        symbols: toJobLegendSymbolRows(
+          (symbolRows as Record<string, unknown>[]).filter((s) => String(s.legend_id) === id),
+        ),
+      }));
+      const legendSymbols = mergeLegendSymbols(legendsInPriorityOrder);
+      // Prompt-size guard: a merged list from 3 large legends can overflow the
+      // prompt. Trim per legend (primary keeps the most) and say so in the log.
+      const MAX_PROMPT_SYMBOLS_PER_LEGEND = 120;
+      const perLegendCount = new Map<number, number>();
+      const cappedSymbols = legendSymbols.filter((s) => {
+        const n = (perLegendCount.get(s.sourcePriority) ?? 0) + 1;
+        perLegendCount.set(s.sourcePriority, n);
+        return n <= MAX_PROMPT_SYMBOLS_PER_LEGEND;
+      });
+      if (cappedSymbols.length !== legendSymbols.length) {
+        log(`legend symbol list trimmed for prompt size`, {
+          before: legendSymbols.length,
+          after: cappedSymbols.length,
+        });
+      }
+      const sourcedPatterns = buildSourcedTagPatterns(cappedSymbols);
+      const tagPatterns = buildTagPatterns(
+        cappedSymbols as { tag_pattern?: string | null }[],
+      );
+      const tagPatternSources = sourcedPatterns.map((p) => p.legendName);
 
-      // processOnePage: encapsulates all per-page work (render → detect → OCR → persist).
-      // Returns number of detections persisted, or 0 on skip.
+      await db.query(
+        `INSERT INTO agent_runs (id, job_id, model, prompt_version, status, input_metadata)
+         VALUES ($1,$2,$3,$4,'RUNNING',$5)`,
+        [
+          agentRunId,
+          jobId,
+          modelName,
+          promptVersion,
+          JSON.stringify({
+            pageCount,
+            legendCount: cappedSymbols.length,
+            legendIds: effectiveLegendIds.length > 0 ? effectiveLegendIds : null,
+            renderScale,
+            renderMode: "mupdf-png",
+          }),
+        ],
+      );
+
+      // processOnePage: render → Gemini → associate → NMS → persist.
+      // Returns detections persisted, 0 on skip, or -1 on AI error.
       // NOTE: DB inserts are safe to run concurrently — each page writes independent rows.
       async function processOnePage(page: number): Promise<number> {
         const pageStart = Date.now();
-        let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"] = [];
 
+        let pageImageBase64: string;
+        let pngWidth: number;
+        let pngHeight: number;
         try {
-          const det = await processPageDeterministic({
-            buf, page, jobId, docId: doc.id, filename: doc.filename,
-            effectiveLegendId, legendSymbols, tagPatterns: cvTagPatterns,
-            legendDefs, nullThreshold: NULL_THRESHOLD_EARLY, db, log,
-          });
-          if (det.status !== 'ok' || !det.stageCounts) {
-            throw new Error(`Phase 10 returned ${det.status}`);
-          }
-          for (const key of Object.keys(phase10Totals) as (keyof DetStageCounts)[]) {
-            phase10Totals[key] += det.stageCounts[key];
-          }
-          console.log(`[Detection] visual candidates=${phase10Totals.visualCandidates}`);
-          console.log(`[Detection] OCR candidates=${phase10Totals.ocrCandidates}`);
-          console.log(`[Detection] masked candidates=${phase10Totals.maskedCandidates}`);
-          console.log(`[Detection] split fragments=${phase10Totals.splitFragments}`);
-          console.log(`[Detection] reunited candidates=${phase10Totals.reunitedCandidates}`);
-          console.log(`[Detection] refined candidates=${phase10Totals.refinedCandidates}`);
-          console.log(`[Detection] repaired matches=${phase10Totals.repairedMatches}`);
-          console.log(`[Detection] legend matches=${phase10Totals.legendMatches}`);
-          console.log(`[Detection] final detections=${phase10Totals.finalDetections}`);
-          log(`page ${page}/${pageCount} deterministic detections=${det.count}`, {
-            page, count: det.count, ms: Date.now() - pageStart,
-          });
-          return det.count;
-        } catch (detErr: unknown) {
-          const dmsg = detErr instanceof Error ? detErr.message : String(detErr);
-          log(`page ${page} Phase 10 error`, { page, error: dmsg.slice(0, 200) });
-          throw detErr;
-        }
-
-        // Render page to PNG — primary input for Gemini Vision
-        let pageImageBase64: string | undefined;
-        let pngDimensions: { width: number; height: number } | undefined;
-        try {
-          // M1: PDF_RENDER_SCALE configurable. Phase 2 default 5.0 (≈360 DPI).
-          // P&ID tag 6pt jadi jelas bagi Gemini; cost +40% disetujui user.
-          // Jika PNG >18MB, ai-agent otomatis fallback ke fileUri (lihat runWithGemini).
-          // WARNING: higher scale = larger PNG = more memory + larger Gemini payload.
-          // Gemini inline image limit ~20MB base64. At 5.0 an A3 P&ID ≈ 15-20MB.
-          const PDF_RENDER_SCALE = parseFloat(process.env.PDF_RENDER_SCALE ?? '5.0');
-          const { png, width, height } = await renderPageToPng(buf, page, PDF_RENDER_SCALE);
+          const { png, width, height } = await renderPageToPng(
+            buf,
+            page,
+            renderScale,
+          );
           pageImageBase64 = png.toString("base64");
-          pngDimensions = { width, height };
+          pngWidth = width;
+          pngHeight = height;
           log(`page ${page} PNG rendered`, {
             page,
             sizeKB: Math.round(png.length / 1024),
           });
         } catch (renderErr: unknown) {
-          const rmsg = `${renderErr}`;
-          log(`page ${page} PNG render failed, falling back to fileUri/PDF`, {
+          const rmsg = renderErr instanceof Error ? renderErr.message : String(renderErr);
+          log(`page ${page} PNG render failed — page skipped`, {
             page,
             error: rmsg.slice(0, 200),
           });
+          return 0;
         }
 
+        let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"];
         try {
-          // ── HYBRID PIPELINE: CV first, Gemini fills gaps ─────────────────
-          if (cvAvailable && pageImageBase64 && pngDimensions) {
-            // Step 1: CV deterministic detection (persist ke DB sendiri)
-            const cvResult = await processPageDeterministic({
-              buf,
-              page,
-              jobId,
-              docId: doc.id,
-              filename: doc.filename,
-              effectiveLegendId,
-              legendSymbols: legendSymbols as Array<{
-                id: string; asset_type: string;
-                symbol_name?: string | null; tag_pattern?: string | null;
-              }>,
-              tagPatterns: legendSymbols
-                .filter((s: Record<string, unknown>) => s.tag_pattern)
-                .map((s: Record<string, unknown>, i: number) => {
-                  const raw = String(s.tag_pattern);
-                  const esc = raw
-                    .replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
-                    .replace(/#/g, '\\d')
-                    .replace(/\*/g, '.*');
-                  return { id: `legend-${i}`, regex: `^${esc}$` };
-                }),
-              legendDefs: legendDefsForCv,
-              nullThreshold: parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50'),
-              db,
-              log: (msg: string, extra?: Record<string, unknown>) => log(`[cv] ${msg}`, extra),
-            }).catch((e: unknown) => {
-              log(`page ${page} CV failed (non-fatal) — Gemini fallback`, {
-                page,
-                error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
-              });
-              return { status: 'service-down' as const, count: 0 };
-            });
-
-            if (cvResult.status !== 'service-down') {
-              // Step 2: Query CV detections yang baru saja di-persist untuk gap analysis
-              const cvRows = (await db.query(
-                `SELECT asset_tag, asset_type, confidence,
-                        bbox_x, bbox_y, bbox_w, bbox_h,
-                        evidence, legend_symbol_id, detection_source
-                 FROM detections
-                 WHERE job_id=$1 AND pid_page=$2
-                   AND detection_source='DETERMINISTIC'
-                 ORDER BY confidence DESC`,
-                [jobId, page]
-              )).rows as Array<{
-                asset_tag: string | null; asset_type: string; confidence: number;
-                bbox_x: number; bbox_y: number; bbox_w: number; bbox_h: number;
-                evidence: string | string[]; legend_symbol_id: string | null;
-                detection_source: string;
-              }>;
-
-              const cvDets = toCvDetections(cvRows.map(r => ({
-                assetTag: r.asset_tag,
-                assetType: r.asset_type,
-                confidence: r.confidence,
-                bbox: { x: r.bbox_x, y: r.bbox_y, width: r.bbox_w, height: r.bbox_h },
-                evidence: typeof r.evidence === 'string' ? JSON.parse(r.evidence) : (r.evidence ?? []),
-                legendSymbol: r.legend_symbol_id,
-                detection_source: r.detection_source,
-              })));
-
-              // Step 3: Gemini gap-filler — hanya untuk area CV tidak confident
-              const fused = await fillGapsWithGemini({
-                page,
-                pageImageBase64: pageImageBase64!,
-                pngWidth: pngDimensions!.width,
-                pngHeight: pngDimensions!.height,
-                legendId: effectiveLegendId ?? '',
-                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
-                cvDetections: cvDets,
-                ocrText: ocrPages[page - 1] ?? '',
-                projectId: jrow.project_id ?? null,
-                drawingType,
-              }, (msg: string, extra?: Record<string, unknown>) => log(`[gap-filler] ${msg}`, extra));
-
-              // Hanya simpan detections yang Gemini tambah / perbaiki (bukan CV_HIGH yg sudah persist)
-              detections = fused
-                .filter(f => f.fusion_source !== 'CV_HIGH')
-                .map(f => ({
-                  assetTag: f.assetTag,
-                  assetType: f.assetType,
-                  description: null,
-                  equipmentClass: null,
-                  service: null,
-                  location: null,
-                  unit: null,
-                  area: null,
-                  confidence: f.confidence,
-                  bbox: f.bbox,
-                  evidence: f.evidence,
-                  legendSymbol: f.legendSymbol,
-                  detection_source: f.detection_source,
-                  validation_status: 'NEEDS_REVIEW' as const,
-                  field_confidence: null,
-                  field_provenance: null,
-                  rule_applied: `fusion:${f.fusion_source}`,
-                  resolved_asset_name: f.assetType,
-                  image_hash: null,
-                  canonical_features: null,
-                  symbol_embedding: null,
-                  symbol_features: null,
-                  confidence_breakdown: {
-                    cv: f.cv_confidence ?? 0,
-                    gemini: f.gemini_confidence ?? 0,
-                    fused: f.confidence,
-                  },
-                  audit: null,
-                } as unknown as typeof detections[number]));
-
-              log(`page ${page}/${pageCount} HYBRID: cv_persisted=${cvRows.length} gemini_fill=${detections.length}`, {
-                page,
-                cvPersisted: cvRows.length,
-                geminiFill: detections.length,
-                ms: Date.now() - pageStart,
-              });
-            } else {
-              // CV service down mid-job → full Gemini fallback untuk page ini
-              log(`page ${page} CV service-down — falling back to full Gemini`, { page });
-              const result = await runDetectionAgent({
-                page,
-                pageImageBase64,
-                fileUri: geminiFileUriFallback,
-                pdfBase64: !pageImageBase64 && !geminiFileUriFallback ? buf.toString('base64') : undefined,
-                legendId: effectiveLegendId ?? '',
-                legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]['legendSymbols'],
-                ocrText: ocrPages[page - 1] ?? '',
-                pngWidth: pngDimensions?.width,
-                pngHeight: pngDimensions?.height,
-                projectId: jrow.project_id ?? null,
-                drawingType,
-              });
-              detections = result.detections;
-            }
-          } else {
-            // ── GEMINI-ONLY (AI_MODE=disabled atau CV tidak tersedia) ────────
-            const result = await runDetectionAgent({
-              page,
-              pageImageBase64,
-              fileUri: geminiFileUriFallback,
-              pdfBase64: !pageImageBase64 && !geminiFileUriFallback
-                ? buf.toString("base64")
-                : undefined,
-              legendId: effectiveLegendId ?? "",
-              legendSymbols: legendSymbols as Parameters<typeof runDetectionAgent>[0]["legendSymbols"],
-              ocrText: ocrPages[page - 1] ?? "",
-              pngWidth: pngDimensions?.width,
-              pngHeight: pngDimensions?.height,
-              projectId: jrow.project_id ?? null,
-              drawingType,
-            });
-            detections = result.detections;
-
-            log(`page ${page}/${pageCount} detections=${detections.length}`, {
-              page,
-              count: detections.length,
-              ms: Date.now() - pageStart,
-            });
-          }
+          const result = await runDetectionAgent({
+            page,
+            pageImageBase64,
+            legendId: effectiveLegendId ?? "",
+            legendSymbols: cappedSymbols,
+            pngWidth,
+            pngHeight,
+            projectId: jrow.project_id ?? null,
+            drawingType,
+          });
+          detections = result.detections;
         } catch (err: unknown) {
-          const msg = `${err}`;
+          const msg = err instanceof Error ? err.message : String(err);
           log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
-          return -1;  // -1 = AI error (distinct from 0 = AI returned empty detections)
+          return -1; // -1 = AI error (distinct from 0 = AI returned empty detections)
         }
 
-        const validated = associateTagsToSymbols(detections, tagPatterns);
+        // Legend tag-pattern validation + proximity tag recovery (pure TS).
+        // Sources name the matching legend per tag when several are selected.
+        const validated = associateTagsToSymbols(detections, tagPatterns, tagPatternSources);
 
-        // ── F1/F2/F3: OCR candidate resolution ──────────────────────────────
-        const pageOcrText = ocrPages[page - 1] ?? '';
-        const resolvedWithOcr = await (async () => {
-          try {
-            if (!pageOcrText.trim()) return validated;
-
-            const ocrTokens = extractTagTokens(pageOcrText);
-            if (ocrTokens.length === 0) return validated;
-
-            // Use job-level knownTagSet (pre-computed once before page loop)
-            const knownTagSet = jobKnownTagSet;
-
-            return validated.map((d) => {
-              const dTyped = d as typeof d & {
-                validation_status?: string;
-                detection_source?: string;
-                field_provenance?: Record<string, unknown> | null;
-              };
-
-              const rawCandidates = rankTagCandidates(ocrTokens, d.bbox, knownTagSet);
-              const candidates = normalizeTagCandidates(rawCandidates, knownTagSet, d.assetTag);
-              const best = selectBestCandidate(d.assetTag, candidates);
-
-              if (!best) return d;
-
-              if (d.assetTag && best.normalized === d.assetTag.toUpperCase()) {
-                const ocrNote = best.normalized_by !== 'none'
-                  ? `OCR confirmed tag "${best.normalized}" (original OCR: "${best.original}", correction: ${best.normalized_by})`
-                  : `OCR confirmed tag "${best.normalized}"`;
-                const updatedProvenance = dTyped.field_provenance
-                  ? {
-                      ...(dTyped.field_provenance as Record<string, unknown>),
-                      tag: {
-                        source: best.normalized_by !== 'none' ? 'OCR+NORMALIZED' : 'OCR+VISION',
-                        normalized: best.normalized_by !== 'none',
-                        correctionReason: best.normalized_by !== 'none'
-                          ? `OCR ${best.normalized_by}: "${best.original}" → "${best.normalized}"`
-                          : null,
-                      },
-                    }
-                  : dTyped.field_provenance;
-                return {
-                  ...d,
-                  evidence: [...d.evidence, ocrNote],
-                  confidence: Math.min(1.0, d.confidence + 0.03),
-                  ...(updatedProvenance ? { field_provenance: updatedProvenance } : {}),
-                };
-              }
-
-              if (d.assetTag && best.normalized !== d.assetTag.toUpperCase()) {
-                const conflictNote = `OCR candidate "${best.normalized}" (conf: ${best.ocr_confidence.toFixed(2)}) differs from Vision tag "${d.assetTag}" — verify`;
-                return {
-                  ...d,
-                  evidence: [...d.evidence, conflictNote],
-                  validation_status: (dTyped.validation_status === 'CONFLICT'
-                    ? 'CONFLICT'
-                    : 'NEEDS_REVIEW') as 'VALID' | 'NEEDS_REVIEW' | 'CONFLICT',
-                };
-              }
-
-              if (!d.assetTag && best.ocr_confidence >= 0.75) {
-                const fillNote = best.normalized_by !== 'none'
-                  ? `Tag "${best.normalized}" filled from OCR (original: "${best.original}", correction: ${best.normalized_by}) — verify`
-                  : `Tag "${best.normalized}" filled from OCR — verify`;
-                const filledProvenance = dTyped.field_provenance
-                  ? {
-                      ...(dTyped.field_provenance as Record<string, unknown>),
-                      tag: {
-                        source: best.normalized_by !== 'none' ? 'OCR+NORMALIZED' : 'OCR',
-                        normalized: best.normalized_by !== 'none',
-                        correctionReason: best.normalized_by !== 'none'
-                          ? `OCR ${best.normalized_by}: "${best.original}" → "${best.normalized}"`
-                          : null,
-                      },
-                    }
-                  : dTyped.field_provenance;
-                return {
-                  ...d,
-                  assetTag: best.normalized,
-                  evidence: [...d.evidence, fillNote],
-                  confidence: Math.min(0.79, d.confidence),
-                  validation_status: 'NEEDS_REVIEW' as const,
-                  ...(filledProvenance ? { field_provenance: filledProvenance } : {}),
-                };
-              }
-
-              return d;
-            });
-          } catch (ocrErr: unknown) {
-            console.warn('[ocr-candidates] resolution failed (non-fatal):',
-              ocrErr instanceof Error ? ocrErr.message : ocrErr);
-            return validated;
-          }
-        })();
-
-        // Phase 4: NMS pre-persist — merge box tumpang tindih + tag sama.
-        // Mencegah inflasi duplikat & bbox "melenceng jauh". Threshold via
-        // NMS_IOU_THRESHOLD (default 0.5). Hanya merge jika tag sama persis.
-        const NMS_IOU = parseFloat(process.env.NMS_IOU_THRESHOLD ?? '0.5');
-        const nmsInput = resolvedWithOcr.map((d) => ({
+        // NMS pre-persist — merge overlapping boxes carrying the same tag.
+        const nmsInput = validated.map((d) => ({
           ...d,
           bbox: { x: d.bbox.x, y: d.bbox.y, width: d.bbox.width, height: d.bbox.height },
         }));
         const deduped = applyNMS(nmsInput, Number.isFinite(NMS_IOU) ? NMS_IOU : 0.5);
-        if (deduped.length !== resolvedWithOcr.length) {
-          log(`page ${page} NMS merged ${resolvedWithOcr.length - deduped.length} overlapping duplicate(s)`, {
+        if (deduped.length !== validated.length) {
+          log(`page ${page} NMS merged ${validated.length - deduped.length} overlapping duplicate(s)`, {
             page,
-            before: resolvedWithOcr.length,
+            before: validated.length,
             after: deduped.length,
           });
         }
 
-        // Persist detections for this page.
-        // Extracted → lib/detection/persistence/detection-repository.ts (1:1 semantics:
-        // tag normalization, legend resolution, field-confidence gating, dual-write,
-        // audit trail). Worker keeps orchestration only — no duplicate INSERT logic.
-        const NULL_THRESHOLD = parseFloat(process.env.NULL_FIELD_CONFIDENCE_THRESHOLD ?? '0.50');
+        // Page persistence is idempotent: drop whatever this job wrote for this
+        // page before re-inserting. Without this, any re-run (stalled lock,
+        // manual re-trigger, resume after restart) appends a second copy of the
+        // page's detections.
+        const replaced = await deleteDetectionsForPage(db, jobId, page);
+        if (replaced > 0) {
+          log(`page ${page} replaced ${replaced} existing detection(s) from a previous run`, {
+            page,
+            replaced,
+          });
+        }
+
         await persistDetections(
           db,
           deduped as Parameters<typeof persistDetections>[1],
@@ -607,21 +303,30 @@ export const worker = new Worker(
             docId: doc.id,
             filename: doc.filename,
             effectiveLegendId,
-            legendSymbols: legendSymbols as { id: string; asset_type: string; symbol_name?: string | null }[],
+            legendSymbols: cappedSymbols,
             nullThreshold: NULL_THRESHOLD,
           },
-          page
+          page,
         );
 
+        log(`page ${page}/${pageCount} detections=${deduped.length}`, {
+          page,
+          count: deduped.length,
+          ms: Date.now() - pageStart,
+        });
         return deduped.length;
       }
 
-      // Process pages in batches of PAGE_BATCH_SIZE.
-      // Cancelled check runs between batches (not mid-batch).
+      // Pages are processed in batches. The configured size always wins; when it
+      // is null it is derived from the render scale, because a high scale means
+      // a large PNG per page and the batch is what bounds peak memory.
+      const defaultBatch = renderScale >= 5 ? 2 : 3;
+      const PAGE_BATCH_SIZE = tuning.detection.pageBatchSize ?? defaultBatch;
+
+      // Cancellation is checked between batches (not mid-batch).
       let totalPagesProcessed = 0;
-      let totalAiErrors = 0;  // track pages that failed due to AI error (not 0-detection pages)
+      let totalAiErrors = 0; // pages that failed due to AI error (not 0-detection pages)
       for (let batchStart = 1; batchStart <= pageCount; batchStart += PAGE_BATCH_SIZE) {
-        // Check for cancellation between batches
         const cur = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
         if (cur?.status === "CANCELLED") {
           log("cancelled by user");
@@ -632,9 +337,8 @@ export const worker = new Worker(
         const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
 
         log(`processing page batch [${batchStart}-${batchEnd}]`);
-        const batchResults = await Promise.all(batchPages.map(p => processOnePage(p)));
-        // processOnePage returns -1 on AI error, 0 on empty detection, N on success
-        totalAiErrors += batchResults.filter(r => r < 0).length;
+        const batchResults = await Promise.all(batchPages.map((p) => processOnePage(p)));
+        totalAiErrors += batchResults.filter((r) => r < 0).length;
         totalPagesProcessed += batchPages.length;
 
         await db.query("UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2", [
@@ -645,23 +349,20 @@ export const worker = new Worker(
 
       // If every page failed with AI error → mark job FAILED so user knows to retry
       if (totalAiErrors === pageCount) {
-        throw new Error(`All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`);
+        throw new Error(
+          `All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`,
+        );
       }
 
-      // F7: Post-job entity resolution
-      // Group detections by normalized asset_tag within this job+project.
-      // For each group with multiple detections:
-      //   - Mark highest-confidence detection as CANONICAL (evidence note appended)
-      //   - Mark rest as DUPLICATE (evidence note appended, validation_status → NEEDS_REVIEW)
-      //   - Does NOT auto-reject — human reviewer decides
-      // This replaces the old advisory-only duplicate warning with explicit resolution metadata.
+      // Post-job entity resolution: group detections by normalized asset_tag in
+      // this job. Highest-confidence becomes CANONICAL, the rest DUPLICATE and
+      // NEEDS_REVIEW. Never auto-rejects — the human reviewer decides.
       try {
         const dupRows = await db.query(
           `SELECT
              UPPER(TRIM(asset_tag)) AS normalized_tag,
              COUNT(*) AS cnt,
-             array_agg(id ORDER BY confidence DESC NULLS LAST) AS ids,
-             array_agg(confidence ORDER BY confidence DESC NULLS LAST) AS confidences
+             array_agg(id ORDER BY confidence DESC NULLS LAST) AS ids
            FROM detections
            WHERE job_id = $1
              AND asset_tag IS NOT NULL
@@ -669,7 +370,7 @@ export const worker = new Worker(
              AND detection_status != 'REJECTED'
            GROUP BY UPPER(TRIM(asset_tag))
            HAVING COUNT(*) > 1`,
-          [jobId]
+          [jobId],
         );
 
         if (dupRows.rows.length > 0) {
@@ -681,17 +382,15 @@ export const worker = new Worker(
             const canonicalId = detectionIds[0]; // highest confidence is first
             const duplicateIds = detectionIds.slice(1);
 
-            // Mark canonical detection
             const canonicalNote = `CANONICAL: this detection selected as representative for tag "${normalizedTag}" (highest confidence among ${detectionIds.length} detections)`;
             await db.query(
               `UPDATE detections
                SET evidence = evidence || $1::jsonb
                WHERE id = $2
                  AND NOT (evidence::text LIKE '%CANONICAL:%')`,
-              [JSON.stringify([canonicalNote]), canonicalId]
+              [JSON.stringify([canonicalNote]), canonicalId],
             );
 
-            // Mark duplicates — set validation_status to NEEDS_REVIEW and append evidence
             if (duplicateIds.length > 0) {
               const dupNote = `DUPLICATE: tag "${normalizedTag}" also detected in ${duplicateIds.length + 1} locations — canonical detection is ${canonicalId.slice(0, 8)}… — review required`;
               await db.query(
@@ -703,69 +402,62 @@ export const worker = new Worker(
                      END
                  WHERE id = ANY($2::uuid[])
                    AND NOT (evidence::text LIKE '%DUPLICATE:%')`,
-                [JSON.stringify([dupNote]), `{${duplicateIds.join(',')}}`]
+                [JSON.stringify([dupNote]), `{${duplicateIds.join(",")}}`],
               );
             }
           }
 
           const totalResolved = dupRows.rows.reduce(
-            (s: number, r: { cnt: string }) => s + parseInt(r.cnt), 0
+            (s: number, r: { cnt: string }) => s + parseInt(r.cnt, 10),
+            0,
           );
-          log(`entity resolution complete: ${totalResolved} detections resolved across ${dupRows.rows.length} canonical groups`);
+          log(
+            `entity resolution complete: ${totalResolved} detections resolved across ${dupRows.rows.length} canonical groups`,
+          );
         }
       } catch (resolveErr: unknown) {
         // Non-fatal — entity resolution is advisory only
-        console.warn('[entity-resolution] post-job check failed (non-fatal):',
-          resolveErr instanceof Error ? resolveErr.message : resolveErr);
+        console.warn(
+          "[entity-resolution] post-job check failed (non-fatal):",
+          resolveErr instanceof Error ? resolveErr.message : resolveErr,
+        );
       }
 
       const final = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
 
-      // Cleanup Gemini uploaded file — non-fatal, files expire after 48h anyway
-      if (geminiFileUri) {
-        const { deleteGeminiFile } = await import("@/lib/gemini");
-        await deleteGeminiFile(geminiFileUri);
-        log("gemini file deleted", { fileUri: geminiFileUri });
-      }
-
       if (final?.status === "CANCELLED") {
         await db.query(
           "UPDATE agent_runs SET status='CANCELLED', completed_at=NOW(), output_metadata=$1 WHERE id=$2",
-          [JSON.stringify({ durationMs: Date.now() - start }), agentRunId]
+          [JSON.stringify({ durationMs: Date.now() - start }), agentRunId],
         );
         return { jobId, status: "CANCELLED" };
       }
 
       await db.query(
         "UPDATE detection_jobs SET status='COMPLETED', progress_pct=100, completed_at=NOW() WHERE id=$1",
-        [jobId]
+        [jobId],
       );
       await db.query(
         "UPDATE agent_runs SET status='COMPLETED', completed_at=NOW(), output_metadata=$1 WHERE id=$2",
-        [JSON.stringify({ durationMs: Date.now() - start }), agentRunId]
+        [JSON.stringify({ durationMs: Date.now() - start }), agentRunId],
       );
       log("completed", { durationMs: Date.now() - start });
       return { jobId, status: "COMPLETED" };
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e)).slice(0, 2000);
-      // Best-effort cleanup even on failure
-      if (geminiFileUri) {
-        const { deleteGeminiFile } = await import("@/lib/gemini").catch(() => ({ deleteGeminiFile: async () => {} }));
-        await deleteGeminiFile(geminiFileUri);
-      }
       await db.query(
         "UPDATE detection_jobs SET status='FAILED', error_detail=$1, completed_at=NOW() WHERE id=$2",
-        [msg, jobId]
+        [msg, jobId],
       );
       await db.query(
         "UPDATE agent_runs SET status='FAILED', error=$1, completed_at=NOW() WHERE id=$2",
-        [msg, agentRunId]
+        [msg, agentRunId],
       );
       log("failed", { error: msg.slice(0, 500), durationMs: Date.now() - start });
       throw e;
     }
   },
-  { connection, concurrency: 2 }
+  workerRuntimeOptions(),
 );
 
 // Recovery: on worker startup, re-queue any PENDING jobs left over from previous crashes/restarts
@@ -773,7 +465,7 @@ async function recoverPendingJobs() {
   try {
     const rows = (
       await db.query(
-        "SELECT id, legend_id FROM detection_jobs WHERE status='PENDING' ORDER BY created_at ASC LIMIT 50"
+        "SELECT id, legend_id FROM detection_jobs WHERE status='PENDING' ORDER BY created_at ASC LIMIT 50",
       )
     ).rows;
 
@@ -785,7 +477,7 @@ async function recoverPendingJobs() {
         await detectionQueue.add(
           "detection",
           { jobId: row.id, legendId: row.legend_id ?? null },
-          { jobId: row.id, removeOnComplete: true, removeOnFail: 100 }
+          { jobId: row.id, removeOnComplete: true, removeOnFail: 100 },
         );
         console.log(`[detection] recovery: queued job=${row.id}`);
       } catch (e: unknown) {
@@ -801,29 +493,69 @@ async function recoverPendingJobs() {
   }
 }
 
-// Run recovery after a short delay to let DB connection settle
-setTimeout(recoverPendingJobs, 3000);
+/**
+ * Startup delays, read from the env layer.
+ *
+ * These run at module load, before any job exists, so they cannot await the
+ * settings DB. `getTuning` (which can) is used inside the job body.
+ */
+/**
+ * BullMQ worker options, read from the env layer.
+ *
+ * These are fixed when the Worker is constructed, before any job exists, so they
+ * cannot await the settings DB. Restart the worker after changing them.
+ *
+ * lockDuration is the important one: BullMQ's default is 30s, which expires in
+ * the middle of a region sweep (one page = one call per region, times the number
+ * of models walked before one succeeds). On expiry BullMQ declares the job
+ * stalled, re-queues it, and the duplicate runner persists a second copy of
+ * every detection. The lock is renewed every lockRenewTimeMs, so only a truly
+ * dead worker's lock is ever lost.
+ */
+function workerRuntimeOptions(): WorkerOptions {
+  const lockDuration = env.WORKER_LOCK_DURATION_MS;
+  const lockRenewTime = env.WORKER_LOCK_RENEW_TIME_MS;
+  // BullMQ throws when lockRenewTime is not comfortably below lockDuration;
+  // clamping keeps a bad config pair from crashing the worker at import time.
+  const safeRenewTime =
+    lockRenewTime > 0 && lockRenewTime < lockDuration ? lockRenewTime : Math.floor(lockDuration / 3);
+  return {
+    connection,
+    concurrency: env.WORKER_CONCURRENCY,
+    lockDuration,
+    lockRenewTime: safeRenewTime,
+    stalledInterval: env.WORKER_STALLED_INTERVAL_MS,
+    maxStalledCount: env.WORKER_MAX_STALLED_COUNT,
+  };
+}
 
-// Fix #4: Pre-warm ISA/ISO builtin cache at worker startup.
+function startupDelayMs(): { recovery: number; prewarm: number } {
+  return { recovery: env.WORKER_RECOVERY_DELAY_MS, prewarm: env.WORKER_PREWARM_DELAY_MS };
+}
+
+// Startup delays are tuning: they only need to be long enough for the DB pool to
+// settle, and a faster local machine should not have to wait.
+setTimeout(recoverPendingJobs, startupDelayMs().recovery);
+
+// Pre-warm ISA/ISO builtin cache at worker startup.
 // loadBuiltinSymbols() in rule-validator.ts has a module-level in-memory Map,
-// but it only fills on first use. First job's first detection pays the DB query
-// cost. Pre-warming here fills the cache once so every job starts with cache hot.
+// but it only fills on first use. Pre-warming here fills the cache once so every
+// job starts with the cache hot.
 async function prewarmBuiltinCache() {
   try {
-    const { validateDetection } = await import('@/lib/rule-validator');
+    const { validateDetection } = await import("@/lib/rule-validator");
     // Trigger a no-op validation that walks to ISA/ISO steps and loads both tables.
-    // Use a dummy hash that won't match any cache entry.
     await validateDetection({
-      tagPrefix: '__PREWARM__',
-      detectedAssetType: '__PREWARM__',
+      tagPrefix: "__PREWARM__",
+      detectedAssetType: "__PREWARM__",
       aiConfidence: 0,
       legendId: null,
       legendSymbols: [],
       projectId: null,
     });
-    console.log('[detection] ISA/ISO builtin cache pre-warmed');
+    console.log("[detection] ISA/ISO builtin cache pre-warmed");
   } catch {
     // Non-fatal — cache will fill on first real job
   }
 }
-setTimeout(prewarmBuiltinCache, 5000);
+setTimeout(prewarmBuiltinCache, startupDelayMs().prewarm);

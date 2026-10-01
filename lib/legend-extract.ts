@@ -1,6 +1,15 @@
 import { getAiConfig } from '@/lib/ai-config';
 import { getGeminiClient } from '@/lib/gemini';
+import { getTuning } from '@/lib/tuning';
+import { env } from '@/lib/env';
+import { generationConfigFrom } from '@/lib/ai-generation';
 import { resolveGeminiModels } from '@/lib/model-resolver';
+import {
+  ModelCircuitBreaker,
+  isProviderUnavailable,
+  getSharedModelBreaker,
+} from '@/lib/ai-circuit-breaker';
+import { getSharedGeminiGate, type RequestGate } from '@/lib/gemini-request-gate';
 
 export interface ParsedSymbol {
   asset_type: string; symbol_name: string | null; tag_pattern: string | null;
@@ -8,14 +17,25 @@ export interface ParsedSymbol {
   bbox_x: number | null; bbox_y: number | null; bbox_w: number | null; bbox_h: number | null;
 }
 
-// Models known to NOT respect responseMimeType: application/json
-const JSON_MODE_INCOMPATIBLE = new Set(['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+/**
+ * Models that ignore responseMimeType: application/json return prose instead of
+ * a schema-valid document. Membership is tuning, not code:
+ * `model.jsonIncompatible` (Settings → .env → fallback). Kept as a helper so no
+ * call site can accidentally read a stale module-level snapshot.
+ */
+export function isJsonModeIncompatible(
+  jsonIncompatible: ReadonlySet<string>,
+  modelName: string,
+): boolean {
+  return jsonIncompatible.has(modelName.toLowerCase());
+}
+
 
 async function getModelWithFallback() {
   const cfg = await getAiConfig();
   const client = await getGeminiClient();
-  const candidates = await resolveGeminiModels();
-  return { client, candidates, cfg };
+  const [candidates, tuning] = await Promise.all([resolveGeminiModels(), getTuning()]);
+  return { client, candidates, cfg, tuning };
 }
 
 export function parseJsonResponse(text: string): Record<string, unknown> {
@@ -100,14 +120,17 @@ const defaultSleep: Sleeper = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Call fn with exponential-backoff retries on retryable Gemini errors
  * (429/quota/503/overloaded/fetch). Non-retryable errors throw immediately.
- * maxAttempts includes the first try (default 3 → delays ≈2s, 5s).
+ *
+ * `maxAttempts` includes the first try. When the provider sends a RetryInfo
+ * hint (e.g. "retryDelay: 23s") that value wins over our own backoff, because
+ * guessing shorter just burns another quota slot.
  */
 export async function callWithRetry<T>(
   fn: () => Promise<T>,
   opts: { maxAttempts?: number; baseDelayMs?: number; sleep?: Sleeper; label?: string } = {}
 ): Promise<T> {
-  const maxAttempts = opts.maxAttempts ?? 3;
-  const base = opts.baseDelayMs ?? 2000;
+  const maxAttempts = opts.maxAttempts ?? env.GEMINI_RETRY_MAX_ATTEMPTS;
+  const base = opts.baseDelayMs ?? env.GEMINI_RETRY_BASE_DELAY_MS;
   const sleep = opts.sleep ?? defaultSleep;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isRetryable = (e: unknown) => /429|quota|rate|overloaded|high demand|503|not\.found|404|fetch|ETIMEDOUT|ECONNRESET/i.test(e instanceof Error ? e.message : String(e));
@@ -120,8 +143,8 @@ export async function callWithRetry<T>(
       if (!isRetryable(e) || attempt === maxAttempts) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       const wait = parseRetryDelayMs(msg, base * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 1000));
-      console.warn(`[legend-extract] ${opts.label ?? 'call'} attempt ${attempt}/${maxAttempts} failed, retrying in ${Math.round(wait)}ms: ${msg.slice(0, 160)}`);
-      await sleep(Math.min(wait, 60_000));
+      console.warn(`[ai-retry] ${opts.label ?? 'call'} attempt ${attempt}/${maxAttempts} failed, retrying in ${Math.round(wait)}ms: ${msg.slice(0, 160)}`);
+      await sleep(Math.min(wait, env.GEMINI_RETRY_MAX_DELAY_MS));
     }
   }
   throw lastErr;
@@ -172,10 +195,16 @@ function iou01(a: { x: number; y: number; w: number; h: number }, b: { x: number
 }
 
 /**
- * Deduplicate symbols from overlapping chunk regions (or repeated rows):
- * same normalized name + bbox IoU > 0.5 → keep first. Pure, deterministic.
+ * Deduplicate symbols from overlapping chunk regions (or repeated rows).
+ *
+ * `iouThreshold` defaults to the env value; async callers that already resolved
+ * tuning pass `tuning.performance.legendDedupeIou` so a Settings change applies
+ * immediately. Pure and deterministic either way.
  */
-export function dedupeSymbols(symbols: ParsedSymbol[]): ParsedSymbol[] {
+export function dedupeSymbols(
+  symbols: ParsedSymbol[],
+  iouThreshold: number = env.LEGEND_DEDUPE_IOU,
+): ParsedSymbol[] {
   const boxOf = (s: ParsedSymbol) =>
     s.bbox_x == null || s.bbox_y == null || s.bbox_w == null || s.bbox_h == null
       ? null
@@ -190,7 +219,7 @@ export function dedupeSymbols(symbols: ParsedSymbol[]): ParsedSymbol[] {
         ob !== null &&
         normName(o.symbol_name) === normName(s.symbol_name) &&
         normName(s.symbol_name) !== '' &&
-        iou01(ob, sb) > 0.5
+        iou01(ob, sb) > iouThreshold
       );
     });
     if (!dup) out.push(s);
@@ -239,6 +268,11 @@ IMPORTANT:
 - If truly no symbols: return {"symbols":[]}`;
 }
 
+/** Untrusted model field → nullable string column. */
+function strOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
 // ─── Call Gemini for one region ───────────────────────────────────────────────
 
 async function analyzeRegion(
@@ -248,18 +282,33 @@ async function analyzeRegion(
   candidates: string[],
   page: number,
   regionIdx: number,
+  generation: ReturnType<typeof generationConfigFrom>,
+  jsonIncompatible: ReadonlySet<string>,
+  guard: ModelChainGuard,
 ): Promise<Array<{ name: string; assetType: string; tagPattern: string | null; description: string | null; aliases: string[]; bbox: number[] }>> {
   const imgPart = { inlineData: { mimeType: 'image/png' as const, data: cropBase64 } };
   let lastErr: unknown;
 
   for (const modelName of candidates) {
-    if (JSON_MODE_INCOMPATIBLE.has(modelName)) continue;
+    if (isJsonModeIncompatible(jsonIncompatible, modelName)) continue;
+    // Same protections as detection: skip a model whose breaker is open, cap the
+    // number of attempts, and hold the shared request budget before each call.
+    if (guard.breaker.isOpen(modelName)) {
+      console.warn(
+        `[legend-extract] page ${page} region ${regionIdx} skipping ${modelName}: circuit open`,
+      );
+      continue;
+    }
+    if (!guard.shouldAttempt(page, regionIdx)) throw lastErr ?? new Error('All models failed for region');
+
     try {
+      await guard.gate.wait();
       const model = client.getGenerativeModel({
         model: modelName,
-        generationConfig: { temperature: 0.05, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+        generationConfig: generation,
       });
       const r = await model.generateContent([{ text: makeRegionPrompt(regionLabel) }, imgPart]);
+      guard.breaker.recordSuccess(modelName);
       const text = r.response.text();
       const j = parseJsonResponse(text) as { symbols?: unknown[] };
       const raw = Array.isArray(j.symbols) ? j.symbols : [];
@@ -267,14 +316,63 @@ async function analyzeRegion(
       return raw as any[];
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      const retryable = /429|quota|rate|overloaded|high demand|503|not.found|404|fetch/i.test(msg);
+      const retryable = isProviderUnavailable(msg);
       console.warn(`[legend-extract] page ${page} region ${regionIdx} model ${modelName}: ${msg.slice(0, 150)}`);
       lastErr = e;
-      if (retryable) continue;
-      throw e;
+      if (!retryable) throw e;
+      if (retryable) guard.breaker.recordFailure(modelName);
+      guard.attempts += 1;
+      // The previous version retried the next model with no pause at all, so a
+      // 429 storm burned through the whole chain instantly. Back off, and push
+      // further out on an explicit rate-limit rejection.
+      if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
+        await guard.gate.backoff(guard.attemptDelayMs * 2);
+      } else if (guard.attemptDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
+      }
+      continue;
     }
   }
   throw lastErr ?? new Error('All models failed for region');
+}
+
+/**
+ * Per-extraction state for walking the model chain.
+ *
+ * One guard per extraction run so the attempt cap is shared across all of that
+ * page's regions (a cap per region would be a cap of regions × models, which is
+ * no cap at all).
+ */
+interface ModelChainGuard {
+  breaker: ModelCircuitBreaker;
+  gate: RequestGate;
+  attemptDelayMs: number;
+  maxAttempts: number;
+  attempts: number;
+  /** False once the attempt cap is reached. */
+  shouldAttempt(page: number, regionIdx: number): boolean;
+}
+
+function makeModelChainGuard(tuning: Awaited<ReturnType<typeof getTuning>>): ModelChainGuard {
+  const maxAttempts = tuning.model.maxModelAttempts;
+  const guard: ModelChainGuard = {
+    breaker: getSharedModelBreaker({
+      failureThreshold: tuning.model.circuitFailures,
+      cooldownMs: tuning.model.circuitCooldownMs,
+    }),
+    gate: getSharedGeminiGate(tuning.model.requestsPerMinute),
+    attemptDelayMs: tuning.model.modelAttemptDelayMs,
+    maxAttempts,
+    attempts: 0,
+    shouldAttempt(page, regionIdx) {
+      if (maxAttempts <= 0 || guard.attempts < maxAttempts) return true;
+      console.warn(
+        `[legend-extract] page ${page} region ${regionIdx} attempt cap reached (${maxAttempts})`,
+      );
+      return false;
+    },
+  };
+  return guard;
 }
 
 // ─── Split page into regions ──────────────────────────────────────────────────
@@ -313,7 +411,18 @@ function buildRegions(cols: number, rows: number, overlap = 0.05): Region[] {
 
 // ─── Deduplicate symbols (overlap regions can produce duplicates) ─────────────
 
-function deduplicateSymbols(symbols: ParsedSymbol[]): ParsedSymbol[] {
+/**
+ * Deduplicate symbols produced by overlapping regions.
+ *
+ * Stricter of the two rules: same normalized name AND IoU above the threshold,
+ * or a looser IoU when only the name matches. Tuned separately from
+ * `dedupeSymbols` because this runs mid-sweep on region-local output, where
+ * boxes are already page-space but noisier.
+ */
+function deduplicateSymbols(
+  symbols: ParsedSymbol[],
+  iouThreshold: number = env.LEGEND_DEDUPE_NAME_IOU,
+): ParsedSymbol[] {
   const out: ParsedSymbol[] = [];
   for (const s of symbols) {
     const isDupe = out.some(existing => {
@@ -332,7 +441,7 @@ function deduplicateSymbols(symbols: ParsedSymbol[]): ParsedSymbol[] {
       const iou = union > 0 ? intersection / union : 0;
       // Also check name similarity
       const nameSim = existing.symbol_name?.toLowerCase() === s.symbol_name?.toLowerCase();
-      return iou > 0.3 || nameSim;
+      return iou > iouThreshold || nameSim;
     });
     if (!isDupe) out.push(s);
   }
@@ -356,12 +465,16 @@ export async function extractLegendSymbolsFromPng(
   page: number,
   pngBuffer?: Buffer,
 ): Promise<ParsedSymbol[]> {
-  const { client, candidates, cfg } = await getModelWithFallback();
+  const { client, candidates, cfg, tuning } = await getModelWithFallback();
   if (cfg.provider === 'deepseek') throw new Error('DeepSeek cannot analyse images — switch provider to Gemini in Settings');
+
+  const jsonIncompatible = tuning.model.jsonIncompatible;
+  const perf = tuning.performance;
+  const regionGeneration = generationConfigFrom(tuning.generation, 'legend');
 
   // If no buffer provided, fall back to single-pass (legacy)
   if (!pngBuffer) {
-    return extractSinglePass(pngBase64, page, client, candidates);
+    return extractSinglePass(pngBase64, page, client, candidates, tuning);
   }
 
   const sharp = (await import('sharp')).default;
@@ -369,15 +482,26 @@ export async function extractLegendSymbolsFromPng(
   const imgW = meta.width ?? 1000;
   const imgH = meta.height ?? 1000;
 
-  // Determine grid based on aspect ratio
-  // Standard P&ID legend: landscape, many columns → 6 cols × 4 rows
-  // More rows = smaller region = Gemini sees fewer symbols per crop = less likely to miss
+  // Grid derived from aspect ratio. Standard P&ID legend sheets are landscape
+  // with many columns, so they get more columns than rows: more, smaller regions
+  // mean fewer symbols per crop and a lower chance of missing one.
   const aspectRatio = imgW / imgH;
-  const cols = aspectRatio > 1.5 ? 6 : aspectRatio > 1 ? 4 : 3;
-  const rows = 4; // increased from 3 → catches more symbols per region
-  const regions = buildRegions(cols, rows, 0.15); // 15% overlap (was 5%)
+  const cols = aspectRatio > 1.5
+    ? perf.legendRegionColsLandscape
+    : aspectRatio > 1
+      ? perf.legendRegionColsSquarish
+      : perf.legendRegionColsPortrait;
+  const rows = perf.legendRegionRows;
+  const regions = buildRegions(cols, rows, perf.legendRegionOverlap);
 
-  console.log(`[legend-extract] page ${page}: ${imgW}x${imgH}, splitting into ${cols}x${rows}=${regions.length} regions (15% overlap)`);
+  // One guard for the whole page: its attempt cap and request budget cover every
+  // region and the catch-up pass, so a page cannot spend regions × models
+  // requests.
+  const guard = makeModelChainGuard(tuning);
+
+  console.log(
+    `[legend-extract] page ${page}: ${imgW}x${imgH}, splitting into ${cols}x${rows}=${regions.length} regions (${Math.round(perf.legendRegionOverlap * 100)}% overlap)`,
+  );
 
   const allSymbols: ParsedSymbol[] = [];
 
@@ -391,8 +515,8 @@ export async function extractLegendSymbolsFromPng(
     const cropW = Math.max(10, Math.round(region.w * imgW));
     const cropH = Math.max(10, Math.round(region.h * imgH));
 
-    // Upscale crop to at least 800px wide for better Gemini accuracy on small symbols
-    const targetW = Math.max(800, cropW);
+    // Upscale crop so small symbols stay legible after Gemini downscaling.
+    const targetW = Math.min(perf.legendCropMaxWidth, Math.max(perf.legendCropMinWidth, cropW));
 
     let cropBase64: string;
     try {
@@ -411,11 +535,21 @@ export async function extractLegendSymbolsFromPng(
     // Analyze region
     let rawSymbols: any[] = [];
     try {
-      rawSymbols = await analyzeRegion(cropBase64, region.label, client, candidates, page, i);
+      rawSymbols = await analyzeRegion(
+        cropBase64,
+        region.label,
+        client,
+        candidates,
+        page,
+        i,
+        regionGeneration,
+        jsonIncompatible,
+        guard,
+      );
     } catch (e) {
       console.warn(`[legend-extract] page ${page} region ${i} analyze failed:`, e);
-      // Add small delay before next region on error
-      await new Promise(r => setTimeout(r, 1000));
+      // Brief pause so a failing region does not immediately hit the rate limit.
+      await new Promise(r => setTimeout(r, perf.legendErrorDelayMs));
       continue;
     }
 
@@ -462,14 +596,14 @@ export async function extractLegendSymbolsFromPng(
       });
     }
 
-    // Small delay between regions to avoid rate limiting
-    if (i < regions.length - 1) {
-      await new Promise(r => setTimeout(r, 300));
+    // Small delay between regions to stay under the per-minute request limit
+    if (i < regions.length - 1 && perf.legendRegionDelayMs > 0) {
+      await new Promise(r => setTimeout(r, perf.legendRegionDelayMs));
     }
   }
 
   // Remove duplicates from overlapping region borders
-  const deduplicated = deduplicateSymbols(allSymbols);
+  const deduplicated = deduplicateSymbols(allSymbols, perf.legendDedupeNameIou);
   console.log(`[legend-extract] page ${page}: ${allSymbols.length} raw → ${deduplicated.length} after dedup`);
 
   // ── Catch-up pass: full page scan to find anything missed ───────────────────
@@ -494,57 +628,115 @@ Return JSON ONLY:
 If all symbols already detected, return: {"symbols":[]}
 bbox: 0-1000 coords relative to full image, tight around icon only.`;
 
-    const catchModel = candidates.find(m => !JSON_MODE_INCOMPATIBLE.has(m)) ?? candidates[0];
-    const model = (client as any).getGenerativeModel({
-      model: catchModel,
-      generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
-    });
-    const res = await model.generateContent([
-      { text: catchupPrompt },
-      { inlineData: { mimeType: 'image/png', data: pngBase64 } },
-    ]);
-    const j = parseJsonResponse(res.response.text()) as { symbols?: unknown[] };
-    const missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
+    // Walk the chain instead of picking one model up front. The previous version
+    // took the first usable candidate and gave up if that single model failed,
+    // so a 429 or 503 on it lost the whole catch-up pass even though other
+    // models were healthy.
+    let missed: Array<Record<string, unknown>> = [];
+    let catchupModel: string | null = null;
+    let catchupErr: unknown;
+    for (const m of candidates) {
+      if (isJsonModeIncompatible(jsonIncompatible, m)) continue;
+      if (guard.breaker.isOpen(m)) {
+        console.warn(`[legend-extract] page ${page} catchup skipping ${m}: circuit open`);
+        continue;
+      }
+      try {
+        await guard.gate.wait();
+        const model = (client as any).getGenerativeModel({
+          model: m,
+          generationConfig: generationConfigFrom(tuning.generation, 'legendCatchup'),
+        });
+        const res = await model.generateContent([
+          { text: catchupPrompt },
+          { inlineData: { mimeType: 'image/png', data: pngBase64 } },
+        ]);
+        guard.breaker.recordSuccess(m);
+        const j = parseJsonResponse(res.response.text()) as { symbols?: unknown[] };
+        missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
+        catchupModel = m;
+        break;
+      } catch (e: unknown) {
+        catchupErr = e;
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[legend-extract] page ${page} catchup model ${m}: ${msg.slice(0, 150)}`);
+        if (!isProviderUnavailable(msg)) break;
+        guard.breaker.recordFailure(m);
+        if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
+          await guard.gate.backoff(guard.attemptDelayMs * 2);
+        } else if (guard.attemptDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
+        }
+      }
+    }
+
+    if (catchupModel === null && catchupErr) {
+      console.warn(
+        `[legend-extract] page ${page} catchup pass failed on all models:`,
+        catchupErr instanceof Error ? catchupErr.message.slice(0, 150) : catchupErr,
+      );
+    }
 
     if (missed.length > 0) {
-      console.log(`[legend-extract] page ${page} catchup: found ${missed.length} additional symbols`);
+      console.log(
+        `[legend-extract] page ${page} catchup via ${catchupModel}: found ${missed.length} additional symbols`,
+      );
       for (const s of missed) {
         const { x, y, w, h } = extractBbox(s);
+        // Model output is untrusted: every field is coerced to its declared type
+        // rather than assigned as-is, so a non-string name or pattern cannot
+        // reach the DB column.
         deduplicated.push({
           asset_type: String(s.assetType ?? 'Unknown').slice(0, 120),
-          symbol_name: s.name ?? null,
-          tag_pattern: s.tagPattern ?? null,
-          description: s.description ?? null,
-          aliases: Array.isArray(s.aliases) ? s.aliases : [],
+          symbol_name: strOrNull(s.name),
+          tag_pattern: strOrNull(s.tagPattern),
+          description: strOrNull(s.description),
+          aliases: Array.isArray(s.aliases) ? s.aliases.map(a => String(a)) : [],
           bbox_x: x, bbox_y: y, bbox_w: w, bbox_h: h,
         });
       }
-    } else {
-      console.log(`[legend-extract] page ${page} catchup: no missed symbols`);
+    } else if (catchupModel !== null) {
+      console.log(`[legend-extract] page ${page} catchup via ${catchupModel}: no missed symbols`);
     }
   } catch (e) {
     console.warn(`[legend-extract] page ${page} catchup pass failed:`, e instanceof Error ? e.message.slice(0, 150) : e);
   }
 
-  const final = deduplicateSymbols(deduplicated);
+  const final = deduplicateSymbols(deduplicated, perf.legendDedupeNameIou);
   console.log(`[legend-extract] page ${page}: final ${final.length} symbols`);
   return final;
 }
 
 // ─── Single-pass fallback (no buffer) ────────────────────────────────────────
 
-async function extractSinglePass(pngBase64: string, page: number, client: any, candidates: string[]): Promise<ParsedSymbol[]> {
+async function extractSinglePass(
+  pngBase64: string,
+  page: number,
+  client: any,
+  candidates: string[],
+  tuning: Awaited<ReturnType<typeof getTuning>>,
+): Promise<ParsedSymbol[]> {
   const PROMPT = `You are a P&ID legend digitizer. Extract ALL symbols from this legend page.
 Return JSON ONLY: {"symbols":[{"name":"label","assetType":"type","tagPattern":"P-### or null","description":"string or null","aliases":[],"bbox":[ymin,xmin,ymax,xmax]}]}
 bbox: tight around symbol graphic only, 0-1000 coords, NOT including text label.`;
 
   const imgPart = { inlineData: { mimeType: 'image/png' as const, data: pngBase64 } };
+  const generation = generationConfigFrom(tuning.generation, 'legend');
+  const jsonIncompatible = tuning.model.jsonIncompatible;
+  const guard = makeModelChainGuard(tuning);
   let lastErr: unknown;
   for (const modelName of candidates) {
-    if (JSON_MODE_INCOMPATIBLE.has(modelName)) continue;
+    if (isJsonModeIncompatible(jsonIncompatible, modelName)) continue;
+    if (guard.breaker.isOpen(modelName)) {
+      console.warn(`[legend-extract] page ${page} skipping ${modelName}: circuit open`);
+      continue;
+    }
+    if (!guard.shouldAttempt(page, 0)) throw lastErr ?? new Error('All models failed');
     try {
-      const model = client.getGenerativeModel({ model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: 'application/json' } });
+      await guard.gate.wait();
+      const model = client.getGenerativeModel({ model: modelName, generationConfig: generation });
       const r = await model.generateContent([{ text: PROMPT }, imgPart]);
+      guard.breaker.recordSuccess(modelName);
       const j = parseJsonResponse(r.response.text()) as { symbols?: unknown[] };
       const raw = Array.isArray(j.symbols) ? j.symbols : [];
       if (raw.length === 0) { lastErr = new Error('0 symbols'); continue; }
@@ -554,11 +746,18 @@ bbox: tight around symbol graphic only, 0-1000 coords, NOT including text label.
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      const retryable = /429|quota|rate|overloaded|503|404|fetch/i.test(msg);
+      const retryable = isProviderUnavailable(msg);
       console.warn(`[legend-extract] page ${page} ${modelName}: ${msg.slice(0, 150)}`);
       lastErr = e;
-      if (retryable) continue;
-      throw e;
+      if (!retryable) throw e;
+      guard.breaker.recordFailure(modelName);
+      guard.attempts += 1;
+      if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
+        await guard.gate.backoff(guard.attemptDelayMs * 2);
+      } else if (guard.attemptDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
+      }
+      continue;
     }
   }
   lastErr = lastErr;
@@ -613,7 +812,7 @@ export async function extractLegendSymbolsRobust(
       console.warn(`[legend-extract] page ${page} chunk ${i} failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`);
     }
   }
-  const deduped = dedupeSymbols(merged);
+  const deduped = dedupeSymbols(merged, (await getTuning()).performance.legendDedupeIou);
   if (deduped.length === 0) throw chunkErr ?? fullErr ?? new Error('All chunks failed');
   console.log(`[legend-extract] page ${page} chunked fallback: ${merged.length} → ${deduped.length} after dedupe`);
   return { symbols: deduped, strategy: 'chunked' };

@@ -124,7 +124,6 @@ export default function LegendReviewPage() {
   // ── Stage 3.5: quality review state ───────────────────────────────────────
   const [qualityTab, setQualityTab] = useState<QualityTab>('all');
   const [reasonFilter, setReasonFilter] = useState<ReasonFilter>('');
-  const [diagnosing, setDiagnosing] = useState(false);
   const [rejectModalId, setRejectModalId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
   const [rejectNote, setRejectNote] = useState('');
@@ -501,17 +500,6 @@ export default function LegendReviewPage() {
     finally { setRecropping(false); }
   };
 
-  const handleDiagnose = async () => {
-    setDiagnosing(true);
-    try {
-      const res = await fetch(`/api/legends/${legendId}/diagnose`, { method: 'POST' });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((d as any).error || `Diagnose failed (${res.status})`);
-      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
-      if (sr.ok) { const j = await sr.json(); if (Array.isArray(j)) setSymbols(j); }
-    } catch (e: any) { setError(e.message || 'Diagnose failed'); }
-    finally { setDiagnosing(false); }
-  };
   const handleDeleteSymbol = async (id: string) => {
     setConfirmDeleteId(null);
     try {
@@ -742,8 +730,6 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
 <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={handleDiagnose} disabled={diagnosing} title="Run deterministic quality diagnostics (ink/border/text/geometry/duplicates)" style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: diagnosing ? 'var(--surface-muted)' : 'var(--surface)', color: 'var(--primary)', fontSize: 12, fontWeight: 600, cursor: diagnosing ? 'wait' : 'pointer', opacity: diagnosing ? 0.6 : 1 }}>{diagnosing ? 'Diagnosing…' : '◉ Diagnose'}</button>
-
           <button onClick={handleReparse} disabled={reparsing}
             style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: reparsing ? 'not-allowed' : 'pointer', opacity: reparsing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <ArrowCounterClockwise size={13} />{reparsing ? 'Re-parsing…' : 'Re-parse'}

@@ -9,11 +9,13 @@ import { cropPageRegion } from '@/lib/image-crop';
 import { createHash } from 'crypto';
 import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
 import { cropAndSaveSymbol } from '@/lib/legend-crop';
+import { getTuning } from '@/lib/tuning';
 
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-    const rl = checkRateLimit(`legend-upload:${ip}`, 5, 60_000);
+    const maxUploads = (await getTuning()).performance.rateLimitLegendUploads;
+    const rl = checkRateLimit(`legend-upload:${ip}`, maxUploads, 60_000);
     if (!rl.allowed) {
       return NextResponse.json({ error: 'Too many legend uploads. Try again later.' }, { status: 429, headers: rateLimitHeaders(rl) });
     }

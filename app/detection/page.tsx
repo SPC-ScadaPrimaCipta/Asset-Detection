@@ -10,6 +10,7 @@ import React, {
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Lightning, CheckCircle, XCircle, PencilSimple, FloppyDisk, FileXls, PlusCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
+import { LegendSelector } from '../../components/ui/LegendSelector';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2539,10 +2540,22 @@ function DetectionWorkspace() {
     if (typeof window !== 'undefined') return localStorage.getItem('det_documentId') || "";
     return "";
   });
-  const [legendId, setLegendId] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('det_legendId') || "";
-    return "";
+  const [legendIds, setLegendIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem('det_legendIds');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          return arr.filter((v): v is string => typeof v === 'string' && v !== '').slice(0, 3);
+        }
+      }
+    } catch { /* corrupted storage falls through to legacy key */ }
+    const legacy = localStorage.getItem('det_legendId');
+    return legacy ? [legacy] : [];
   });
+  /** Primary legend = first selected. Kept for ManualAddModal, which takes one legend. */
+  const legendId = legendIds[0] ?? "";
   const [currentPage, setCurrentPage] = useState<number | null>(() => {
     if (typeof window !== 'undefined') {
       const p = localStorage.getItem('det_currentPage');
@@ -2563,9 +2576,15 @@ function DetectionWorkspace() {
   }, [documentId]);
 
   useEffect(() => {
-    if (legendId) localStorage.setItem('det_legendId', legendId);
-    else localStorage.removeItem('det_legendId');
-  }, [legendId]);
+    if (legendIds.length > 0) {
+      localStorage.setItem('det_legendIds', JSON.stringify(legendIds));
+      // Legacy single key kept in sync so older UI builds still see the primary.
+      localStorage.setItem('det_legendId', legendIds[0]);
+    } else {
+      localStorage.removeItem('det_legendIds');
+      localStorage.removeItem('det_legendId');
+    }
+  }, [legendIds]);
 
   useEffect(() => {
     if (currentPage) localStorage.setItem('det_currentPage', String(currentPage));
@@ -2719,7 +2738,7 @@ function DetectionWorkspace() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         document_id: documentId,
-        legend_id: legendId || null,
+        legend_ids: legendIds,
         project_id: projectId || null,
       }),
     });
@@ -2912,28 +2931,14 @@ function DetectionWorkspace() {
             </select>
           </label>
 
-          <label
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "6px",
-              minWidth: "192px",
-            }}
-          >
-            <span style={fieldLabelStyle}>Legend</span>
-            <select
-              value={legendId}
-              onChange={(e) => setLegendId(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">No legend (auto-detect)</option>
-              {legends.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div style={{ minWidth: "224px" }}>
+            <LegendSelector
+              legends={legends}
+              legendIds={legendIds}
+              onChange={setLegendIds}
+              label="Legend"
+            />
+          </div>
 
           <button
             onClick={handleRunDetection}

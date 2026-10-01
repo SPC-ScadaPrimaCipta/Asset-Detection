@@ -8,6 +8,7 @@
  * Uses mupdf Pixmap pixel copy — no external dependencies (mupdf already in stack).
  * Runs only in Node.js / worker context (not browser-safe).
  */
+import { env } from './env';
 
 interface BBox {
   x: number;       // 0-1000 normalized
@@ -121,19 +122,27 @@ export function expandBBox(
 
 /**
  * Adaptive bbox expansion based on symbol size.
- * M2 fix: flat 60-unit expand causes noise for small symbols (30-50 units).
  *
- * Strategy:
- *   - Minimum expand: 20 units (enough to catch tag text just outside symbol)
- *   - Proportional: 40% of symbol's average dimension
- *   - Maximum: 80 units (prevents pulling in unrelated nearby symbols)
+ * A flat expand adds noise around small symbols (30-50 units), so the pad scales
+ * with the symbol: enough to catch adjacent tag text, capped so it cannot pull in
+ * a neighbouring symbol.
  *
- * For a 40×40 symbol: expand = max(20, min(80, 40*0.40)) = max(20, min(80, 16)) = 20
- * For a 60×60 symbol: expand = max(20, min(80, 60*0.40)) = max(20, min(80, 24)) = 24
- * For a 150×150 vessel: expand = max(20, min(80, 150*0.40)) = max(20, min(80, 60)) = 60
+ *   - Minimum: cropExpandMinUnits — enough to catch tag text just outside
+ *   - Proportional: cropExpandRatio of the average dimension
+ *   - Maximum: cropExpandMaxUnits
+ *
+ * For a 40×40 symbol with the defaults:  max(20, min(80, 40*0.40)) = 20
+ * For a 60×60 symbol:                      max(20, min(80, 60*0.40)) = 24
+ * For a 150×150 vessel:                    max(20, min(80, 150*0.40)) = 60
+ *
+ * Bounds come from `performance.cropExpand*` tuning (Settings → .env → these
+ * fallbacks). Synchronous, so the env layer is the source here.
  */
 export function adaptiveExpandBBox(bbox: BBox): BBox {
   const avgDim = (bbox.width + bbox.height) / 2;
-  const expandBy = Math.max(20, Math.min(80, Math.round(avgDim * 0.40)));
+  const expandBy = Math.max(
+    env.CROP_EXPAND_MIN_UNITS,
+    Math.min(env.CROP_EXPAND_MAX_UNITS, Math.round(avgDim * env.CROP_EXPAND_RATIO)),
+  );
   return expandBBox(bbox, expandBy);
 }

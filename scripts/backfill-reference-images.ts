@@ -9,8 +9,14 @@
 import { Pool } from 'pg';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { env } from '../lib/env';
+import { getTuning } from '../lib/tuning';
 
-const connStr = process.env.DATABASE_URL || 'postgresql://postgres@127.0.0.1:5433/asset_detection';
+// Use the app's env loader and legend render scale so a backfill produces crops
+// at the same resolution as the live Scan Legend flow.
+const connStr = env.DATABASE_URL;
+const storageRoot = env.STORAGE_PATH;
+const renderScale = await getTuning().then((t) => t.performance.legendRenderScale);
 
 async function main() {
   const args = process.argv.slice(2);
@@ -59,13 +65,13 @@ async function main() {
         const pdfName = `legend-${legendId}.pdf`;
         let pdfBuf: Buffer;
         try {
-          const storagePath = process.env.STORAGE_PATH || join(process.cwd(), 'storage');
+          const storagePath = storageRoot;
           pdfBuf = await readFile(join(storagePath, pdfName));
         } catch {
           console.warn(`skip ${key}: PDF not found (${pdfName})`);
           continue;
         }
-        const rendered = await renderPageToPng(pdfBuf, page, 4.0);
+        const rendered = await renderPageToPng(pdfBuf, page, renderScale);
         const b64 = rendered.png.toString('base64');
         for (const s of group) {
           try {

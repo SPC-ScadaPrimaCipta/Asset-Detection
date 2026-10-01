@@ -31,7 +31,9 @@ export async function getGeminiModel() {
 export async function getDeepSeekClient() {
   const { deepseekKey } = await getAiConfig();
   if (!deepseekKey) throw new Error("DEEPSEEK_API_KEY not configured — set in Settings or .env.local");
-  return new OpenAI({ apiKey: deepseekKey, baseURL: "https://api.deepseek.com/v1" });
+  const { getTuning } = await import('./tuning');
+  const { deepseekBaseUrl } = (await getTuning()).model;
+  return new OpenAI({ apiKey: deepseekKey, baseURL: `${deepseekBaseUrl}/v1` });
 }
 
 // --- Explicit-key variants (for scan/validate flows that haven't saved yet) ---
@@ -44,9 +46,11 @@ export function makeGeminiFileManager(apiKey: string) {
   if (!apiKey) throw new Error("apiKey required");
   return new GoogleAIFileManager(apiKey);
 }
-export function makeDeepSeekClient(apiKey: string) {
+export async function makeDeepSeekClient(apiKey: string) {
   if (!apiKey) throw new Error("apiKey required");
-  return new OpenAI({ apiKey, baseURL: "https://api.deepseek.com/v1" });
+  const { getTuning } = await import('./tuning');
+  const { deepseekBaseUrl } = (await getTuning()).model;
+  return new OpenAI({ apiKey, baseURL: `${deepseekBaseUrl}/v1` });
 }
 
 /**

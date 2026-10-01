@@ -1,4 +1,5 @@
 import type { Detection } from "./ai-schemas";
+import { env } from "./env";
 
 export interface RawSymbol { bbox: { x: number; y: number; width: number; height: number }; label: string }
 export interface RawTag { text: string; bbox: { x: number; y: number; width: number; height: number } }
@@ -26,42 +27,85 @@ function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
  */
 // Phase 4: proximity per kelas aset (0-1000 units).
 // Tag vessel sering jauh dari simbol; valve/instrument dekat.
-// Bisa dioverride via SPATIAL_MAX_PROXIMITY_JSON='{"valve":100,"default":150}'.
-const DEFAULT_MAX_PROXIMITY = parseInt(process.env.SPATIAL_MAX_PROXIMITY ?? '150', 10);
+// Resolution: `validator.spatialMaxProximity*` tuning (Settings → .env →
+// literal fallbacks below). Kept synchronous because tag association runs
+// inside a tight per-detection loop.
+const DEFAULT_MAX_PROXIMITY = env.SPATIAL_MAX_PROXIMITY;
+const FALLBACK_MAX_PROXIMITY_BY_KIND = {
+  valve: 100,
+  vessel: 250,
+  rotating: 180,
+} as const;
+
+function spatialMaxProximityMap(): Record<string, number> {
+  const raw = process.env.SPATIAL_MAX_PROXIMITY_JSON;
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, number>)
+      : {};
+  } catch {
+    // Malformed JSON must not silently shrink every proximity window.
+    return {};
+  }
+}
 
 function maxProximityFor(assetType?: string | null): number {
-  try {
-    const raw = process.env.SPATIAL_MAX_PROXIMITY_JSON;
-    if (raw) {
-      const m = JSON.parse(raw) as Record<string, number>;
-      const t = (assetType ?? '').toLowerCase();
-      if (/valve|psv|prv|xv|fcv|mov|sdv/.test(t) && m.valve != null) return m.valve;
-      if (/vessel|tank|column|reactor|separator|drum/.test(t) && m.vessel != null) return m.vessel;
-      if (/pump|compressor|fan|blower|turbine|motor/.test(t) && m.rotating != null) return m.rotating;
-      if (m.default != null) return m.default;
-    }
-  } catch { /* abaikan JSON rusak → pakai default */ }
   const t = (assetType ?? '').toLowerCase();
-  if (/valve|psv|prv|xv|fcv|mov|sdv|check|gate|ball|globe/.test(t)) return 100;
-  if (/vessel|tank|column|reactor|separator|drum|heater|exchanger/.test(t)) return 250;
-  if (/pump|compressor|fan|blower|turbine|motor/.test(t)) return 180;
-  return DEFAULT_MAX_PROXIMITY;
+  const m = spatialMaxProximityMap();
+  // Overrides win, falling back per class so a partial map is still useful.
+  // Class patterns match the original heuristics exactly — widening or
+  // narrowing them would silently change tag-association results.
+  if (/valve|psv|prv|xv|fcv|mov|sdv|check|gate|ball|globe/.test(t)) {
+    return m.valve ?? FALLBACK_MAX_PROXIMITY_BY_KIND.valve;
+  }
+  if (/vessel|tank|column|reactor|separator|drum|heater|exchanger/.test(t)) {
+    return m.vessel ?? FALLBACK_MAX_PROXIMITY_BY_KIND.vessel;
+  }
+  if (/pump|compressor|fan|blower|turbine|motor/.test(t)) {
+    return m.rotating ?? FALLBACK_MAX_PROXIMITY_BY_KIND.rotating;
+  }
+  return m.default ?? DEFAULT_MAX_PROXIMITY;
 }
 
 export function associateTagsToSymbols(
   detections: Detection[],
-  tagPatternRegexes: RegExp[]
+  tagPatternRegexes: RegExp[],
+  /**
+   * Source legend name per regex, index-aligned with `tagPatternRegexes`.
+   * When provided and more than one distinct legend is present, a matching tag
+   * gains an evidence line naming the legend that matched it; a non-match names
+   * every legend checked. Omitted → legacy single-legend messages verbatim.
+   */
+  patternSources?: Array<string | null>
 ): Detection[] {
+  const multiLegend =
+    Array.isArray(patternSources) &&
+    new Set(patternSources.filter((s): s is string => typeof s === 'string' && s !== '')).size > 1;
   // Step 1: Tag pattern validation
   const validated = detections.map((d) => {
     if (!d.assetTag) return d;
-    const matches = tagPatternRegexes.length === 0 || tagPatternRegexes.some((r) => r.test(d.assetTag!));
-    if (!matches) {
+    const matchIdx = tagPatternRegexes.length === 0
+      ? -2 // no patterns at all: everything passes, no source to name
+      : tagPatternRegexes.findIndex((r) => r.test(d.assetTag!));
+    if (matchIdx === -1) {
       return {
         ...d,
         confidence: Math.min(d.confidence, 0.79),
-        evidence: [...d.evidence, "Tag pattern does not match selected Legend — review required"],
+        evidence: [
+          ...d.evidence,
+          multiLegend
+            ? `Tag pattern does not match any of the ${new Set(patternSources!.filter(Boolean)).size} selected Legends — review required`
+            : "Tag pattern does not match selected Legend — review required",
+        ],
       };
+    }
+    if (multiLegend && matchIdx >= 0) {
+      const source = patternSources![matchIdx];
+      if (source) {
+        return { ...d, evidence: [...d.evidence, `Tag ${d.assetTag} matches Legend "${source}"`] };
+      }
     }
     return d;
   });

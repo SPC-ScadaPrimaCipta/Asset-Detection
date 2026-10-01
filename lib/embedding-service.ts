@@ -1,42 +1,31 @@
 /**
  * Embedding Service
  *
- * Generates text embeddings ONLY from canonical feature strings.
- * Model configurable via EMBEDDING_MODEL (default text-embedding-004,
- * 768 dimensions — must match vector(768) columns).
+ * Generates text embeddings ONLY from canonical feature strings. Free-form
+ * descriptions are never embedded — the input is always the output of
+ * `serializeFeatures()`.
  *
- * Never embeds free-form descriptions.
- * Input must always be a canonical feature string from serializeFeatures().
+ * Model, fallback chain and width are tuning (`performance.embedding*`):
+ * Settings → .env → fallback. `embeddingDimensions` MUST match the DB column
+ * width (`vector(768)`); a mismatch fails every insert, so the check is
+ * explicit rather than truncating silently.
  */
-
 import { getAiConfig } from '@/lib/ai-config';
-
-// P3: model configurable — text-embedding-004 me-return 404 di v1beta
-// (retired). Set EMBEDDING_MODEL ke model aktif, mis. gemini-embedding-001
-// (pastikan output 768 dim — kolom DB vector(768)).
-// EMBEDDING_MODEL_FALLBACKS: comma list, dicoba berurutan jika primary gagal.
-function embeddingModelChain(): string[] {
-  const primary = (process.env.EMBEDDING_MODEL ?? 'text-embedding-004').trim();
-  const fallbacks = (process.env.EMBEDDING_MODEL_FALLBACKS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return [primary, ...fallbacks].filter((m, i, a) => a.indexOf(m) === i);
-}
-const EMBEDDING_DIMENSIONS = 768;
+import { getTuning } from '@/lib/tuning';
 
 export interface EmbeddingResult {
-  embedding: number[];   // 768-dim vector
+  embedding: number[];
   dimensions: number;
   model: string;
-  canonical: string;     // the input canonical string (for audit)
+  /** The input canonical string, kept for audit. */
+  canonical: string;
 }
 
 /**
- * Generate embedding from a canonical feature string.
- * Input MUST be output of serializeFeatures() — never raw text or descriptions.
+ * Generate an embedding from a canonical feature string.
  *
- * Returns null on failure — caller must handle gracefully (fallback to next pipeline step).
+ * Returns null on failure so the caller can fall through to the next pipeline
+ * step instead of failing the detection.
  */
 export async function embedCanonical(canonical: string): Promise<EmbeddingResult | null> {
   try {
@@ -45,26 +34,34 @@ export async function embedCanonical(canonical: string): Promise<EmbeddingResult
       console.warn('[embedding] No Gemini key — skipping embedding');
       return null;
     }
+    const { performance } = await getTuning();
+    const { embeddingModel, embeddingModelFallbacks, embeddingDimensions } = performance;
+    const chain = [embeddingModel, ...embeddingModelFallbacks].filter(
+      (m, i, a) => a.indexOf(m) === i,
+    );
 
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genai = new GoogleGenerativeAI(cfg.geminiKey);
 
     let lastErr: unknown = null;
-    for (const modelName of embeddingModelChain()) {
+    for (const modelName of chain) {
       try {
         const model = genai.getGenerativeModel({ model: modelName });
         const result = await model.embedContent(canonical);
         const embedding = result.embedding.values;
 
-        if (!embedding || embedding.length !== EMBEDDING_DIMENSIONS) {
-          console.warn(`[embedding] ${modelName}: unexpected dimensions: ${embedding?.length} (expected ${EMBEDDING_DIMENSIONS})`);
+        if (!embedding || embedding.length !== embeddingDimensions) {
+          console.warn(
+            `[embedding] ${modelName}: unexpected dimensions: ${embedding?.length} ` +
+              `(expected ${embeddingDimensions}) — check EMBEDDING_DIMENSIONS matches the DB column width`,
+          );
           lastErr = new Error(`dimension mismatch: ${embedding?.length}`);
           continue;
         }
 
         return {
           embedding,
-          dimensions: EMBEDDING_DIMENSIONS,
+          dimensions: embeddingDimensions,
           model: modelName,
           canonical,
         };
@@ -84,27 +81,33 @@ export async function embedCanonical(canonical: string): Promise<EmbeddingResult
 }
 
 /**
- * Batch embed multiple canonical strings.
- * Returns array parallel to input — null for failed items.
- * Uses sequential calls to avoid rate limiting.
+ * Batch embed canonical strings. Returns one entry per input, null on failure.
+ * Sequential, with a tuning-controlled pause, to stay under rate limits.
  */
-export async function batchEmbedCanonical(canonicals: string[]): Promise<(EmbeddingResult | null)[]> {
+export async function batchEmbedCanonical(
+  canonicals: string[],
+): Promise<(EmbeddingResult | null)[]> {
+  const { performance } = await getTuning();
+  const delayMs = performance.embeddingRequestDelayMs;
   const results: (EmbeddingResult | null)[] = [];
   for (const canonical of canonicals) {
     results.push(await embedCanonical(canonical));
-    // Small delay between calls to respect rate limits
-    if (canonicals.length > 1) await new Promise(r => setTimeout(r, 200));
+    if (canonicals.length > 1 && delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
   }
   return results;
 }
 
 /**
- * Compute cosine similarity between two embedding vectors.
- * Returns 0-1 where 1 = identical.
+ * Cosine similarity of two vectors, 0–1 (1 = identical).
+ * Returns 0 for a length mismatch rather than comparing misaligned arrays.
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
-  let dot = 0, magA = 0, magB = 0;
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     magA += a[i] * a[i];
@@ -114,10 +117,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-/**
- * Format embedding vector for pgvector storage.
- * pgvector expects: '[0.1,0.2,...]'
- */
+/** Format an embedding for pgvector storage, which expects '[0.1,0.2,...]'. */
 export function formatEmbeddingForPg(embedding: number[]): string {
   return `[${embedding.join(',')}]`;
 }

@@ -217,6 +217,30 @@ async function migrate() {
       console.warn('  008 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 009: settings.tuning (runtime tuning overrides).
+    // Idempotent .sql file (IF NOT EXISTS guard) — safe to re-run.
+    try {
+      const tsql = join(__dirname, '..', 'sql', 'migrate-009-settings-tuning.sql');
+      if (existsSync(tsql)) {
+        await p.query(readFileSync(tsql, 'utf-8'));
+        console.log('  009: settings.tuning OK');
+      }
+    } catch (e) {
+      console.warn('  009 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 010: multi-legend detection jobs (detection_jobs.legend_ids).
+    // Idempotent .sql file (IF NOT EXISTS guards) — safe to re-run.
+    try {
+      const msql = join(__dirname, '..', 'sql', 'migrate-010-detection-multi-legend.sql');
+      if (existsSync(msql)) {
+        await p.query(readFileSync(msql, 'utf-8'));
+        console.log('  010: detection_jobs.legend_ids OK');
+      }
+    } catch (e) {
+      console.warn('  010 migration warning (non-fatal):', e.message);
+    }
+
     // Migration V2-Phase2: deterministic geometry + AI-verification columns.
     // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
     try {

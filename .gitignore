@@ -54,6 +54,5 @@ dump.rdb
 # YOLO external data (dataset/model bukan milik repo — lokal saja)
 *.pt
 *.onnx
-eval/yolo-pid-symbols/
 images.zip
 labels.zip

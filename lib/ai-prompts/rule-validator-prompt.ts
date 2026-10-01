@@ -7,7 +7,7 @@
 export interface RuleValidatorContext {
   symbolDescription: string;
   nearbyText: string | null;
-  ocrContext: string | null;
+  ocrContext?: string | null;
   candidates: Array<{
     assetType: string;
     assetName: string;

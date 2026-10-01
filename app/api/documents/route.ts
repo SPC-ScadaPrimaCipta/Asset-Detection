@@ -5,6 +5,7 @@ import { saveFile } from '@/lib/storage';
 import { validatePdfFile, getPdfPageCountFromBuffer } from '@/lib/pdf-render';
 import { PDFDocument } from 'pdf-lib';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { getTuning } from '@/lib/tuning';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +29,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-    const rl = checkRateLimit(`upload:${ip}`, 10, 60_000); // 10 uploads/min per IP
+    const maxUploads = (await getTuning()).performance.rateLimitDocumentUploads;
+    const rl = checkRateLimit(`upload:${ip}`, maxUploads, 60_000);
     if (!rl.allowed) {
       return NextResponse.json(
         { error: 'Too many uploads. Try again later.' },

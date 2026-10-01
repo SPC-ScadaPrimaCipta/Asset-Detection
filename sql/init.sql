@@ -67,6 +67,8 @@ CREATE TABLE detection_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
     legend_id UUID REFERENCES legends(id) ON DELETE SET NULL,
+    -- Ordered legend ids for multi-legend detection (max 3). [1] is primary.
+    legend_ids UUID[],
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
     status TEXT DEFAULT 'PENDING',
     progress_pct INTEGER DEFAULT 0,
@@ -121,7 +123,14 @@ CREATE TABLE detections (
     embedding vector(768),
     confidence_breakdown JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- New fields for tag/no and reference fields
+    size VARCHAR(255),
+    fromRef VARCHAR(255),
+    toRef VARCHAR(255),
+    ofOrAtRef VARCHAR(255),
+    descriptionProposed VARCHAR(255),
+    tagNoProposed VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS detection_audits (
@@ -160,7 +169,14 @@ CREATE TABLE assets (
     bbox_h INTEGER,
     evidence JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- New fields for tag/no and reference fields
+    size VARCHAR(255),
+    fromRef VARCHAR(255),
+    toRef VARCHAR(255),
+    ofOrAtRef VARCHAR(255),
+    descriptionProposed VARCHAR(255),
+    tagNoProposed VARCHAR(255)
 );
 
 -- Company Knowledge (hierarchical: project+drawing_type → project → global)

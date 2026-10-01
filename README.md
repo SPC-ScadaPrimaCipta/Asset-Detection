@@ -2,6 +2,26 @@
 
 Aplikasi deteksi aset industri otomatis dari dokumen P&ID / PFD menggunakan AI multimodal (Gemini / DeepSeek).
 
+> **Gemini-First.** Detection 100% Google Gemini Vision: satu halaman P&ID di-render
+> menjadi PNG lalu dikirim ke Gemini bersama Legend Library yang dipilih. Tidak ada
+> OCR, tidak ada OpenCV/CV service, tidak ada model deteksi lokal di jalur ini.
+> Lihat `docs/PRD.md` untuk requirement produk dan
+> `docs/ASSET_REGISTER_EXCEL_EXPORT.md` untuk format export.
+>
+> **Anggaran panggilan Gemini.** Secara default satu halaman detection|biaya
+> satu panggilan `generateContent`. Feature extraction dan embedding per deteksi
+> bersifat opt-in karena masing-masing menambah satu request per deteksi dan
+> menghabiskan kuota free tier (15 request/menit):
+>
+> | Variabel | Default | Dampak jika diaktifkan |
+> |---|---|---|
+> | `ENABLE_SYMBOL_FEATURE_EXTRACTION` | `false` | +1 panggilan Gemini per deteksi (crop simbol → atribut visual terstruktur) |
+> | `ENABLE_SYMBOL_EMBEDDING` | `false` | +1 panggilan embedding per deteksi; `EMBEDDING_DIMENSIONS` harus cocok dengan kolom DB |
+> | `DETECTION_RENDER_SCALE` | `3.0` | Skala render halaman PDF ke Gemini (≈216 DPI) |
+>
+> `image_hash` selalu dihitung lokal dari crop simbol, sehingga deteksi duplikat dan
+> symbol cache saat confirm tetap berjalan tanpa panggilan API tambahan.
+
 ---
 
 ## Deskripsi

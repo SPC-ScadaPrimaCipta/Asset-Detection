@@ -11,37 +11,60 @@ export function buildSymbolDetectorPrompt(legendSymbols: Array<{
   description?: string | null;
   aliases?: string[] | null;
   standard_code?: string | null;
+  /** Present when symbols were merged from several legends — drives grouping. */
+  sourceLegendName?: string | null;
+  sourcePriority?: number | null;
 }>, opts?: {
-  knownTags?: string[];
   referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
 }): string {
   const hasLegend = legendSymbols.length > 0;
 
+  const formatSymbol = (s: {
+    asset_type: string;
+    symbol_name?: string | null;
+    tag_pattern?: string | null;
+    description?: string | null;
+    aliases?: string[] | null;
+  }) => {
+    const name = s.symbol_name ?? s.asset_type;
+    const parts = [`• ${name}`];
+    if (s.tag_pattern) parts.push(`[tag: ${s.tag_pattern}]`);
+    if (s.aliases?.length) parts.push(`(${s.aliases.join(', ')})`);
+    if (s.description) parts.push(`— ${s.description}`);
+    return parts.join(' ');
+  };
+
+  // Multi-legend grouping: symbols arrive in priority order, so grouping by
+  // source preserves it. A single legend (or unmerged symbols) renders exactly
+  // the legacy single block.
+  const legendNames = hasLegend
+    ? [...new Set(legendSymbols.map((s) => s.sourceLegendName ?? null))]
+    : [];
+  const multiLegend = legendNames.length > 1;
   const legendRef = hasLegend
-    ? legendSymbols.map(s => {
-        const name = s.symbol_name ?? s.asset_type;
-        const parts = [`• ${name}`];
-        if (s.tag_pattern) parts.push(`[tag: ${s.tag_pattern}]`);
-        if (s.aliases?.length) parts.push(`(${s.aliases.join(', ')})`);
-        if (s.description) parts.push(`— ${s.description}`);
-        return parts.join(' ');
-      }).join('\n')
+    ? multiLegend
+      ? legendNames
+          .map((name, i) => {
+            const group = legendSymbols.filter((s) => (s.sourceLegendName ?? null) === name);
+            const label = i === 0 ? `LEGEND ${i + 1} — ${name} (primary)` : `LEGEND ${i + 1} — ${name}`;
+            return `${label}:\n${group.map(formatSymbol).join('\n')}`;
+          })
+          .join('\n\n')
+      : legendSymbols.map(formatSymbol).join('\n')
     : null;
 
   return `You are an expert P&ID Asset Detection AI with deep knowledge of industrial engineering drawings.
 
 Your task: detect EVERY equipment symbol AND read EVERY asset tag on this P&ID page.
 
-${hasLegend ? `LEGEND (primary reference for symbol identification):
+${hasLegend ? `${multiLegend ? 'LEGENDS (primary reference for symbol identification — LEGEND 1 wins every conflict between legends)' : 'LEGEND (primary reference for symbol identification)'}:
 ${legendRef}
 
-IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.
+IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
 ` : `No legend provided. Use your knowledge of ISA 5.1 and ISO 10628-2 P&ID standards.`}
 ${opts?.referenceExamples?.length ? `CONFIRMED REFERENCE EXAMPLES (few-shot — symbols already approved from this legend):
 ${opts.referenceExamples.slice(0, 5).map(s => `• ${s.symbol_name ?? s.asset_type}${s.tag_pattern ? ` [${s.tag_pattern}]` : ''} (${s.asset_type})`).join('\n')}
 Prefer these names when the symbol matches.
-` : ''}${opts?.knownTags?.length ? `KNOWN TAGS on this project (prefer exact match when visible):
-${opts.knownTags.slice(0, 40).join(', ')}
 ` : ''}
 ━━━ STEP 1: READ ALL TEXT FIRST ━━━
 Before detecting symbols, read EVERY alphanumeric tag visible on this drawing.
@@ -63,6 +86,16 @@ For EACH symbol:
 - The closest tag that matches industrial naming convention is the asset tag
 - If two symbols are close, assign each tag to its spatially nearest symbol
 - Tags positioned directly above, below, or beside a symbol belong to that symbol
+
+━━━ STEP 4: READ EQUIPMENT DESCRIPTORS (size, fromRef, toRef, ofOrAtRef) ━━━
+For each detected asset, read equipment descriptors associated with the symbol or tag:
+- size: line or equipment pipe/nozzle size if present
+- fromRef: origin/source reference location or line
+- toRef: destination reference location or line
+- ofOrAtRef: equipment or location reference (e.g. "OF P-101" / "AT TANK-01")
+
+━━━ TITLE BLOCK / PROJECT CODE PREFIX ━━━
+Read the project code prefix from the drawing title block or drawing card. If unreadable or absent, use null for the project code prefix and mark asset for review / NEEDS_REVIEW.
 
 ━━━ DETECTION RULES ━━━
 
@@ -113,7 +146,7 @@ BBOX RULES — CRITICAL:
 • Typical pump/vessel bbox: width 50-150 units, height 50-150 units
 • If bbox width or height exceeds 200 units for an instrument/valve, you are likely including pipe lines — shrink it
 
-service, mainEquipment, description: null unless explicitly printed as text on the drawing near the symbol. NEVER infer from context.
+service, mainEquipment, description: use text visible near the symbol when available; otherwise use standard conventions for the detected asset type when appropriate.
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY valid JSON — no markdown, no explanation:
@@ -124,6 +157,7 @@ Return ONLY valid JSON — no markdown, no explanation:
       "assetType": "Pressure Differential Transmitter",
       "assetTag": "PDT-11",
       "tagPrefix": "PDT",
+      "projectCode": <prefix read from title block / drawing card, or null if unreadable>,
       "confidence": 0.93,
       "bbox": {"x": 245, "y": 380, "width": 52, "height": 48},
       "symbolDescription": "circle with differential pressure symbol, two process connections",
@@ -132,6 +166,10 @@ Return ONLY valid JSON — no markdown, no explanation:
       "service": null,
       "mainEquipment": null,
       "description": null,
+      "size": null,
+      "fromRef": null,
+      "toRef": null,
+      "ofOrAtRef": null,
       "evidence": ["Circle with DP symbol matches Pressure Differential Transmitter", "Tag PDT-11 visible directly below symbol"]
     }
   ]
@@ -139,10 +177,50 @@ Return ONLY valid JSON — no markdown, no explanation:
 }
 
 /**
- * Phase 3: Pass-1 tag-listing prompt for dense pages (2-pass detection).
- * Pass 1 returns ONLY the tag list; Pass 2 (buildSymbolDetectorPrompt with
- * knownTags) assigns tags to symbols. Aktif via DETECTION_TWO_PASS=true
- * atau otomatis untuk halaman padat (diputuskan di ai-agent/worker).
+ * Region-aware variant of the symbol detector prompt.
+ *
+ * Identical detection rules, but the coordinate frame is the CROP the model was
+ * given, not the page. The caller maps every returned bbox back to page space via
+ * mapRegionBboxToPage. Keeping the rules in one shared block means a region and
+ * a full-page pass cannot drift apart and produce conflicting conventions.
+ */
+export function buildRegionSymbolDetectorPrompt(
+  legendSymbols: Array<{
+    asset_type: string;
+    symbol_name?: string | null;
+    tag_pattern?: string | null;
+    description?: string | null;
+    aliases?: string[] | null;
+    standard_code?: string | null;
+  }>,
+  regionLabel: string,
+  opts: {
+    referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+  } = {},
+): string {
+  return `${buildSymbolDetectorPrompt(legendSymbols, opts)}
+
+━━━ COORDINATE FRAME — READ CAREFULLY ━━━
+The image above is a CROPPED REGION of a larger P&ID sheet, not the whole sheet.
+This crop shows region: "${regionLabel}"
+
+- Bounding boxes MUST be in 0-1000 space RELATIVE TO THIS CROP:
+  (0,0) = top-left pixel of THIS CROP, (1000,1000) = bottom-right pixel of THIS CROP.
+- Do NOT return full-page coordinates. A box near 0,0 here means the top-left of
+  the CROP, not of the sheet.
+- Symbols cut by the crop edge: report them if you can still identify the symbol,
+  using the visible portion as the box. Adjacent overlapping regions cover the
+  rest, and duplicates are merged afterwards.
+- A symbol may therefore be reported by more than one region. That is expected and
+  handled downstream — do not try to avoid re-reporting it.
+
+Everything else (detection rules, field rules, JSON output format) is unchanged.`;
+}
+
+/**
+ * Standalone tag-listing prompt for dense pages.
+ * Not wired into the current pipeline (Gemini reads tags in STEP 1 of the main
+ * prompt); kept as a reusable building block.
  */
 export function buildTagListPrompt(): string {
   return `You are a P&ID tag reader. Read EVERY alphanumeric asset tag visible on this P&ID page image.

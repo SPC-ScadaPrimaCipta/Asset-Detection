@@ -28,11 +28,13 @@ export async function getAiConfig(opts?: { force?: boolean }): Promise<AiConfig>
     if (row) {
       const cfg: AiConfig = {
         provider: row.ai_provider === 'deepseek' ? 'deepseek' : 'gemini',
-        // DB wins, env is fallback (for first boot / local dev)
+        // DB wins, env is fallback (for first boot / local dev).
+        // No model id is written here: env owns the defaults so a model is
+        // changed in one place, not scattered across DB fallbacks and UI.
         geminiKey: (row.gemini_api_key as string | null) || env.GEMINI_API_KEY || undefined,
         deepseekKey: (row.deepseek_api_key as string | null) || env.DEEPSEEK_API_KEY || undefined,
         geminiModel: (row.gemini_model as string | null) || env.GEMINI_MODEL,
-        deepseekModel: (row.deepseek_model as string | null) || 'deepseek-chat',
+        deepseekModel: (row.deepseek_model as string | null) || env.DEEPSEEK_MODEL,
       };
       cache = { cfg, at: Date.now() };
       return cfg;
@@ -46,7 +48,7 @@ export async function getAiConfig(opts?: { force?: boolean }): Promise<AiConfig>
     geminiKey: env.GEMINI_API_KEY,
     deepseekKey: env.DEEPSEEK_API_KEY,
     geminiModel: env.GEMINI_MODEL,
-    deepseekModel: 'deepseek-chat',
+    deepseekModel: env.DEEPSEEK_MODEL,
   };
   cache = { cfg, at: Date.now() };
   return cfg;

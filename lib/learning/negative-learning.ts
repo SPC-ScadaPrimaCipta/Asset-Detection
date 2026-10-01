@@ -10,6 +10,7 @@
 
 import { pool } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { getTuning } from '@/lib/tuning';
 
 export interface NegativeLearningRecord {
   id: string;
@@ -103,14 +104,12 @@ export async function recordNegativeFeedback(
 }
 
 /**
- * Get negative learning penalty for a predicted asset type.
- * Returns confidence penalty (0 to -0.30) based on negative_count.
+ * Get the negative learning penalty for a predicted asset type.
  *
- * Scale:
- *   1-2 rejections → -0.05
- *   3-5 rejections → -0.10
- *   6-10 rejections → -0.20
- *   >10 rejections → -0.30
+ * Returns a confidence penalty (0, or a negative value) sized by how often this
+ * asset type has been rejected. Tier boundaries and penalties come from
+ * `validator.rejection*` tuning (Settings → .env → fallback), so a site that
+ * learns faster or slower can retune it without touching code.
  */
 export async function getNegativePenalty(opts: {
   predictedAssetType: string;
@@ -131,12 +130,22 @@ export async function getNegativePenalty(opts: {
   );
 
   const total = parseInt(result.rows[0]?.total_negatives ?? '0', 10);
-
   if (total === 0) return 0;
-  if (total <= 2) return -0.05;
-  if (total <= 5) return -0.10;
-  if (total <= 10) return -0.20;
-  return -0.30;
+
+  const {
+    rejectionTierLowMax,
+    rejectionTierMediumMax,
+    rejectionTierHighMax,
+    rejectionPenaltyLow,
+    rejectionPenaltyMedium,
+    rejectionPenaltyHigh,
+    rejectionPenaltyCritical,
+  } = (await getTuning()).validator;
+
+  if (total <= rejectionTierLowMax) return -rejectionPenaltyLow;
+  if (total <= rejectionTierMediumMax) return -rejectionPenaltyMedium;
+  if (total <= rejectionTierHighMax) return -rejectionPenaltyHigh;
+  return -rejectionPenaltyCritical;
 }
 
 /**

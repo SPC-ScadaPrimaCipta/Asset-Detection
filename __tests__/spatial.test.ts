@@ -14,6 +14,12 @@ const makeDetection = (overrides: Partial<Detection> = {}): Detection => ({
   location: null,
   unit: null,
   area: null,
+  size: null,
+  fromRef: null,
+  toRef: null,
+  ofOrAtRef: null,
+  descriptionProposed: null,
+  tagNoProposed: null,
   legendSymbol: null,
   ...overrides,
 });

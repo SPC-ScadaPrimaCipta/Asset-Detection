@@ -68,6 +68,13 @@ export interface LegendSymbolRef {
   id: string;
   asset_type: string;
   symbol_name?: string | null;
+  /**
+   * Source legend of this symbol. Set when symbols were merged from several
+   * legends; detections then record the legend that actually matched, not the
+   * job primary. Absent → falls back to `PersistContext.effectiveLegendId`.
+   */
+  legend_id?: string | null;
+  sourceLegendId?: string | null;
 }
 
 export interface PersistContext {
@@ -93,14 +100,26 @@ export function resolveLegendSymbolId(
   legendSymbol: string | null | undefined,
   legendSymbols: LegendSymbolRef[]
 ): string | null {
+  return resolveLegendSymbol(legendSymbol, legendSymbols)?.id ?? null;
+}
+
+/**
+ * Same match as resolveLegendSymbolId, but returns the whole symbol ref so the
+ * caller can read its source legend. Kept separate (not a signature change) so
+ * existing callers and tests are untouched.
+ */
+export function resolveLegendSymbol(
+  legendSymbol: string | null | undefined,
+  legendSymbols: LegendSymbolRef[]
+): LegendSymbolRef | null {
   if (!legendSymbol) return null;
   // Direct id match first (defs-from-crops preserves DB ids).
   const byId = legendSymbols.find((s) => s.id === legendSymbol);
-  if (byId) return byId.id;
+  if (byId) return byId;
   return (
     legendSymbols.find(
       (s) => s.asset_type === legendSymbol || s.symbol_name === legendSymbol
-    )?.id ?? null
+    ) ?? null
   );
 }
 
@@ -157,6 +176,31 @@ export function formatEmbeddingForPg(symbolEmbedding: unknown): string | null {
     : null;
 }
 
+/**
+ * Drop every detection this job previously wrote for one page.
+ *
+ * Detection has no natural unique key (no stable per-symbol id from the model),
+ * so re-running a page would otherwise append a second copy of every row. The
+ * worker calls this immediately before persisting a page, which makes page
+ * persistence idempotent: a re-run replaces that page's rows instead of
+ * duplicating them.
+ *
+ * Scoped to job_id + pid_page so a re-run of one page never touches the other
+ * pages of the same job, nor any other job.
+ */
+export async function deleteDetectionsForPage(
+  db: DbLike,
+  jobId: string,
+  page: number
+): Promise<number> {
+  const res = await db.query(
+    'DELETE FROM detections WHERE job_id = $1 AND pid_page = $2',
+    [jobId, page]
+  );
+  const rowCount = (res as { rowCount?: number }).rowCount;
+  return typeof rowCount === 'number' ? rowCount : 0;
+}
+
 const INSERT_SQL = `INSERT INTO detections
    (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
     service, location, unit, area, pid_number, pid_page,
@@ -187,7 +231,8 @@ export async function persistDetections(
 ): Promise<PersistResult> {
   const ids: string[] = [];
   for (const d of items) {
-    const legendSymbolId = resolveLegendSymbolId(d.legendSymbol, ctx.legendSymbols);
+    const matchedSymbol = resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);
+    const legendSymbolId = matchedSymbol?.id ?? null;
     const detectionSource = d.detection_source ?? 'VISION';
     const canonicalFeatures = d.canonical_features ?? null;
     const imageHash = d.image_hash ?? null;
@@ -229,7 +274,9 @@ export async function persistDetections(
       d.area ?? null,
       ctx.filename,
       page,
-      ctx.effectiveLegendId ?? null,
+      // Source legend of the matched symbol (multi-legend jobs); falls back to
+      // the job primary when nothing matched or no source was recorded.
+      matchedSymbol?.sourceLegendId ?? matchedSymbol?.legend_id ?? ctx.effectiveLegendId ?? null,
       legendSymbolId,
       d.confidence,
       Number.isFinite(d.bbox.x) ? d.bbox.x : 0,

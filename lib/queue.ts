@@ -13,8 +13,7 @@
 
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+import { env } from '@/lib/env';
 
 // Lazy singleton — created on first import, not at module parse time.
 // This avoids errors during Next.js build/SSR when Redis is unavailable.
@@ -23,7 +22,7 @@ let _queue: Queue | null = null;
 
 function getConnection(): IORedis {
   if (!_connection) {
-    _connection = new IORedis(REDIS_URL, {
+    _connection = new IORedis(env.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableOfflineQueue: false,
       lazyConnect: false,
@@ -49,13 +48,16 @@ export function getDetectionQueue(): Queue {
  */
 export async function enqueueDetectionJob(
   jobId: string,
-  legendId: string | null
+  legendId: string | null,
+  legendIds?: string[] | null
 ): Promise<boolean> {
   try {
     const q = getDetectionQueue();
     await q.add(
       'detection',
-      { jobId, legendId },
+      // legendId stays for readers that have not been migrated yet; legendIds
+      // is authoritative when present.
+      { jobId, legendId, legendIds: legendIds ?? (legendId ? [legendId] : []) },
       { jobId, removeOnComplete: true, removeOnFail: 100 }
     );
     return true;

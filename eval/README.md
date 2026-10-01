@@ -1,6 +1,14 @@
 # Phase 8 — Ground Truth, Calibration & Accuracy Evaluation
 # Phase 9 — Deterministic Recall & False-Positive Reduction (measured below)
 
+> **Historical record — the pipeline measured below no longer runs.**
+> These numbers describe the deterministic CV + OCR pipeline (OpenCV contour
+> candidates, text-region masking, template matching, Tesseract OCR). Run
+> Detection is now 100% Gemini Vision (`lib/ai-agent.ts` +
+> `workers/detection-worker.ts`), aligned with Scan Legend. No OpenCV, no OCR,
+> no YOLO. The reports are kept as the baseline any future pipeline must beat —
+> they are not a description of current behaviour.
+
 Measurement phases. Production thresholds untouched throughout.
 
 ## Datasets

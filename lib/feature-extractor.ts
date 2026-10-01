@@ -8,6 +8,7 @@
  */
 
 import { getAiConfig } from '@/lib/ai-config';
+import { getGenerationConfig } from '@/lib/ai-generation';
 
 export interface SymbolFeatures {
   shape: string;               // e.g. 'circle', 'diamond', 'rectangle', 'triangle'
@@ -66,11 +67,7 @@ export async function extractSymbolFeatures(
 
     const model = client.getGenerativeModel({
       model: cfg.geminiModel,
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 512,
-        responseMimeType: 'application/json',
-      },
+      generationConfig: await getGenerationConfig('symbolFeatures'),
     });
 
     const result = await model.generateContent([

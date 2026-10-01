@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getTuning } from '@/lib/tuning';
 
 async function scanGeminiModels(apiKey: string) {
+  const { geminiBaseUrl, listTimeoutMs } = (await getTuning()).model;
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+    const res = await fetch(`${geminiBaseUrl}/v1/models?key=${apiKey}`, {
+      signal: AbortSignal.timeout(listTimeoutMs),
+    });
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
       throw new Error(error.error?.message || 'Invalid API key');
@@ -31,9 +35,11 @@ async function scanGeminiModels(apiKey: string) {
 }
 
 async function scanDeepSeekModels(apiKey: string) {
+  const { deepseekBaseUrl, listTimeoutMs } = (await getTuning()).model;
   try {
-    const res = await fetch('https://api.deepseek.com/models', {
+    const res = await fetch(`${deepseekBaseUrl}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(listTimeoutMs),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
@@ -47,8 +53,9 @@ async function scanDeepSeekModels(apiKey: string) {
     // Try to get balance
     let quota = null;
     try {
-      const balRes = await fetch('https://api.deepseek.com/user/balance', {
+      const balRes = await fetch(`${deepseekBaseUrl}/user/balance`, {
         headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(listTimeoutMs),
       });
       if (balRes.ok) {
         const balData = await balRes.json() as any;

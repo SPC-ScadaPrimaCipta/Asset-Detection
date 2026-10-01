@@ -1,16 +1,17 @@
 import { PDFDocument } from "pdf-lib";
 import { execFile } from "child_process";
 import path from "path";
+import { env } from "./env";
 const RENDER_SCRIPT = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "scripts/render-page.mjs");
 
-const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const ALLOWED_MIME = ["application/pdf"];
 
 export function validatePdfFile(file: File): string | null {
   if (!ALLOWED_MIME.includes(file.type) && !file.name.toLowerCase().endsWith(".pdf"))
     return "Only PDF files are allowed";
   if (file.size === 0) return "Empty file";
-  if (file.size > MAX_PDF_SIZE) return "File too large (max 50MB)";
+  const maxBytes = env.UPLOAD_MAX_PDF_MB * 1024 * 1024;
+  if (file.size > maxBytes) return `File too large (max ${env.UPLOAD_MAX_PDF_MB}MB)`;
   return null;
 }
 
@@ -32,13 +33,14 @@ export async function getPdfPageCountFromBuffer(buffer: Buffer): Promise<number>
  *
  * @param buffer     - Full PDF buffer
  * @param pageNumber - 1-based page number
- * @param scale      - Render scale factor. 4.0 ≈ 288 dpi (recommended for P&ID detail).
+ * @param scale      - Render scale factor. 3.0 ≈ 216 dpi (see
+ *                     lib/detection/config.ts — the detection pipeline default).
  * @returns { png, width, height }
  */
 export async function renderPageToPng(
   buffer: Buffer,
   pageNumber: number,
-  scale = 4.0
+  scale = 3.0
 ): Promise<{ png: Buffer; width: number; height: number }> {
   try {
     // Direct in-process mupdf — no subprocess spawn overhead
@@ -89,159 +91,5 @@ export async function renderPageToPng(
     const result = JSON.parse(stdout) as { png: string; width: number; height: number; error?: string };
     if (result.error) throw new Error(result.error);
     return { png: Buffer.from(result.png, "base64"), width: result.width, height: result.height };
-  }
-}
-
-/**
- * Detection V2 — overlapping page tiling (canonical page pixels).
- *
- * Every tile carries full metadata to reconstruct its page-space location:
- * tile coords →(tileToPage)→ page coords →(pageToNormalized)→ 0–1000 → SVG.
- * No independent coordinate system (see lib/detection/geometry/coordinate-transform.ts).
- */
-export interface TilePlan {
-  /** 0-based tile index in row-major order. */
-  index: number;
-  /** Tile origin in page pixels. */
-  tileX: number;
-  tileY: number;
-  width: number;
-  height: number;
-}
-
-export interface TileSpec extends TilePlan {
-  pageNumber: number;
-  overlap: number;
-  pageWidth: number;
-  pageHeight: number;
-  /** Effective DPI = scale * 72 (mupdf default 72 DPI). */
-  sourceDpi: number;
-}
-
-export interface PageTile extends TileSpec {
-  png: Buffer;
-}
-
-/**
- * Pure tile-grid planner — no I/O, fully testable.
- *
- * Covers [0, pageWidth] x [0, pageHeight] with tiles of tileSize px and
- * fractional overlap. Edge tiles are shifted (not shrunk) so every tile
- * keeps full tileSize except when the page itself is smaller.
- */
-export function computeTileGrid(
-  pageWidth: number,
-  pageHeight: number,
-  tileSize: number,
-  overlap: number
-): TilePlan[] {
-  const step = Math.max(1, Math.round(tileSize * (1 - overlap)));
-  const tiles: TilePlan[] = [];
-  let index = 0;
-  const cols = Math.max(1, Math.ceil((pageWidth - tileSize) / step) + 1);
-  const rows = Math.max(1, Math.ceil((pageHeight - tileSize) / step) + 1);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      // Last tile in each axis snaps to the page edge (overlap grows slightly).
-      const tileX = c === cols - 1 ? Math.max(0, pageWidth - tileSize) : c * step;
-      const tileY = r === rows - 1 ? Math.max(0, pageHeight - tileSize) : r * step;
-      tiles.push({
-        index: index++,
-        tileX,
-        tileY,
-        width: Math.min(tileSize, pageWidth - tileX),
-        height: Math.min(tileSize, pageHeight - tileY),
-      });
-    }
-  }
-  return tiles;
-}
-
-/**
- * Render a page once, then slice it into overlapping tiles via mupdf
- * Pixmap pixel copy (same proven pattern as lib/image-crop.ts).
- */
-export async function renderPageTiles(
-  buffer: Buffer,
-  pageNumber: number,
-  opts: { scale?: number; tileSize?: number; overlap?: number } = {}
-): Promise<{ tiles: PageTile[]; pageWidth: number; pageHeight: number; png: Buffer }> {
-  const scale = opts.scale ?? 4.0;
-  const tileSize = opts.tileSize ?? 1280;
-  const overlap = opts.overlap ?? 0.2;
-
-  const { png, width: pageWidth, height: pageHeight } = await renderPageToPng(
-    buffer,
-    pageNumber,
-    scale
-  );
-
-  const mupdf = await import("mupdf" as string);
-  const { Image, Pixmap, ColorSpace } = mupdf;
-  const srcPm: {
-    getWidth(): number;
-    getHeight(): number;
-    getNumberOfComponents(): number;
-    getStride(): number;
-    getPixels(): Uint8ClampedArray;
-  } = new Image(png).toPixmap();
-
-  const srcW = srcPm.getWidth();
-  const srcH = srcPm.getHeight();
-  const nComp = srcPm.getNumberOfComponents();
-  const srcStride = srcPm.getStride();
-  const srcPixels = srcPm.getPixels();
-
-  const plans = computeTileGrid(srcW, srcH, tileSize, overlap);
-  const tiles: PageTile[] = [];
-  for (const p of plans) {    const cropPm: {
-      getStride(): number;
-      getPixels(): Uint8ClampedArray;
-      asPNG(): Uint8Array;
-    } = new Pixmap(ColorSpace.DeviceRGB, [0, 0, p.width, p.height], false);
-    const cropPixels = cropPm.getPixels();
-    const dstStride = cropPm.getStride();
-    for (let row = 0; row < p.height; row++) {
-      const srcOff = (p.tileY + row) * srcStride + p.tileX * nComp;
-      const dstOff = row * dstStride;
-      for (let col = 0; col < p.width * nComp; col++) {
-        cropPixels[dstOff + col] = srcPixels[srcOff + col];
-      }
-    }
-    tiles.push({
-      ...p,
-      pageNumber,
-      overlap,
-      pageWidth: srcW,
-      pageHeight: srcH,
-      sourceDpi: Math.round(scale * 72),
-      png: Buffer.from(cropPm.asPNG()),
-    });
-  }
-  return { tiles, pageWidth, pageHeight, png };
-}
-
-/**
- * Extract plain text per page using mupdf's built-in text extraction (via ESM child process).
- */
-export async function extractPdfTextByPage(buffer: Buffer): Promise<string[]> {
-  try {
-    const mupdf = await import("mupdf" as any);
-    const { Document } = mupdf;
-    const doc = Document.openDocument(buffer, "application/pdf");
-    const pageCount = doc.countPages();
-    const pages: string[] = [];
-    for (let i = 0; i < pageCount; i++) {
-      try {
-        const page = doc.loadPage(i);
-        const structured = page.toStructuredText("preserve-whitespace");
-        pages.push(structured.asText().slice(0, 12000));
-      } catch {
-        pages.push("");
-      }
-    }
-    return pages;
-  } catch {
-    return [""];
   }
 }

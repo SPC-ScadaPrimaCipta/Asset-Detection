@@ -7,3 +7,4 @@ export { Spinner } from './Spinner';
 export { EmptyState } from './EmptyState';
 export { default as Modal } from './Modal';
 export { PageHeader } from './page-header';
+export { LegendSelector } from './LegendSelector';

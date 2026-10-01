@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { getTuning } from '@/lib/tuning';
 
 async function getDeepSeekQuota(apiKey: string) {
+  const { deepseekBaseUrl, listTimeoutMs } = (await getTuning()).model;
   try {
-    const res = await fetch('https://api.deepseek.com/user/balance', {
+    const res = await fetch(`${deepseekBaseUrl}/user/balance`, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(listTimeoutMs),
     });
     if (res.ok) {
       const balData = await res.json() as any;

@@ -8,13 +8,12 @@ export interface ExportAsset {
   pidNumber: string | null;
   pidPage: number | null;
   service: string | null;
-  // Fix C: mainEquipment added — was in DB (detections + assets) but missing from Excel output
   mainEquipment: string | null;
   location: string | null;
   unit: string | null;
   area: string | null;
   legend: string | null;
-  legendSymbol: string | null; // specific symbol name within the legend
+  legendSymbol: string | null;
   confidence: number | null;
   detectionStatus: string;
   reviewStatus: string;
@@ -23,6 +22,14 @@ export interface ExportAsset {
   bboxY: number | null;
   bboxW: number | null;
   bboxH: number | null;
+
+  // New 6 fields for SAP-ready format
+  size: string | null;
+  fromRef: string | null;
+  toRef: string | null;
+  ofOrAtRef: string | null;
+  descriptionProposed: string | null;
+  tagNoProposed: string | null;
 }
 
 export async function buildAssetRegisterWorkbook(
@@ -42,56 +49,92 @@ export async function buildAssetRegisterWorkbook(
     return true;
   });
 
-  ws.columns = [
-    { header: "No", key: "no", width: 6 },
-    { header: "Asset Tag", key: "assetTag", width: 16 },
-    { header: "Asset Type", key: "assetType", width: 18 },
-    { header: "Equipment Class", key: "equipmentClass", width: 18 },
-    { header: "Description", key: "description", width: 28 },
-    { header: "P\u0026ID Number", key: "pidNumber", width: 18 },
-    { header: "P\u0026ID Page", key: "pidPage", width: 12 },
-    { header: "Service", key: "service", width: 14 },
-    { header: "Main Equipment", key: "mainEquipment", width: 20 },
-    { header: "Location", key: "location", width: 14 },
-    { header: "Unit", key: "unit", width: 10 },
-    { header: "Area", key: "area", width: 10 },
-    { header: "Legend", key: "legend", width: 16 },
-    { header: "Confidence", key: "confidence", width: 12 },
-    { header: "Detection Status", key: "detectionStatus", width: 16 },
-    { header: "Review Status", key: "reviewStatus", width: 14 },
-  ];
-  const headerRow = ws.getRow(1);
-  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
-  headerRow.alignment = { vertical: "middle", horizontal: "center" };
-  headerRow.height = 22;
-  ws.views = [{ state: "frozen", ySplit: 1 }];
-  ws.autoFilter = { from: "A1", to: "P1" };
+  const colWidths = [6, 20, 25, 25, 16, 25, 28, 12, 18, 15, 12, 8, 18, 15, 15, 10, 15, 18, 14, 25];
+  colWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  // Row 1: SAP codes mapped logically to their respective headers
+  const row1 = ws.addRow([
+    "", "", "", "", "", "", "", "",
+    "KLASSE", "EQART", "BRGEW", "GEWEI", "INVNR", "INBDT", "ANSWT", "WAERS", "ANSDT", "GROES", "STORT", "HZEIN"
+  ]);
+
+  // Row 2: Lengths mapped logically to their respective SAP codes (KLASSE=18, EQART=10, BRGEW=17, GEWEI=3)
+  const row2 = ws.addRow([
+    "", "", "", "", "", "", "", "",
+    "18", "10", "17", "3", "", "", "", "", "", "", "", ""
+  ]);
+
+  // Row 3: Descriptive headers
+  const row3 = ws.addRow([
+    "No",
+    "Equipment Tag No Proposed",
+    "Equipment Type For Description",
+    "Size / From / To / Of / At",
+    "Tag Number",
+    "Alternative Description OLD / by ACN",
+    "Description Proposed",
+    "Description Len",
+    "Class",
+    "Object Type",
+    "Weight",
+    "UOM",
+    "Inventory No.",
+    "Start-up Date",
+    "Acquisition Value",
+    "Currency",
+    "Acquisition Date",
+    "Size/Dimension",
+    "Location",
+    "Manufacture Drawing No."
+  ]);
+
+  row1.font = { bold: true };
+  row2.font = { bold: true };
+
+  row3.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  row3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+  row3.alignment = { vertical: "middle", horizontal: "center" };
+  row3.height = 22;
+
+  ws.views = [{ state: "frozen", ySplit: 3 }];
+  ws.autoFilter = { from: "A3", to: "T3" };
 
   filtered.forEach((a, i) => {
-    ws.addRow({
-      no: i + 1,
-      assetTag: a.assetTag ?? "",
-      assetType: a.assetType,
-      equipmentClass: a.equipmentClass ?? "",
-      description: a.description ?? "",
-      pidNumber: a.pidNumber ?? "",
-      pidPage: a.pidPage ?? "",
-      service: a.service ?? "",
-      mainEquipment: a.mainEquipment ?? "",
-      location: a.location ?? "",
-      unit: a.unit ?? "",
-      area: a.area ?? "",
-      legend: a.legend ?? legendName,
-      confidence: a.confidence ?? "",
-      detectionStatus: a.detectionStatus,
-      reviewStatus: a.reviewStatus,
-    });
+    const sizeFromToOfAt = [a.size, a.fromRef, a.toRef, a.ofOrAtRef].filter(Boolean).join(" / ");
+
+    ws.addRow([
+      i + 1,
+      a.tagNoProposed ?? "",
+      a.assetType ?? "",
+      sizeFromToOfAt,
+      a.assetTag ?? "",
+      "", // Alternative Description OLD / by ACN
+      a.descriptionProposed ?? "",
+      a.description ? a.description.length : 0,
+      a.equipmentClass ?? "",
+      "", // Object Type
+      "", // Weight
+      "", // UOM
+      "", // Inventory No.
+      "", // Start-up Date
+      "", // Acquisition Value
+      "", // Currency
+      "", // Acquisition Date
+      a.size ?? "",
+      a.location ?? "",
+      a.pidNumber ?? ""
+    ]);
   });
+
   ws.eachRow((row, n) => {
-    if (n === 1) return;
+    if (n <= 3) return;
     row.eachCell((cell) => {
-      cell.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
     });
   });
 
@@ -128,7 +171,7 @@ export async function buildAssetRegisterWorkbook(
     { header: "Confidence", key: "conf", width: 12 },
     { header: "Legend Symbol", key: "sym", width: 16 },
     { header: "Evidence", key: "ev", width: 50 },
-    { header: "P\u0026ID Number", key: "pid", width: 18 },
+    { header: "P&ID Number", key: "pid", width: 18 },
     { header: "Page", key: "pg", width: 10 },
     { header: "BBox (x,y,w,h)", key: "bbox", width: 22 },
   ];

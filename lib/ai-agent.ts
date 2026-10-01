@@ -1,5 +1,5 @@
 /**
- * AI Detection Agent — Multi-Step Pipeline
+ * AI Detection Agent — Gemini Vision per page.
  *
  * Pipeline per page:
  *   Step 1: Gemini Vision detects symbols (symbol-detector prompt)
@@ -8,13 +8,23 @@
  *   Step 3: Calibrate confidence + apply UNKNOWN threshold
  *
  * Result: structured detections with detection_source, resolved names, calibrated confidence.
+ *
+ * Provider/model resolution, generation config, retry and JSON salvage are the
+ * SAME helpers Scan Legend uses (lib/legend-extract.ts). No OCR, no OpenCV, no
+ * tiling: the rendered page PNG is the only model input.
  */
 
-import OpenAI from "openai";
 import type { Part } from "@google/generative-ai";
 import { getAiConfig } from "@/lib/ai-config";
 import { resolveGeminiModels } from "@/lib/model-resolver";
-import { buildSymbolDetectorPrompt } from "@/lib/ai-prompts/symbol-detector";
+import {
+  isProviderUnavailable,
+  getSharedModelBreaker,
+} from "@/lib/ai-circuit-breaker";
+import { getSharedGeminiGate } from "@/lib/gemini-request-gate";
+import { callWithRetry, isJsonModeIncompatible } from "@/lib/legend-extract";
+import { generationConfigFrom, getGenerationConfig } from "@/lib/ai-generation";
+import { buildSymbolDetectorPrompt, buildRegionSymbolDetectorPrompt } from "@/lib/ai-prompts/symbol-detector";
 import { buildRuleValidatorPrompt } from "@/lib/ai-prompts/rule-validator-prompt";
 import { PageDetectionSchema } from "@/lib/ai-schemas";
 import type { Detection } from "@/lib/ai-schemas";
@@ -30,15 +40,29 @@ import { imageToCanonical, type SymbolFeatures } from "@/lib/feature-extractor";
 import { embedCanonical } from "@/lib/embedding-service";
 import { hashImage } from "@/lib/symbol-cache";
 import { cropPageRegion, adaptiveExpandBBox } from "@/lib/image-crop";
+import { getTuning, buildTuning, type DetectionTuning } from "@/lib/tuning";
+import { env } from "@/lib/env";
+import {
+  buildRegions,
+  gridForAspect,
+  mapRegionBboxToPage,
+  bboxIou1000,
+} from "@/lib/detection/region/region-plan";
+import { cropAllRegions } from "@/lib/detection/region/region-crop";
 
 export interface DetectionJobInput {
   page: number;
-  pageImageBase64?: string;
-  fileUri?: string;
-  pdfBase64?: string;
+  /** Full-page PNG (0-1000 bbox space). Required — no PDF/file-URI fallback. */
+  pageImageBase64: string;
   legendId: string;
-  legendSymbols: LegendSymbol[];
-  ocrText?: string;
+  /**
+   * Symbols merged from up to 3 legends, in priority order. Each element may
+   * carry `sourceLegendName`/`sourcePriority` (set by mergeLegendSymbols in
+   * lib/job-legends.ts); the prompt groups by source when several are present.
+   */
+  legendSymbols: Array<
+    LegendSymbol & { sourceLegendName?: string | null; sourcePriority?: number | null }
+  >;
   pngWidth?: number;
   pngHeight?: number;
   projectId?: string | null;
@@ -90,81 +114,310 @@ export interface ResolvedPageDetection {
   detections: ResolvedDetection[];
 }
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1500;
+// Model candidates resolved dynamically from Gemini API at runtime via resolveGeminiModels().
+// No hardcoded list - system auto-discovers valid models for the configured API key.
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  retries = MAX_RETRIES,
-): Promise<T> {
-  let last: unknown;
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (e: unknown) {
-      last = e;
-      const msg = e instanceof Error ? e.message : String(e);
-      const retryable = /429|rate|timeout|503|ECONN|fetch|network/i.test(msg);
-      if (!retryable || i === retries - 1) throw e;
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (i + 1)));
-    }
+/**
+ * Local, API-free crop hash for one detection.
+ *
+ * Used when the per-detection Gemini feature path is disabled (default): the
+ * crop is still produced locally so `image_hash` remains a stable per-symbol
+ * fingerprint for duplicate detection and the confirm-time symbol cache —
+ * without spending a generateContent call per detection.
+ */
+async function hashCropBBox(
+  input: DetectionJobInput,
+  bbox: Detection["bbox"],
+): Promise<string | null> {
+  try {
+    const cropBase64 = await cropPageRegion(
+      input.pageImageBase64,
+      adaptiveExpandBBox(bbox),
+      input.pngWidth!,
+      input.pngHeight!,
+      0.0,
+    );
+    return cropBase64 ? hashImage(cropBase64) : null;
+  } catch {
+    return null;
   }
-  throw last;
 }
 
-// Model candidates resolved dynamically from Gemini API at runtime via resolveGeminiModels().
-// No hardcoded list — system auto-discovers valid models for the configured API key.
+
+/**
+ * Env-layer `detection` tuning, for synchronous callers that have not resolved
+ * tuning (tests, one-off scripts). Production passes the resolved slice.
+ */
+function envDetectionTuning(): DetectionTuning {
+  return buildTuning().detection;
+}
 
 export async function runDetectionAgent(
   input: DetectionJobInput,
 ): Promise<ResolvedPageDetection> {
-  const cfg = await getAiConfig();
-  // Phase 3: derive knownTags hint dari OCR + reference examples dari legend.
-  // Best-effort, tidak menggagalkan detection jika OCR kosong.
-  const ocrHintTags =
-    (input.ocrText ?? "")
-      .toUpperCase()
-      .match(
-        /\b[A-Z]{1,6}-(?:[A-Z]{1,6}-\d{1,5}[A-Z]{0,2}|\d{1,5}[A-Z]{0,2})\b/g,
-      ) ?? [];
-  const knownTags = Array.from(new Set(ocrHintTags)).slice(0, 40);
-  const referenceExamples = (input.legendSymbols ?? [])
-    .slice(0, 5)
-    .map((s) => ({
-      asset_type: s.asset_type,
-      symbol_name: s.symbol_name ?? null,
-      tag_pattern: s.tag_pattern ?? null,
-    }));
-  const prompt = buildSymbolDetectorPrompt(input.legendSymbols, {
-    knownTags,
-    referenceExamples,
-  });
+  const cfg = await assertGeminiUsable();
 
-  // Step 1: Vision detection
-  let rawDetections: Detection[];
-  if (cfg.provider === "deepseek" && cfg.deepseekKey) {
-    const raw = await withRetry(() =>
-      runWithDeepSeek(input, prompt, cfg.deepseekKey!),
+  // Step 1: Vision detection — one page, or a sweep of overlapping regions.
+  const rawDetections = await collectRawDetections(input, cfg);
+
+  // Step 2 + 3: rule validation, field metadata, confidence calibration.
+  return { page: input.page, detections: await resolveDetections(input, rawDetections) };
+}
+
+/** Provider/key guard. DeepSeek is text-only, so images always need Gemini. */
+async function assertGeminiUsable() {
+  const cfg = await getAiConfig();
+  if (cfg.provider === "deepseek") {
+    throw new Error(
+      "DeepSeek cannot analyse images — switch provider to Gemini in Settings",
     );
-    rawDetections = raw.detections;
-  } else {
-    if (!cfg.geminiKey)
-      throw new Error(
-        "GEMINI_API_KEY not configured — set in Settings page or .env.local",
-      );
-    const raw = await withRetry(() =>
-      runWithGemini(input, prompt, cfg.geminiModel),
+  }
+  if (!cfg.geminiKey) {
+    throw new Error(
+      "GEMINI_API_KEY not configured — set in Settings page or .env.local",
     );
-    rawDetections = raw.detections;
+  }
+  return cfg;
+}
+
+/**
+ * Few-shot symbol names, drawn round-robin across legends.
+ *
+ * A plain first-5 slice would only ever show the primary legend; round-robin
+ * gives each selected legend at least one example so the model learns every
+ * legend's naming style.
+ */
+function legendReferenceExamples(input: DetectionJobInput) {
+  const symbols = input.legendSymbols ?? [];
+  const bySource = new Map<string, typeof symbols>();
+  for (const s of symbols) {
+    const key = s.sourceLegendName ?? '\0single';
+    if (!bySource.has(key)) bySource.set(key, []);
+    bySource.get(key)!.push(s);
+  }
+  const groups = [...bySource.values()];
+  const picked: typeof symbols = [];
+  for (let i = 0; picked.length < 5; i++) {
+    let added = false;
+    for (const g of groups) {
+      if (g[i] && picked.length < 5) {
+        picked.push(g[i]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  return picked.map((s) => ({
+    asset_type: s.asset_type,
+    symbol_name: s.symbol_name ?? null,
+    tag_pattern: s.tag_pattern ?? null,
+  }));
+}
+
+/**
+ * Merge duplicates produced by overlapping regions.
+ *
+ * A symbol sitting inside the region overlap is reported by two regions with
+ * slightly different boxes. They are the same asset, so the higher-confidence
+ * detection wins and the evidence of both is kept — losing the evidence would
+ * hide the fact that two independent reads agreed.
+ *
+ * `iouThreshold` defaults to the env value; the region sweep passes the resolved
+ * tuning value so a Settings change applies immediately.
+ */
+export function dedupeRegionDetections(
+  detections: Detection[],
+  iouThreshold = env.DETECTION_REGION_DEDUPE_IOU,
+): Detection[] {
+  const kept: Detection[] = [];
+  for (const d of detections) {
+    const tag = (d.assetTag ?? "").toUpperCase().trim();
+    const type = (d.assetType ?? "").toLowerCase();
+    const dupIdx = kept.findIndex((k) => {
+      const kTag = (k.assetTag ?? "").toUpperCase().trim();
+      const kType = (k.assetType ?? "").toLowerCase();
+      const sameTag = tag !== "" && kTag !== "" && tag === kTag;
+      // Untagged detections can only be matched by type, so require a tight box.
+      const sameUntaggedType = tag === "" && kTag === "" && type !== "" && type === kType;
+      if (!sameTag && !sameUntaggedType) return false;
+      return bboxIou1000(k.bbox, d.bbox) > iouThreshold;
+    });
+
+    if (dupIdx === -1) {
+      kept.push(d);
+      continue;
+    }
+    const winner = kept[dupIdx];
+    const evidence = [...(winner.evidence ?? []), ...(d.evidence ?? [])];
+    if ((d.confidence ?? 0) > (winner.confidence ?? 0)) {
+      kept[dupIdx] = { ...d, evidence };
+    } else {
+      winner.evidence = evidence;
+    }
+  }
+  return kept;
+}
+
+/**
+ * Step 1 — get raw detections for one page.
+ *
+ * `page` mode: one call on the full page.
+ * `regions` mode: overlapping upscaled crops, then a full-page catch-up sweep.
+ * The catch-up pass matters because a symbol straddling a region border can be
+ * reported as a fragment by both neighbours, or missed if the grid splits it
+ * awkwardly; a whole-page read is good at finding outliers even if its bounding
+ * boxes are looser.
+ */
+async function collectRawDetections(
+  input: DetectionJobInput,
+  cfg: Awaited<ReturnType<typeof getAiConfig>>,
+): Promise<Detection[]> {
+  const referenceExamples = legendReferenceExamples(input);
+  const fullPagePrompt = () =>
+    buildSymbolDetectorPrompt(input.legendSymbols, { referenceExamples });
+
+  const tuning = await getTuning();
+  const regionsCfg = tuning.regions;
+
+  if (regionsCfg.mode === "page") {
+    const raw = await callWithRetry(
+      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      { label: `detection page ${input.page}` },
+    );
+    return raw.detections;
   }
 
-  // Step 2: Rule validation — run priority chain per detection.
-  // Speed: parallel batch of FEATURE_BATCH_SIZE (default 5) to avoid serial Gemini calls
-  // per symbol while staying within rate limits. Accuracy pipeline unchanged.
-  const FEATURE_BATCH_SIZE = parseInt(
-    process.env.FEATURE_BATCH_SIZE ?? "5",
-    10,
+  const { cols, rows } = resolveGrid(input, regionsCfg);
+  const regions = buildRegions(cols, rows, regionsCfg.overlap);
+  const pngBuffer = Buffer.from(input.pageImageBase64, "base64");
+  const crops = await cropAllRegions(pngBuffer, regions, {
+    minWidth: regionsCfg.cropMinWidth,
+    maxWidth: regionsCfg.cropMaxWidth,
+  });
+
+  if (crops.length === 0) {
+    // Cropping failed (e.g. sharp unavailable) — degrade to the whole page
+    // rather than losing the page entirely.
+    console.warn(
+      `[detection] page ${input.page} region crop produced 0 images — falling back to full page`,
+    );
+    const raw = await callWithRetry(
+      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      { label: `detection page ${input.page} (full-page fallback)` },
+    );
+    return raw.detections;
+  }
+
+  const collected: Detection[] = [];
+  let failed = 0;
+  for (let i = 0; i < crops.length; i++) {
+    const crop = crops[i];
+    const prompt = buildRegionSymbolDetectorPrompt(
+      input.legendSymbols,
+      crop.region.label,
+      { referenceExamples },
+    );
+    try {
+      const raw = await callWithRetry(
+        () =>
+          runWithGemini(input, prompt, cfg.geminiModel, {
+            pngBase64: crop.pngBase64,
+            regionLabel: crop.region.label,
+          }),
+        { label: `page ${input.page} region ${i + 1}/${crops.length}` },
+      );
+      for (const d of raw.detections) {
+        collected.push({
+          ...d,
+          // Region-local 0-1000 → page 0-1000, or the viewer overlay breaks.
+          bbox: mapRegionBboxToPage(d.bbox, crop.region),
+          evidence: [...(d.evidence ?? []), `Region ${crop.region.label}`],
+        });
+      }
+    } catch (e: unknown) {
+      // One bad region must not lose the page: the remaining regions plus the
+      // catch-up pass still cover it, and the count is logged.
+      failed++;
+      console.warn(
+        `[detection] page ${input.page} region ${crop.region.label} failed: ${
+          e instanceof Error ? e.message.slice(0, 160) : String(e)
+        }`,
+      );
+    }
+    if (i < crops.length - 1 && regionsCfg.delayMs > 0) {
+      await sleep(regionsCfg.delayMs);
+    }
+  }
+
+  if (regionsCfg.catchup) {
+    try {
+      const raw = await callWithRetry(
+        () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+        { label: `detection page ${input.page} catch-up` },
+      );
+      for (const d of raw.detections) {
+        collected.push({
+          ...d,
+          evidence: [...(d.evidence ?? []), "Full-page catch-up pass"],
+        });
+      }
+    } catch (e: unknown) {
+      console.warn(
+        `[detection] page ${input.page} catch-up failed (non-fatal): ${
+          e instanceof Error ? e.message.slice(0, 160) : String(e)
+        }`,
+      );
+    }
+  }
+
+  const before = collected.length;
+  const deduped = dedupeRegionDetections(collected, regionsCfg.dedupeIou);
+  console.log(
+    `[detection] page ${input.page} regions=${crops.length} failed=${failed} ` +
+      `raw=${before} deduped=${deduped.length}`,
   );
+  if (failed === crops.length && deduped.length === 0) {
+    throw new Error(
+      `All ${crops.length} region(s) failed and no detections were recovered`,
+    );
+  }
+  return deduped;
+}
+
+/**
+ * Configured grid, or one derived from the page aspect ratio when cols/rows are
+ * both 0. The fallback grid is a literal because it is the last resort when the
+ * rendered dimensions are also unknown.
+ */
+function resolveGrid(
+  input: DetectionJobInput,
+  regionsCfg: { cols: number; rows: number },
+): { cols: number; rows: number } {
+  const { cols, rows } = regionsCfg;
+  if (cols > 0 && rows > 0) return { cols, rows };
+  if (input.pngWidth && input.pngHeight) {
+    return gridForAspect(input.pngWidth, input.pngHeight);
+  }
+  return { cols: 2, rows: 2 };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Steps 2 and 3 — rule validation, per-field metadata, confidence calibration.
+ * Split out so both the region sweep and the full-page pass share one
+ * implementation.
+ */
+async function resolveDetections(
+  input: DetectionJobInput,
+  rawDetections: Detection[],
+): Promise<ResolvedDetection[]> {
+  const tuning = await getTuning();
+  const det = tuning.detection;
+
+  // Rule validation runs per detection. Batched so a dense page does not issue
+  // one serial call per symbol.
+  const FEATURE_BATCH_SIZE = det.featureBatchSize;
 
   // Per-symbol async work: crop → hash → feature extract → embed → validate
   async function processOneDetection(d: Detection): Promise<ResolvedDetection> {
@@ -176,12 +429,20 @@ export async function runDetectionAgent(
     let symbolEmbedding: number[] | null = null;
     let symbolFeatures: SymbolFeatures | null = null;
 
-    // M15 (Phase 3: threshold 0.92 → 0.96): hanya skip feature extraction
-    // untuk deteksi sangat yakin. Embedding tetap jalan untuk mayoritas
-    // deteksi agar vector search bisa membedakan simbol mirip.
-    // SKIP_FEATURE_EXTRACTION env var (default false) disables entirely if needed.
-    const skipFeatures =
-      process.env.SKIP_FEATURE_EXTRACTION === "true" || d.confidence >= 0.96;
+    // Per-detection Gemini calls (structured feature extraction + embedding) are
+    // OFF by default. Each one costs an extra generateContent call per detection,
+    // so a 19-symbol page issued 38 extra requests: that exhausts the Gemini
+    // free tier (15 RPM → 429) and pushed a single page to ~106s, violating
+    // FR-JOB-008 (rate limit) and NFR-001 (≤120s/page).
+    //
+    // Detection quality does not depend on them: the PRD takes confidence from
+    // Gemini's own symbol/tag/matching scores and validates via Legend symbol
+    // codes, tag regex, bbox and duplicate checks. Enable
+    // `detection.symbolFeatures.extract` only with quota headroom and when
+    // `canonical_features` / embeddings are actually consumed downstream.
+    const wantSymbolFeatures = det.symbolFeatures.extract;
+    const wantEmbedding = det.symbolFeatures.embed;
+    const skipFeatures = !wantSymbolFeatures || d.confidence >= det.skipFeaturesConfidence;
 
     if (
       !skipFeatures &&
@@ -208,9 +469,14 @@ export async function runDetectionAgent(
           if (extracted) {
             canonicalFeatures = extracted.canonical;
             symbolFeatures = extracted.features;
-            const embResult = await embedCanonical(extracted.canonical);
-            if (embResult) {
-              symbolEmbedding = embResult.embedding;
+            // Embedding is a separate opt-in: the current gemini-embedding-001
+            // emits 3072 dims while the DB column is vector(768), so it fails
+            // dimension validation on every call.
+            if (wantEmbedding) {
+              const embResult = await embedCanonical(extracted.canonical);
+              if (embResult) {
+                symbolEmbedding = embResult.embedding;
+              }
             }
           }
         } else {
@@ -225,8 +491,12 @@ export async function runDetectionAgent(
         );
       }
     } else if (input.pageImageBase64) {
-      // pngWidth/pngHeight not available — fall back to full page hash only
-      imageHash = hashImage(input.pageImageBase64);
+      // Feature path disabled (default) or png dims missing.
+      // imageHash stays LOCAL (sha256 of the crop) — no API call, still feeds
+      // dedup and the confirm-time symbol cache.
+      imageHash = input.pngWidth && input.pngHeight
+        ? await hashCropBBox(input, d.bbox)
+        : hashImage(input.pageImageBase64);
     }
 
     let validation: RuleValidationResult;
@@ -239,7 +509,7 @@ export async function runDetectionAgent(
         legendId: input.legendId,
         legendSymbols: input.legendSymbols,
         projectId: input.projectId ?? null,
-        ocrText: input.ocrText,
+        // No OCR in this pipeline — rule validator's OCR branch stays inactive.
         imageHash,
         cropHash: imageHash,
         symbolEmbedding,
@@ -293,7 +563,7 @@ export async function runDetectionAgent(
     let validationStatus: "VALID" | "NEEDS_REVIEW" | "CONFLICT";
     if (hasConflict) {
       validationStatus = "CONFLICT";
-    } else if (isUnknown || hasLowEvidenceField || finalConfidence < 0.65) {
+    } else if (isUnknown || hasLowEvidenceField || finalConfidence < det.reviewThreshold) {
       validationStatus = "NEEDS_REVIEW";
     } else {
       validationStatus = "VALID";
@@ -312,25 +582,29 @@ export async function runDetectionAgent(
         ? validation.source === "LEGEND" ||
           validation.source === "CACHE" ||
           validation.source === "COMPANY_KB"
-          ? Math.min(finalConfidence + 0.02, 1.0)
+          ? Math.min(finalConfidence + det.fieldConfidenceBonus, 1.0)
           : finalConfidence
         : null,
       type: finalConfidence,
       service: serviceVal
         ? validation.source === "COMPANY_KB" || validation.source === "LEGEND"
-          ? 0.8
+          ? det.fieldConfidenceMapped
           : isVisionOnly
-            ? 0.45
-            : 0.65
+            ? det.fieldConfidenceServiceVisionOnly
+            : det.fieldConfidenceServiceInferred
         : null,
       mainEquipment: mainEqVal
         ? validation.source === "COMPANY_KB" || validation.source === "LEGEND"
-          ? 0.8
+          ? det.fieldConfidenceMapped
           : isVisionOnly
-            ? 0.4
-            : 0.6
+            ? det.fieldConfidenceMainEquipmentVisionOnly
+            : det.fieldConfidenceMainEquipmentInferred
         : null,
-      description: descVal ? (isVisionOnly ? 0.5 : 0.7) : null,
+      description: descVal
+        ? isVisionOnly
+          ? det.fieldConfidenceDescriptionVisionOnly
+          : det.fieldConfidenceDescriptionInferred
+        : null,
     };
 
     // G3: Per-field provenance
@@ -404,21 +678,23 @@ export async function runDetectionAgent(
     }
   }
 
-  // Step 4: Calibrate confidence
-  const calibrated = calibrateConfidence(resolvedDetections, input.ocrText);
-
-  return { page: input.page, detections: calibrated };
+  // Step 3: Calibrate confidence
+  return calibrateConfidence(resolvedDetections, det);
 }
 
 async function runWithGemini(
   input: DetectionJobInput,
   prompt: string,
   preferredModel: string,
+  opts?: { pngBase64?: string; regionLabel?: string },
 ) {
   const { getGeminiClient } = await import("@/lib/gemini");
   const client = await getGeminiClient();
+  const tuning = await getTuning();
+  const { modelAttemptDelayMs, jsonIncompatible } = tuning.model;
 
   // Auto-discover valid models from Gemini API. preferredModel stays first if valid.
+  // Model-availability filtering is shared with Scan Legend (resolveGeminiModels).
   const resolvedCandidates = await resolveGeminiModels();
   const FALLBACK_MODELS = resolvedCandidates.includes(preferredModel)
     ? resolvedCandidates
@@ -426,84 +702,75 @@ async function runWithGemini(
         (m, i, a) => a.indexOf(m) === i,
       );
 
-  let mediaPart: Part;
-  let contextText: string;
+  const mediaPart: Part = {
+    inlineData: {
+      mimeType: "image/png",
+      data: opts?.pngBase64 ?? input.pageImageBase64,
+    },
+  };
 
-  // Phase 2: guard Gemini inline ~20MB limit. PNG 5.0 skala A3 ≈ 15-20MB raw
-  // (≈20-27MB base64). Jika inline terlalu besar dan fileUri tersedia,
-  // pakai fileUri saja agar tidak 413. Caller (worker) sudah upload fallback.
-  let effectiveBase64 = input.pageImageBase64;
-  if (effectiveBase64 && input.fileUri) {
-    try {
-      const rawBytes = Buffer.byteLength(effectiveBase64, "base64");
-      if (rawBytes > 18 * 1024 * 1024) {
-        console.warn(
-          `[gemini] page=${input.page} inline ${(rawBytes / 1048576).toFixed(1)}MB > 18MB — using fileUri fallback`,
-        );
-        effectiveBase64 = undefined;
-      }
-    } catch {
-      /* byteLength gagal → pakai inline apa adanya */
-    }
-  }
-
-  // M3: Build OCR supporting evidence block — sent to Gemini as additional context.
-  // OCR is supporting evidence, NOT authoritative. Gemini must compare OCR vs visual.
-  // Truncate to 8000 chars (well within Gemini context; OCR per page usually <4000 chars).
-  const ocrBlock = input.ocrText?.trim()
-    ? `\nOCR TEXT (supporting evidence — compare against visual, do NOT blindly trust):
-${input.ocrText.slice(0, 8000)}
-IMPORTANT: If OCR tag differs from what you visually read, keep the visually-confirmed tag and note the discrepancy in evidence. OCR may have OCR errors (O↔0, I↔1, etc.).`
-    : "";
-
-  // M5: Drawing type context block
   const drawingTypeBlock = input.drawingType
     ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
     : "";
-
-  if (effectiveBase64) {
-    mediaPart = {
-      inlineData: { mimeType: "image/png", data: effectiveBase64 },
-    };
-    const dimInfo =
-      input.pngWidth && input.pngHeight
-        ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
-        : "Image rendered at high resolution.";
-    contextText = `This is page ${input.page} of a P&ID document, rendered as a PNG image.
+  // For a region crop the coordinate frame is the crop, not the page — the
+  // prompt's COORDINATE FRAME block says so, and the caller maps boxes back.
+  const contextText = opts?.regionLabel
+    ? `This image is a CROPPED REGION (${opts.regionLabel}) of page ${input.page} of a P&ID document.
+${drawingTypeBlock}
+BBOX INSTRUCTIONS: Return bounding boxes in 0-1000 normalized space relative to THIS CROP, (0,0)=top-left of the crop, (1000,1000)=bottom-right of the crop. DO NOT return pixel coordinates.
+Detect ALL equipment symbols visible in THIS REGION. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`
+    : (() => {
+        const dimInfo =
+          input.pngWidth && input.pngHeight
+            ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
+            : "Image rendered at high resolution.";
+        return `This is page ${input.page} of a P&ID document, rendered as a PNG image.
 ${dimInfo}${drawingTypeBlock}
 BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) * 1000.
-Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock}`;
-  } else if (input.fileUri) {
-    mediaPart = {
-      fileData: { mimeType: "application/pdf", fileUri: input.fileUri },
-    };
-    contextText = `This is a multi-page P&ID PDF. Analyze ONLY page ${input.page}. Ignore all other pages.${drawingTypeBlock}
-BBOX INSTRUCTIONS: Return bounding box in 0-1000 normalized space, (0,0)=top-left of page ${input.page}.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock}`;
-  } else if (input.pdfBase64) {
-    mediaPart = {
-      inlineData: { mimeType: "application/pdf", data: input.pdfBase64 },
-    };
-    contextText = `Analyze ONLY page ${input.page} of this P&ID PDF. Ignore all other pages.${drawingTypeBlock}
-BBOX INSTRUCTIONS: Return bounding box in 0-1000 normalized space.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock}`;
-  } else {
-    throw new Error(
-      "At least one of pageImageBase64, fileUri, or pdfBase64 must be provided",
-    );
-  }
+Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+      })();
 
   let lastError: unknown;
+  const generation = generationConfigFrom(tuning.generation, "gemini");
+  const maxAttempts = tuning.model.maxModelAttempts;
+  // One breaker and one request budget for the whole process: a model that is
+  // 503-ing to the legend sweep is 503-ing here too.
+  const breaker = getSharedModelBreaker({
+    failureThreshold: tuning.model.circuitFailures,
+    cooldownMs: tuning.model.circuitCooldownMs,
+  });
+  const gate = getSharedGeminiGate(tuning.model.requestsPerMinute);
+  let attempts = 0;
   for (const modelName of FALLBACK_MODELS) {
+    // Models that ignore responseMimeType produce prose, not JSON — skip them
+    // exactly like Scan Legend does.
+    if (isJsonModeIncompatible(jsonIncompatible, modelName)) continue;
+    // A model whose breaker is open recently failed repeatedly at the provider
+    // level; walking the rest of the chain first is strictly better than burning
+    // another request on it.
+    if (breaker.isOpen(modelName)) {
+      console.warn(
+        `[gemini] skipping model=${modelName} page=${input.page}: circuit open after ${tuning.model.circuitFailures} consecutive provider failures`,
+      );
+      continue;
+    }
+    // Cap attempts so an all-503 chain fails fast instead of retrying every
+    // candidate. 0 = unlimited.
+    if (maxAttempts > 0 && attempts >= maxAttempts) {
+      lastError = lastError ?? new Error("All Gemini models exhausted");
+      console.warn(
+        `[gemini] page=${input.page} giving up after ${attempts} model attempt(s) (GEMINI_MAX_MODEL_ATTEMPTS)`,
+      );
+      break;
+    }
+    attempts += 1;
     try {
       console.log(`[gemini] trying model=${modelName} page=${input.page}`);
+      // Hold the shared request budget before the call goes out.
+      await gate.wait();
       const model = client.getGenerativeModel({
         model: modelName,
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 16384,
-          responseMimeType: "application/json",
-        },
+        generationConfig: generation,
       });
       const result = await model.generateContent([
         { text: prompt },
@@ -516,6 +783,7 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock
       const sanitized = sanitizePageJson(
         json.page !== undefined ? json : { ...json, page: input.page },
         input.page,
+        raw,
       );
       const parsed = PageDetectionSchema.safeParse(sanitized);
       if (!parsed.success) {
@@ -524,20 +792,32 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock
         );
       }
       parsed.data.page = input.page;
+      breaker.recordSuccess(modelName);
       console.log(
         `[gemini] success model=${modelName} detections=${parsed.data.detections.length}`,
       );
       return parsed.data;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      const shouldFallback =
-        /429|quota|rate.limit|not.found|no.longer.available|404|503|unavailable|invalid.*model|model.*not.*found|unknown.*model|does.*not.*exist|INVALID_ARGUMENT.*model/i.test(
-          msg,
-        );
+      // Only provider-availability failures open the breaker. Schema validation
+      // and malformed output mean the model answered, so the next model in the
+      // chain is still worth trying.
+      const providerDown = isProviderUnavailable(msg);
+      const shouldFallback = providerDown;
       console.warn(`[gemini] model=${modelName} failed: ${msg.slice(0, 200)}`);
+      if (providerDown) {
+        breaker.recordFailure(modelName);
+        // A rate-limit rejection means the configured ceiling is optimistic.
+        // Push the next attempt past the current window instead of spending
+        // another request that is certain to be rejected too.
+        if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
+          await gate.backoff(modelAttemptDelayMs * 2);
+          continue;
+        }
+      }
       if (shouldFallback) {
         lastError = e;
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, modelAttemptDelayMs));
         continue;
       }
       throw e;
@@ -546,151 +826,71 @@ Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }${ocrBlock
   throw lastError ?? new Error("All Gemini models exhausted");
 }
 
-async function runWithDeepSeek(
-  input: DetectionJobInput,
-  prompt: string,
-  apiKey: string,
-) {
-  const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com/v1" });
-  const { deepseekModel } = await getAiConfig();
-  const isVisionModel = /vl/i.test(deepseekModel);
-
-  let userContent: OpenAI.Chat.ChatCompletionMessageParam["content"];
-
-  if (isVisionModel && input.pageImageBase64) {
-    userContent = [
-      {
-        type: "image_url",
-        image_url: { url: `data:image/png;base64,${input.pageImageBase64}` },
-      },
-      {
-        type: "text",
-        text: `Analyze page ${input.page} of this P&ID document.
-BBOX INSTRUCTIONS: Return bounding box in 0-1000 normalized space, (0,0)=top-left.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`,
-      },
-    ];
-  } else {
-    const ocr = input.ocrText
-      ? `\n\nOCR text extracted from page ${input.page}:\n${input.ocrText.slice(0, 12000)}`
-      : "\n\nNo OCR text available.";
-    const layoutHint =
-      input.pngWidth && input.pngHeight
-        ? `\nPage dimensions: ${input.pngWidth}x${input.pngHeight}px.`
-        : "";
-    userContent = `Analyze page ${input.page} of this P&ID. Use OCR text to identify asset tags and equipment labels.${layoutHint}${ocr}
-BBOX: Estimate bounding boxes in 0-1000 normalized space.
-Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
-  }
-
-  const completion = await client.chat.completions.create({
-    model: deepseekModel,
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: userContent },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const text = completion.choices[0].message.content || "{}";
-  const json = extractJson(text) as Record<string, unknown>;
-  // P2: sanitasi per-item dulu — deteksi rusak di-drop, sisanya tetap divalidasi
-  const sanitized = sanitizePageJson(
-    json.page !== undefined ? json : { ...json, page: input.page },
-    input.page,
-  );
-  const parsed = PageDetectionSchema.safeParse(sanitized);
-  if (!parsed.success)
-    throw new Error(
-      `Schema validation failed: ${JSON.stringify(parsed.error.flatten())}`,
-    );
-  parsed.data.page = input.page;
-  return parsed.data;
-}
-
 /**
  * Confidence calibration — objective penalty based on verifiable signals.
+ *
+ * `det` is the resolved `tuning.detection` slice. It is optional so this stays a
+ * pure, synchronous function callable from tests and scripts; production passes
+ * the resolved tuning so a Settings change applies immediately.
  */
 export function calibrateConfidence(
   detections: ResolvedDetection[],
-  ocrText?: string,
+  det: DetectionTuning = envDetectionTuning(),
 ): ResolvedDetection[] {
-  const ocrUpper = (ocrText ?? "").toUpperCase();
-
   return detections.map((d) => {
     // UNKNOWN detections: force low confidence + NEEDS_REVIEW
     if (d.detection_source === "UNKNOWN") {
       return {
         ...d,
-        confidence: Math.min(d.confidence, 0.5),
+        confidence: Math.min(d.confidence, det.capUnknownConfidence),
         validation_status: "NEEDS_REVIEW" as const,
       };
     }
 
     let penalty = 0;
-    // Tag confirmed in OCR text counts as corroboration beyond the evidence list —
-    // don't stack the thin-evidence penalty on top of it (avoids double-counting).
-    const tagConfirmed = !!(d.assetTag && ocrText && ocrUpper.indexOf(d.assetTag.toUpperCase()) !== -1);
-    if (!d.assetTag) penalty += 0.05;
-if (
-      d.assetTag &&
-      ocrText &&
-      ocrUpper.indexOf(d.assetTag.toUpperCase()) === -1
-    )
-      penalty += 0.1;
-    if (d.evidence.length <= 1) penalty += 0.03;
+    if (!d.assetTag) penalty += det.penaltyNoTag;
+    if (d.evidence.length <= 1) penalty += det.penaltyThinEvidence;
 
-    // Bbox size guard — oversized bbox likely includes pipe lines or tag text
-    // Thresholds tuned for 0-1000 normalized space:
-    //   instruments/valves: expected 20-80 units → >150 = oversized
-    //   pumps/vessels: expected 50-150 units → >300 = oversized
-    // Asset-type-aware: larger threshold for vessels/tanks/exchangers
-    const isLargeEquipment = /vessel|tank|column|reactor|separator|drum|exchanger|heater|cooler|boiler|tower/i.test(d.assetType ?? '');
-    const maxBboxDim = isLargeEquipment ? 300 : 150;
+    // Bbox size guard — an oversized box likely swallowed pipe lines or the tag
+    // text. Asset-type-aware: vessels/tanks/exchangers are legitimately bigger
+    // than instruments and valves.
+    const isLargeEquipment = /vessel|tank|column|reactor|separator|drum|exchanger|heater|cooler|boiler|tower/i.test(d.assetType ?? "");
+    const maxBboxDim = isLargeEquipment
+      ? det.bboxMaxLargeEquipmentUnits
+      : det.bboxMaxSymbolUnits;
     const bboxOversize = d.bbox.width > maxBboxDim || d.bbox.height > maxBboxDim;
     if (bboxOversize) {
-      penalty += 0.08;
+      penalty += det.penaltyBboxOversize;
     }
-    // Extreme oversize (likely entire region, not a symbol) — hard cap
-    if (d.bbox.width > 450 || d.bbox.height > 450) {
+    // Extreme oversize (likely a whole region rather than a symbol) — hard cap.
+    if (d.bbox.width > det.bboxOversizeUnits || d.bbox.height > det.bboxOversizeUnits) {
       return {
         ...d,
-        confidence: Math.min(d.confidence, 0.4),
+        confidence: Math.min(d.confidence, det.capOversizedBboxConfidence),
         validation_status: "NEEDS_REVIEW" as const,
         evidence: [...d.evidence, `Bbox extremely large (${Math.round(d.bbox.width)}×${Math.round(d.bbox.height)}) — likely includes pipe lines or surrounding text`],
       };
     }
-    if (d.bbox.width <= 1 || d.bbox.height <= 1) {
+    if (d.bbox.width <= det.bboxDegenerateUnits || d.bbox.height <= det.bboxDegenerateUnits) {
       return {
         ...d,
-        confidence: Math.min(d.confidence, 0.3),
+        confidence: Math.min(d.confidence, det.capDegenerateBboxConfidence),
         validation_status: "NEEDS_REVIEW" as const,
       };
     }
 
     const calibrated = Math.max(0, Math.min(1, d.confidence - penalty));
-    // F5: if calibrated confidence drops below NEEDS_REVIEW threshold, upgrade status
+    // If calibration drops the score below the review threshold, or penalties
+    // were severe, force NEEDS_REVIEW regardless of the incoming status.
     const calibratedStatus: "VALID" | "NEEDS_REVIEW" | "CONFLICT" =
       d.validation_status === "CONFLICT"
         ? "CONFLICT"
-        : calibrated < 0.65 || penalty >= 0.1
+        : calibrated < det.reviewThreshold || penalty >= det.penaltyReviewThreshold
           ? "NEEDS_REVIEW"
           : d.validation_status;
 
     if (penalty > 0) {
-      // G2: Also reduce tag field_confidence when OCR penalty applies
-      const updatedFieldConf =
-        penalty >= 0.1 && d.field_confidence?.tag != null
-          ? {
-              ...d.field_confidence,
-              tag: Math.max(0, d.field_confidence.tag - 0.15),
-            }
-          : d.field_confidence;
-
       const penaltyNotes: string[] = [];
-      if (penalty >= 0.1 && d.assetTag && ocrUpper.indexOf(d.assetTag.toUpperCase()) === -1) {
-        penaltyNotes.push(`Confidence adjusted: tag not confirmed in OCR text`);
-      }
       if (bboxOversize) {
         penaltyNotes.push(`Bbox oversized (${Math.round(d.bbox.width)}×${Math.round(d.bbox.height)} units) — may include tag text or pipe lines, verify`);
       }
@@ -699,7 +899,6 @@ if (
         ...d,
         confidence: calibrated,
         validation_status: calibratedStatus,
-        field_confidence: updatedFieldConf,
         evidence: penaltyNotes.length > 0 ? [...d.evidence, ...penaltyNotes] : d.evidence,
       };
     }
@@ -722,6 +921,7 @@ if (
 export function sanitizePageJson(
   json: Record<string, unknown>,
   fallbackPage: number,
+  rawText?: string,
 ): { page: number; detections: Record<string, unknown>[] } {
   const page =
     typeof json.page === "number" && Number.isFinite(json.page)
@@ -756,6 +956,19 @@ export function sanitizePageJson(
     console.warn(
       `[sanitize] page=${page} dropped ${dropped} malformed detection(s), kept ${clean.length}`,
     );
+  }
+  // Losing every detection of a response is almost never a data problem — it is
+  // a truncated response (maxOutputTokens cut mid-array) or prose instead of
+  // JSON. Without a sample of the payload there is nothing to tell those two
+  // apart, and the page just silently yields zero detections.
+  if (clean.length === 0 && rawList.length > 0 && env.DEBUG_ARTIFACTS === 1) {
+    console.warn(
+      `[sanitize] page=${page} kept 0 of ${rawList.length} — first item: ` +
+        JSON.stringify(rawList[0]).slice(0, 600),
+    );
+    if (rawText) {
+      console.warn(`[sanitize] page=${page} raw tail: ${rawText.slice(-600)}`);
+    }
   }
   return { page, detections: clean };
 }
@@ -898,18 +1111,13 @@ export async function runRuleValidatorVision(
     const prompt = buildRuleValidatorPrompt({
       symbolDescription: `Symbol detected as "${detection.assetType}" with confidence ${detection.confidence}. ${detection.evidence.join(". ")}`,
       nearbyText: detection.assetTag,
-      ocrContext: input.ocrText?.slice(0, 500) ?? null,
       candidates,
       legendContext,
     });
 
     const model = client.getGenerativeModel({
       model: cfg.geminiModel,
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json",
-      },
+      generationConfig: await getGenerationConfig("ruleValidator"),
     });
 
     const result = await model.generateContent([{ text: prompt }]);

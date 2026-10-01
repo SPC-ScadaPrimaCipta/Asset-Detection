@@ -26,6 +26,7 @@ import {
 } from '@/lib/confidence-fusion';
 import { DetectionAudit } from '@/lib/detection-audit';
 import { getNegativePenalty } from '@/lib/learning/negative-learning';
+import { buildTuning, type ValidatorTuning } from '@/lib/tuning';
 
 export type DetectionSource =
   | 'CACHE'
@@ -69,6 +70,8 @@ export interface RuleValidationInput {
   canonicalFeatures?: string | null; // serialized features string
   symbolFeatures?: Record<string, unknown> | null; // parsed features for rule engine
   drawingType?: string | null;     // e.g. 'P&ID', 'PFD', 'ISOMETRIC' — for company knowledge Level 1
+  /** Resolved validator tuning; defaults to the env layer when omitted. */
+  tuning?: ValidatorTuning;
 }
 
 export interface RuleValidationResult {
@@ -86,15 +89,18 @@ export interface RuleValidationResult {
   legendSymbol?: LegendSymbol;
 }
 
-const EMBEDDING_SKIP_THRESHOLD = parseFloat(process.env.EMBEDDING_SKIP_THRESHOLD ?? '0.88');
-// M10: CONFIDENCE_THRESHOLD configurable via env.
-// Default 0.60 (was 0.65). Rationale: for fresh projects with no KB/cache/embedding,
-// Vision is the only source. Gemini valid detections often score 0.60-0.64 for symbols
-// with partial tag visibility. 0.65 was incorrectly marking these UNKNOWN.
-// Set CONFIDENCE_THRESHOLD=0.65 or higher in env to restore stricter behavior.
-const CONFIDENCE_THRESHOLD = parseFloat(process.env.CONFIDENCE_THRESHOLD ?? '0.60');
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Resolved validator tuning.
+ *
+ * Defaults to the env layer so this module stays usable synchronously (tests,
+ * scripts). `validateDetection` prefers the caller-supplied tuning slice, which
+ * may come from the Settings DB.
+ */
+function validatorTuning(overrides?: ValidatorTuning): ValidatorTuning {
+  return overrides ?? buildTuning().validator;
+}
 
 export function extractTagPrefix(tag: string | null): string | null {
   if (!tag) return null;
@@ -271,6 +277,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
     imageHash, cropHash, symbolEmbedding, canonicalFeatures, symbolFeatures,
     drawingType,
   } = input;
+  const T = validatorTuning(input.tuning);
   // cropHash is alias for imageHash — prefer cropHash if both provided
   const effectiveHash = cropHash ?? imageHash ?? null;
   const audit = new DetectionAudit();
@@ -290,7 +297,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       const cached = await lookupCache(effectiveHash);
       if (cached) {
         const fusion = buildFusion({
-          legendScore: 1.0,  // cache = verified detection, treat as legend-level
+          legendScore: T.legendScoreVerified,  // cache = a verified detection, treat as legend-level
           ocrScore: ocrScore ?? undefined,
         });
         audit.hit('Cache', fusion.confidence, `Hash match: ${effectiveHash.slice(0, 12)}…`, Date.now() - t);
@@ -323,7 +330,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       ? await evaluateRules(legendMatch.asset_type, symbolFeatures)
       : null;
     const fusion = buildFusion({
-      legendScore: 1.0,
+      legendScore: T.legendScoreVerified,
       ocrScore: ocrScore ?? undefined,
       rulesScore: ruleResult?.rule_score,
       visionScore: aiConfidence,
@@ -353,8 +360,11 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
   });
   if (kbMatches.length > 0) {
     const best = kbMatches[0];
-    const bonus = Math.min(Math.floor(best.confirmed_count / 5) * 0.05, 0.10);
-    const companyScore = Math.min(0.90 + bonus, 0.98);
+    const bonus = Math.min(
+      Math.floor(best.confirmed_count / T.companyConfirmBonusEvery) * T.companyConfirmBonusStep,
+      T.companyConfirmBonusMax,
+    );
+    const companyScore = Math.min(T.companyBaseScore + bonus, T.companyMaxScore);
     const fusion = buildFusion({
       companyScore,
       ocrScore: ocrScore ?? undefined,
@@ -382,7 +392,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
     try {
       embeddingMatches = await searchSimilar({ embedding: symbolEmbedding, projectId, limit: 5 });
       const best = embeddingMatches[0];
-      if (best && best.similarity >= 0.65) {
+      if (best && best.similarity >= T.embeddingMinSimilarity) {
         const embScore = embeddingSimilarityToScore(best.similarity);
         const ruleResult = symbolFeatures
           ? await evaluateRules(best.asset_type, symbolFeatures)
@@ -391,9 +401,9 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
           embeddingScore: embScore,
           ocrScore: ocrScore ?? undefined,
           rulesScore: ruleResult?.rule_score,
-          visionScore: best.similarity >= EMBEDDING_SKIP_THRESHOLD ? undefined : aiConfidence,
+          visionScore: best.similarity >= T.embeddingSkipThreshold ? undefined : aiConfidence,
         });
-        const skipsVision = best.similarity >= EMBEDDING_SKIP_THRESHOLD;
+        const skipsVision = best.similarity >= T.embeddingSkipThreshold;
         audit.hit('Embedding', fusion.confidence, `similarity=${best.similarity.toFixed(3)} "${best.asset_type}"${skipsVision ? ' — Vision SKIPPED' : ''}`, Date.now() - t4);
 
         if (skipsVision) {
@@ -404,7 +414,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
             tagPrefix: effectivePrefix ?? best.tag_prefix,
             confidence: fusion.confidence,
             confidenceBreakdown: fusion.confidence_breakdown,
-            ruleApplied: `Step 4: Embedding similarity ${(best.similarity * 100).toFixed(1)}% ≥ ${EMBEDDING_SKIP_THRESHOLD * 100}% — Gemini Vision skipped`,
+            ruleApplied: `Step 4: Embedding similarity ${(best.similarity * 100).toFixed(1)}% ≥ ${(T.embeddingSkipThreshold * 100).toFixed(0)}% — Gemini Vision skipped`,
             audit,
             embeddingMatches,
           };
@@ -429,7 +439,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
     ruleScore = ruleResult.rule_score;
     audit.addStep({
       step: 'RuleEngine',
-      result: ruleScore >= 0.5 ? 'hit' : 'miss',
+      result: ruleScore >= T.ruleScoreHit ? 'hit' : 'miss',
       confidence: ruleScore,
       detail: ruleResult.reasons.slice(0, 3).join(' | '),
       duration_ms: Date.now() - t5,
@@ -447,7 +457,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       ? embeddingSimilarityToScore(embeddingMatches[0].similarity)
       : null;
     const fusion = buildFusion({
-      legendScore: 0.75,  // ISA = standard, not user legend
+      legendScore: T.legendScoreIsa,  // ISA = standard, not user legend
       embeddingScore: embScore ?? undefined,
       ocrScore: ocrScore ?? undefined,
       rulesScore: ruleScore ?? undefined,
@@ -477,7 +487,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       ? embeddingSimilarityToScore(embeddingMatches[0].similarity)
       : null;
     const fusion = buildFusion({
-      legendScore: 0.70,
+      legendScore: T.legendScoreIso,
       embeddingScore: embScore ?? undefined,
       ocrScore: ocrScore ?? undefined,
       rulesScore: ruleScore ?? undefined,
@@ -502,7 +512,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
   audit.skip('API_STD');
 
   // ── Step 9: Gemini Vision (validator only) ───────────────────────────────
-  if (detectedAssetType && aiConfidence >= CONFIDENCE_THRESHOLD) {
+  if (detectedAssetType && aiConfidence >= T.confidenceThreshold) {
     const embScore = embeddingMatches[0]
       ? embeddingSimilarityToScore(embeddingMatches[0].similarity)
       : null;
@@ -581,7 +591,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       resolvedAssetType: detectedAssetType,
       resolvedAssetName: detectedAssetType,
       tagPrefix: effectivePrefix,
-      confidence: hasConflict ? Math.min(fusion.confidence, 0.79) : fusion.confidence,
+      confidence: hasConflict ? Math.min(fusion.confidence, T.capConflictConfidence) : fusion.confidence,
       confidenceBreakdown: fusion.confidence_breakdown,
       ruleApplied: hasConflict
         ? `Step 9: Vision — tag conflict detected: ${conflictEvidence[0]}`
@@ -604,7 +614,7 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
     resolvedAssetType: 'UNKNOWN',
     resolvedAssetName: 'UNKNOWN',
     tagPrefix: effectivePrefix,
-    confidence: Math.min(aiConfidence, 0.50),
+    confidence: Math.min(aiConfidence, T.capUnknownConfidence),
     confidenceBreakdown: fusion.confidence_breakdown,
     ruleApplied: 'Step 10: All knowledge sources exhausted — marked UNKNOWN for human review',
     audit,
