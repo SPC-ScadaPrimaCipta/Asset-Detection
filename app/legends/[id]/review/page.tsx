@@ -96,9 +96,11 @@ export default function LegendReviewPage() {
   const [finalizing, setFinalizing] = useState(false);
   const [reparsing, setReparsing] = useState(false);
   const [approvingAll, setApprovingAll] = useState(false);
+  const [validatingAll, setValidatingAll] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [confirmApproveAll, setConfirmApproveAll] = useState(false);
+  const [confirmValidateAll, setConfirmValidateAll] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -471,6 +473,31 @@ export default function LegendReviewPage() {
     finally { setValidatingId(null); }
   };
 
+  const handleValidateAll = async () => {
+    setConfirmValidateAll(false);
+    setValidatingAll(true); setError(''); setSuccessMsg('');
+    try {
+      const res = await fetch(`/api/legends/${legendId}/symbols/bulk-validate`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Bulk validate failed');
+      // Refetch rather than patching locally: the endpoint decides which rows
+      // are eligible, and the sidebar counts are derived from what it wrote.
+      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
+      if (sr.ok) { const j = await sr.json(); if (Array.isArray(j)) setSymbols(j); }
+      const n = Number(body.validated ?? 0);
+      setSuccessMsg(
+        n > 0
+          ? `Validated ${n} symbol(s)` +
+            (body.noCrop > 0 ? ` — ${body.noCrop} skipped: no crop` : '') +
+            (body.rejected > 0 ? ` — ${body.rejected} rejected, left untouched` : '')
+          : `Nothing to validate — ${body.already ?? 0} already validated, ` +
+            `${body.noCrop ?? 0} without crop, ${body.rejected ?? 0} rejected`,
+      );
+      setTimeout(() => setSuccessMsg(''), 6000);
+    } catch (e: any) { setError(e.message || 'Bulk validate failed'); }
+    finally { setValidatingAll(false); }
+  };
+
   const handleRejectWithReason = async () => {
     if (!rejectModalId) return;
     const s = symbols.find(x => x.id === rejectModalId);
@@ -637,6 +664,13 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
     rejected: symbols.filter(s => s.quality_status === 'rejected').length,
     missing: symbols.filter(s => !s.reference_image_url).length,
   };
+  // Mirrors the bulk-validate endpoint predicate so the button count is the
+  // number of rows that endpoint would actually write.
+  const validatePending = symbols.filter(s =>
+    s.reference_image_url &&
+    s.quality_status !== 'validated' &&
+    s.quality_status !== 'rejected' &&
+    s.status !== 'REJECTED').length;
   const filteredSymbols = symbols.filter(s => {
     if (symSearch.trim()) {
       const q = symSearch.toLowerCase();
@@ -768,6 +802,12 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
             style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: approvingAll || symbols.filter(s => s.status === 'DRAFT').length === 0 ? 0.45 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <CheckCircle size={13} />{approvingAll ? 'Approving…' : `Approve All (${symbols.filter(s => s.status === 'DRAFT').length})`}
           </button>
+          <button onClick={() => { if (validatePending === 0) return; setConfirmValidateAll(true); }}
+            disabled={validatingAll || validatePending === 0}
+            title="Mark every symbol with a reference crop as VALIDATED (matcher-eligible). Rejected symbols are left untouched."
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--surface)', color: 'var(--success)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: validatingAll || validatePending === 0 ? 0.45 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <SealCheck size={13} />{validatingAll ? 'Validating…' : `Validate All (${validatePending})`}
+          </button>
           <button onClick={() => setConfirmFinalize(true)} disabled={finalizing}
             style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: finalizing ? 'not-allowed' : 'pointer', opacity: finalizing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <SealCheck size={13} />{finalizing ? 'Finalizing…' : 'Finalize & Activate'}
@@ -792,6 +832,20 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={handleApproveAll} style={{ padding: '4px 12px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Yes, Approve All</button>
             <button onClick={() => setConfirmApproveAll(false)} style={{ padding: '4px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {/* Validate All confirmation */}
+      {confirmValidateAll && (
+        <div style={{ background: 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+          <span style={{ color: 'var(--foreground)' }}>
+            Mark <strong>{validatePending}</strong> symbol(s) as VALIDATED? They become matcher-eligible.
+            {qualityCounts.rejected > 0 && <> Rejected symbols (<strong>{qualityCounts.rejected}</strong>) are skipped.</>}
+            {qualityCounts.missing > 0 && <> Symbols without a crop (<strong>{qualityCounts.missing}</strong>) are skipped.</>}
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={handleValidateAll} style={{ padding: '4px 12px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Yes, Validate All</button>
+            <button onClick={() => setConfirmValidateAll(false)} style={{ padding: '4px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}

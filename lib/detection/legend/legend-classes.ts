@@ -50,6 +50,16 @@ export function groupLegendClasses(
 
 export type QualityStatus = 'validated' | 'review' | 'rejected' | null;
 
+/**
+ * `pipeline_version` written when a human confirms a reference, by either the
+ * per-symbol validate route or the bulk one.
+ *
+ * Consumers must treat it as authoritative: an automated assessment pass is
+ * expected to skip these rows so a machine opinion never silently overwrites a
+ * human decision.
+ */
+export const HUMAN_VALIDATED_PIPELINE_VERSION = 'human-validated-v1';
+
 export interface EligibilityInput {
   quality_status?: string | null;
   cropReadable: boolean;

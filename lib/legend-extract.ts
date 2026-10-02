@@ -322,11 +322,14 @@ async function analyzeRegion(
       if (!retryable) throw e;
       if (retryable) guard.breaker.recordFailure(modelName);
       guard.attempts += 1;
-      // The previous version retried the next model with no pause at all, so a
-      // 429 storm burned through the whole chain instantly. Back off, and push
-      // further out on an explicit rate-limit rejection.
-      if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
-        await guard.gate.backoff(guard.attemptDelayMs * 2);
+      // A provider rejection (429 or 503/overloaded) means the quota or the
+      // model is hot right now — pause before trying the next model so we do
+      // not burn through the whole chain instantly. An explicit RetryInfo hint
+      // from Google wins over our own delay.
+      if (/429|rate.limit|quota|resource.?exhausted|503|overloaded|high.demand|unavailable/i.test(msg)) {
+        await guard.gate.backoff(
+          parseRetryDelayMs(msg, guard.attemptDelayMs * 2),
+        );
       } else if (guard.attemptDelayMs > 0) {
         await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
       }
@@ -339,18 +342,43 @@ async function analyzeRegion(
 /**
  * Per-extraction state for walking the model chain.
  *
- * One guard per extraction run so the attempt cap is shared across all of that
- * page's regions (a cap per region would be a cap of regions × models, which is
- * no cap at all).
+ * The breaker and the request gate are shared across the whole page (one quota,
+ * one provider), but the attempt cap (`maxAttempts`) applies PER REGION: each
+ * region may try up to N models before it is marked failed and the sweep moves
+ * on. Sharing the counter across regions is wrong — with 16 regions and a cap
+ * of 3, three 503s on early regions would abort every later region without a
+ * single API call ("attempt cap reached"). Page-level protection against a full
+ * provider outage is already handled by the shared circuit breaker.
  */
 interface ModelChainGuard {
   breaker: ModelCircuitBreaker;
   gate: RequestGate;
   attemptDelayMs: number;
   maxAttempts: number;
+  /** Attempts spent on the CURRENT region. Reset before each region. */
   attempts: number;
-  /** False once the attempt cap is reached. */
+  /** False once the per-region attempt cap is reached. */
   shouldAttempt(page: number, regionIdx: number): boolean;
+  /** Start a fresh per-region budget (call before each region). */
+  resetRegion(): void;
+}
+
+/**
+ * True when no candidate can currently be used — every model is either
+ * JSON-incompatible or has an open breaker.
+ *
+ * Used to abort the page sweep instead of walking the remaining regions and
+ * logging "circuit open" for each one, which is a long log of guaranteed
+ * failures ending in an empty page.
+ */
+export function isChainUnavailable(
+  candidates: string[],
+  jsonIncompatible: ReadonlySet<string>,
+  breaker: ModelCircuitBreaker,
+): boolean {
+  return candidates.every(
+    (m) => isJsonModeIncompatible(jsonIncompatible, m) || breaker.isOpen(m),
+  );
 }
 
 function makeModelChainGuard(tuning: Awaited<ReturnType<typeof getTuning>>): ModelChainGuard {
@@ -367,9 +395,12 @@ function makeModelChainGuard(tuning: Awaited<ReturnType<typeof getTuning>>): Mod
     shouldAttempt(page, regionIdx) {
       if (maxAttempts <= 0 || guard.attempts < maxAttempts) return true;
       console.warn(
-        `[legend-extract] page ${page} region ${regionIdx} attempt cap reached (${maxAttempts})`,
+        `[legend-extract] page ${page} region ${regionIdx} per-region attempt cap reached (${maxAttempts} models tried), moving to next region`,
       );
       return false;
+    },
+    resetRegion() {
+      guard.attempts = 0;
     },
   };
   return guard;
@@ -494,9 +525,9 @@ export async function extractLegendSymbolsFromPng(
   const rows = perf.legendRegionRows;
   const regions = buildRegions(cols, rows, perf.legendRegionOverlap);
 
-  // One guard for the whole page: its attempt cap and request budget cover every
-  // region and the catch-up pass, so a page cannot spend regions × models
-  // requests.
+  // One guard for the whole page: the breaker and the request gate are shared
+  // across every region and the catch-up pass (one provider, one quota), while
+  // the attempt cap is reset per region (see resetRegion below).
   const guard = makeModelChainGuard(tuning);
 
   console.log(
@@ -508,6 +539,15 @@ export async function extractLegendSymbolsFromPng(
   // Process regions sequentially to avoid rate limiting
   for (let i = 0; i < regions.length; i++) {
     const region = regions[i];
+
+    // Whole provider outage: every model has tripped its breaker. Stop the page
+    // here instead of walking the remaining regions into guaranteed failures.
+    if (isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
+      console.error(
+        `[legend-extract] page ${page} aborted after ${allSymbols.length} symbol(s) from ${i}/${regions.length} regions: no usable model left (open circuits: ${guard.breaker.openModels().join(', ') || 'none'})`,
+      );
+      break;
+    }
 
     // Crop region from full image
     const cropX = Math.round(region.x * imgW);
@@ -532,6 +572,9 @@ export async function extractLegendSymbolsFromPng(
       continue;
     }
 
+    // Fresh attempt budget per region: a 503 storm on region N must not
+    // starve regions N+1..end (each region tries up to maxAttempts models).
+    guard.resetRegion();
     // Analyze region
     let rawSymbols: any[] = [];
     try {
@@ -609,6 +652,12 @@ export async function extractLegendSymbolsFromPng(
   // ── Catch-up pass: full page scan to find anything missed ───────────────────
   // Send full page with list of already-detected names so Gemini only returns NEW ones
   try {
+    // A full-page image is the most expensive request in this flow. Do not send
+    // it when the region sweep already proved every model is down.
+    if (isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
+      throw new Error('skipping catch-up: no usable model left (all circuits open)');
+    }
+
     const detectedNames = deduplicated
       .filter(s => s.symbol_name)
       .map(s => s.symbol_name!)
@@ -662,8 +711,10 @@ bbox: 0-1000 coords relative to full image, tight around icon only.`;
         console.warn(`[legend-extract] page ${page} catchup model ${m}: ${msg.slice(0, 150)}`);
         if (!isProviderUnavailable(msg)) break;
         guard.breaker.recordFailure(m);
-        if (/429|rate.limit|quota|resource.?exhausted/i.test(msg)) {
-          await guard.gate.backoff(guard.attemptDelayMs * 2);
+        // Same 429/503-aware pause as the region sweep, honouring a RetryInfo
+        // hint from the provider.
+        if (/429|rate.limit|quota|resource.?exhausted|503|overloaded|high.demand|unavailable/i.test(msg)) {
+          await guard.gate.backoff(parseRetryDelayMs(msg, guard.attemptDelayMs * 2));
         } else if (guard.attemptDelayMs > 0) {
           await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
         }

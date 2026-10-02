@@ -42,7 +42,7 @@ export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
 
 /** Default matcher for "this failure means the provider/model is unavailable". */
 const PROVIDER_UNAVAILABLE_RE =
-  /429|quota|rate.limit|resource.?exhausted|503|unavailable|overloaded|not.found|no.longer.available|not.?found|404|invalid.*model|model.*not.*found|unknown.*model|does.*not.*exist|INVALID_ARGUMENT.*model|deadline.?exceeded|timeout|timed.?out|socket hang up|ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed/i;
+  /429|quota|rate.limit|resource.?exhausted|503|unavailable|overloaded|high.demand|not.found|no.longer.available|not.?found|404|invalid.*model|model.*not.*found|unknown.*model|does.*not.*exist|INVALID_ARGUMENT.*model|deadline.?exceeded|timeout|timed.?out|socket hang up|ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed/i;
 
 /**
  * True when an error message describes a provider-availability problem rather

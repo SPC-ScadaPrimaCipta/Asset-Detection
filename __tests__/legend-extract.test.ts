@@ -7,12 +7,14 @@ import {
   callWithRetry,
   dedupeSymbols,
   extractLegendSymbolsRobust,
+  isChainUnavailable,
   offsetChunkBbox,
   parseRetryDelayMs,
   salvageSymbols,
   sanitizeBbox,
   type ParsedSymbol,
 } from '@/lib/legend-extract';
+import { ModelCircuitBreaker } from '@/lib/ai-circuit-breaker';
 const sym = (over: Partial<ParsedSymbol> = {}): ParsedSymbol => ({
   asset_type: 'Valve',
   symbol_name: 'GATE VALVE',
@@ -142,6 +144,40 @@ describe('dedupeSymbols', () => {
 
   it('keeps bbox-less symbols (never drops evidence blindly)', () => {
     expect(dedupeSymbols([sym({ bbox_x: null })])).toHaveLength(1);
+  });
+});
+
+describe('isChainUnavailable (fail-fast on a provider outage)', () => {
+  const CANDIDATES = ['gemini-a', 'gemini-b', 'gemini-c'];
+
+  it('false while at least one model can still be used', () => {
+    const breaker = new ModelCircuitBreaker({ failureThreshold: 1, cooldownMs: 60_000 });
+    breaker.recordFailure('gemini-a');
+    expect(isChainUnavailable(CANDIDATES, new Set(), breaker)).toBe(false);
+  });
+
+  it('true once every candidate has an open circuit', () => {
+    const breaker = new ModelCircuitBreaker({ failureThreshold: 1, cooldownMs: 60_000 });
+    for (const m of CANDIDATES) breaker.recordFailure(m);
+    expect(isChainUnavailable(CANDIDATES, new Set(), breaker)).toBe(true);
+    expect(breaker.openModels()).toEqual(CANDIDATES);
+  });
+
+  it('true when all candidates are json-incompatible, even with no failures', () => {
+    const breaker = new ModelCircuitBreaker({ failureThreshold: 1, cooldownMs: 60_000 });
+    expect(isChainUnavailable(CANDIDATES, new Set(CANDIDATES), breaker)).toBe(true);
+  });
+
+  it('recovers after the cooldown expires', () => {
+    let now = 1_000;
+    const breaker = new ModelCircuitBreaker(
+      { failureThreshold: 1, cooldownMs: 500 },
+      () => now,
+    );
+    for (const m of CANDIDATES) breaker.recordFailure(m);
+    expect(isChainUnavailable(CANDIDATES, new Set(), breaker)).toBe(true);
+    now += 501;
+    expect(isChainUnavailable(CANDIDATES, new Set(), breaker)).toBe(false);
   });
 });
 
