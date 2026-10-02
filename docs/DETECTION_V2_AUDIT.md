@@ -2,6 +2,38 @@
 
 Tanggal: 2026-09-23 | Pipeline version baseline: `v1` | Dokumen revisi incremental.
 
+> ## ⚠️ Status audit (diverifikasi ulang)
+>
+> Ini adalah **snapshot 2026-09-23** terhadap source saat itu. Sebagian item sudah
+> selesai, sebagian masih terbuka, dan sebagian referensinya sudah tidak valid.
+>
+> **Sudah selesai sejak audit ini:**
+> - `lib/detection/config.ts` (Fase 1) ✅
+> - `lib/detection/geometry/coordinate-transform.ts` + test ✅
+> - `lib/detection/geometry/bbox-validator.ts`, `spatial-association.ts`, `canonical-vision.ts` ✅
+> - `lib/detection/persistence/detection-repository.ts` ✅
+> - `lib/ai-prompt.ts` dihapus ✅
+> - `sql/migrate-v2-detection-extensions.sql` ✅
+> - `lib/detection/region/` — **menggantikan** `renderPageTiles()` yang direncanakan
+> - Tuning terpusat lewat `lib/tuning.ts` — jawaban untuk B6, lebih lengkap dari
+>   rencana "8 var V2" di §5
+>
+> **Referensi di dokumen ini yang tidak ada di repo:**
+> - `lib/ocr-candidate.ts` — ❌ tidak ada
+> - `autocad-bridge/` — ❌ tidak ada
+> - `services/cv/` — ❌ tidak ada (dibatalkan, lihat plan)
+> - `AI_MODE`, `CV_SERVICE_URL`, `TILE_SIZE`, `TILE_OVERLAP`,
+>   `HIGH/LOW_CONFIDENCE_THRESHOLD`, `MAX_GEMINI_CALLS_PER_PAGE`,
+>   `MAX_GEMINI_RETRY_PER_PAGE`, `PIPELINE_VERSION` — ❌ **tidak pernah ada di
+>   `lib/env.ts`**. Yang benar-benar ada: `VERIFIER_MAX_CALLS_PER_PAGE`,
+>   `VERIFIER_TIMEOUT_MS`, `VERIFIER_CACHE_MAX_ENTRIES`, `DEBUG_ARTIFACTS`.
+>
+> **Nilai yang sudah berubah:** `pipelineVersion` yang ditulis ke
+> `detections.pipeline_version` adalah `gemini-vision-only`, bukan `v2.0.0`.
+>
+> Plan terkait: `docs/DETECTION_V2_IMPLEMENTATION_PLAN.md`.
+> Arsitektur target: `docs/DETECTION_V2_ARCHITECTURE.md`.
+
 ## 1. Pipeline Saat Ini (Terverifikasi dari Source)
 
 ```text

@@ -112,21 +112,41 @@ Next.js, React, TypeScript, Tailwind CSS, Responsive design
 ### Backend
 Node.js, TypeScript, Fastify or equivalent
 
+> **Implementasi nyata:** Next.js App Router API Routes (Node.js runtime), bukan
+> Fastify. Lihat `app/api/**/route.ts`.
+
 ### Database
 PostgreSQL (specifically designed for this app, not copied from Risk Mapping)
+
+> **Implementasi nyata:** 18 tabel di `sql/init.sql` + `sql/migrate-*.sql`,
+> diakses via `lib/db.ts`. Jalankan `npm run migrate`.
 
 ### AI
 Google Gemini OR DeepSeek (multimodal/image understanding)
 - API keys must remain server-side
 
+> **Implementasi nyata:** Gemini saja untuk vision (`lib/ai-agent.ts`,
+> `lib/legend-extract.ts`). DeepSeek text-only sehingga **tidak bisa** dipakai
+> untuk Run Detection maupun Scan Legend. Model tidak di-hardcode:
+> `lib/model-resolver.ts` menemukan model saat runtime. Credential dibaca di
+> server (`lib/ai-config.ts`, DB `settings` > env).
+
 ### File Storage
 S3, MinIO, or existing compatible storage
 - Do NOT store large PDFs in PostgreSQL
+
+> **Implementasi nyata:** local filesystem lewat `lib/storage.ts`, default
+> `./storage` (`STORAGE_PATH`). PDF **tidak** disimpan di PostgreSQL. Aksesnya
+> sudah di balik interface `getFile`/`saveFile`, jadi S3/MinIO bisa menyusul
+> tanpa mengubah pemanggil.
 
 ### Background Processing
 Redis + BullMQ or equivalent
 - Detection must be asynchronous
 - Do NOT keep HTTP request open during P&ID analysis
+
+> **Implementasi nyata:** BullMQ 6 + Redis, `WORKER_CONCURRENCY=1` (free tier
+> 15 RPM). Worker: `workers/detection-worker.ts`, dijalankan via `npm run worker`.
 
 ## 6. APPLICATION MODULES
 
@@ -251,6 +271,26 @@ ai/
 ```
 
 Adjust per actual backend architecture.
+
+> **Implementasi nyata:** struktur `ai/` di atas tidak dipakai. Yang ada:
+>
+> ```text
+> lib/
+>   ai-agent.ts               agent runner + fallback chain model
+>   ai-schemas.ts             Zod schema output
+>   ai-prompts/               builder prompt (symbol-detector, legend-extractor,
+>                             rule-validator)
+>   ai-config.ts              provider/key/model (DB settings > env)
+>   ai-circuit-breaker.ts     breaker per model
+>   ai-generation.ts          generation config per flow
+>   gemini-request-gate.ts    rate limit process-wide
+>   model-resolver.ts         discovery model runtime
+>   tuning.ts                 jalur baca tunggal semua nilai operasional
+>   gemini.ts                 klien Gemini + DeepSeek
+> ```
+>
+> Tidak ada `tools/`, tidak ada `ocr-tool.ts` (tidak ada OCR), tidak ada
+> `providers/` terpisah (semua lewat `lib/gemini.ts`).
 
 ## 12. AI AGENT RESPONSIBILITIES
 
@@ -387,6 +427,26 @@ Suggested interpretation:
 ```
 
 Make thresholds configurable.
+
+> **Catatan implementasi (2026-10-02).** Band di atas adalah saran, **belum
+> menjadi perilaku aplikasi**. Yang benar-benar diimplementasikan:
+>
+> - `detections.validation_status` hanya punya tiga nilai: `VALID`,
+>   `NEEDS_REVIEW`, `CONFLICT` — **tidak ada** band High/Medium/Low.
+> - Ambang sebenarnya `DETECTION_REVIEW_THRESHOLD`, default **0.65**
+>   (bukan 0.80), plus `DETECTION_PENALTY_REVIEW_THRESHOLD` dan penalty
+>   per-faktor (tag hilang, evidence tipis, bbox over-size / degenerat).
+> - Sinyal review yang sebenarnya dipakai UI dan export adalah
+>   `reviewStatus === 'PENDING'`, bukan confidence < 0.80.
+>
+> Konsekuensi yang **belum diperbaiki**: sheet `Detection Summary` di Excel
+> masih memakai band hardcoded 0.95/0.80 (`lib/excel-export.ts:155-157`), jadi
+> labelnya tidak sama dengan apa yang terjadi di UI. Detail di
+> `docs/ASSET_REGISTER_EXCEL_EXPORT.md`.
+>
+> Kalau band tiga tingkat ini memang masih dibutuhkan, nyatakan dulu di mana
+> harus jadi sumber kebenaran (UI, export, atau keduanya) — jangan sampai ada dua
+> definisi "needs review" yang berbeda.
 
 ## 20. EVIDENCE
 

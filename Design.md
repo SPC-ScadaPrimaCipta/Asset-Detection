@@ -30,12 +30,24 @@ The UI should be built from small composable primitives instead of a large monol
 
 ### Recommended
 
+> **Status (terverifikasi 2026-10-02).** Tabel ini adalah rekomendasi awal.
+> Yang benar-benar terpasang: **Tailwind CSS 4**, **Phosphor Icons**, **PDF.js**
+> (`pdfjs-dist` via canvas, bukan `react-pdf`), **ExcelJS**, dan komponen UI
+> buatan sendiri di `components/ui/` (`button`, `card`, `table`, `Modal`,
+> `badge`, `input`, `Spinner`, `EmptyState`, `page-header`, `LegendSelector`).
+>
+> **Tidak terpasang:** shadcn/ui, Radix primitives, TanStack Table, Recharts,
+> React Hook Form, Zustand, `react-pdf`. Tabel data dan form memakai React
+> state + CSS biasa. Menambahkannya adalah keputusan terpisah, bukan default.
+>
+> Detail ikon: §34.
+
 | Area | Technology | Purpose |
 |---|---|---|
 | Framework | Next.js / React | Application architecture |
 | Styling | Tailwind CSS | Utility-first styling |
 | UI primitives | shadcn/ui + Radix primitives | Accessible dialogs, dropdowns, tabs, popovers, menus, etc. |
-| Icons | Lucide React | Lightweight consistent icons |
+| Icons | Phosphor Icons (`@phosphor-icons/react`) | Lightweight consistent icons |
 | Data tables | TanStack Table | Sorting, filtering, pagination, column visibility |
 | PDF | react-pdf + PDF.js | PDF rendering and page interaction |
 | Charts | Recharts | Lightweight dashboard visualizations |
@@ -1288,7 +1300,39 @@ Pills should be reserved for:
 
 # 34. Icons
 
-Use Lucide.
+Use **Phosphor Icons** (`@phosphor-icons/react`).
+
+> **Koreksi fakta (terverifikasi 2026-10-02).** Section ini sebelumnya
+> menyebut "Lucide". Implementasi sebenarnya memakai `@phosphor-icons/react` di
+> **seluruh** halaman: `app/detection`, `app/review`, `app/assets`,
+> `app/projects`, `app/documents`, `app/legends/[id]/review`, dan
+> `components/ui/LegendSelector.tsx`. `lucide-react` terpasang di
+> `package.json` tetapi **tidak di-import di mana pun** — sisa dependensi.
+>
+> Nama ikon di contoh bawah adalah nama Lucide. Padanannya di Phosphor:
+
+| Lucide (nama lama) | Phosphor (dipakai) |
+|---|---|
+| `LayoutDashboard` | `SquaresFour` |
+| `FolderKanban` | `FolderPlus` |
+| `CheckCircle2` | `CheckCircle` |
+| `AlertCircle` | `Warning` |
+| `ShieldCheck` | `SealCheck` |
+| `Loader2` | `SpinnerGap` |
+| `ChevronLeft` / `ChevronRight` | `CaretLeft` / `CaretRight` |
+| `Plus` / `Minus` | `Plus` / `Minus` |
+| `Pencil` | `PencilSimple` / `PencilLine` |
+| `Save` | `FloppyDisk` |
+| `Trash2` | `Trash` |
+| `X` / `XCircle` | `X` / `XCircle` |
+| `Undo2` | `ArrowCounterClockwise` |
+| `Search` | `MagnifyingGlass` |
+| `FileSpreadsheet` | `FileXls` |
+| `Upload` | `UploadSimple` |
+| `Zap` | `Lightning` |
+| `PlusCircle` | `PlusCircle` |
+| `Eye` | `Eye` |
+| `ChevronDown` | `CaretDown` |
 
 Examples:
 

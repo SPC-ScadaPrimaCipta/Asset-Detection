@@ -13,6 +13,38 @@
 | Main Use Case | Export asset data hasil pembacaan P&ID ke template Asset Register |
 | Default Export Rule | Hanya record berstatus `approved` |
 
+> ## ⚠️ Status implementasi (diverifikasi terhadap `lib/excel-export.ts`)
+>
+> Dokumen ini adalah **spesifikasi**; bukan deskripsi kode yang berjalan. Yang
+> sudah ada di `lib/excel-export.ts` + `app/api/export/assets/route.ts`:
+>
+> - ✅ 5 sheet dengan nama persis seperti di sini: `Asset Register`,
+>   `Equipment Summary`, `Detection Summary`, `Legend Used`, `Detection Evidence`.
+> - ✅ Record `REJECTED` (di `detectionStatus` **atau** `reviewStatus`) tidak pernah
+>   masuk sheet Asset Register.
+> - ✅ Review items dikendalikan query param
+>   `?includeReviewItems=true`. Default-nya **tidak** memasukkan record dengan
+>   `reviewStatus = 'PENDING'`. Ini yang dimaksud baris "Default Export Rule" di atas.
+>
+> Yang **belum** ada dan tetap spesifikasi: kolom SAP/weight/UOM/size-dimension,
+> nomor dokumen & revisi P&ID, reviewer/approver terpisah, dan sheet `Exceptions`.
+>
+> ### ⚠️ Diskrepansi band confidence yang perlu diketahui
+>
+> Sheet `Detection Summary` saat ini memakai band **hardcoded 0.95 / 0.80 / <0.80**
+> (`lib/excel-export.ts:155-157`). Angka itu **tidak** mencerminkan logika aplikasi:
+>
+> | | Nilai di app |
+> |---|---|
+> | Sinyal review sebenarnya | `reviewStatus === 'PENDING'` |
+> | Threshold confidence | `DETECTION_REVIEW_THRESHOLD`, default **0.65** |
+> | Status validasi | `VALID` / `NEEDS_REVIEW` / `CONFLICT` — **tidak ada** band High/Medium/Low |
+>
+> Jadi label "Needs Review (<0.80)" di sheet Detection Summary menghitung
+> sesuatu yang berbeda dari apa yang disebut "needs review" di UI. Ini **bug
+> pelaporan**, bukan keputusan spec — sheet itu sebaiknya memakai
+> `reviewStatus`/`validation_status` dan threshold yang sama dengan aplikasi.
+
 ---
 
 ## 1. Purpose

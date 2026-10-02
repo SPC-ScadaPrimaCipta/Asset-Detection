@@ -6,8 +6,16 @@
 > candidates, text-region masking, template matching, Tesseract OCR). Run
 > Detection is now 100% Gemini Vision (`lib/ai-agent.ts` +
 > `workers/detection-worker.ts`), aligned with Scan Legend. No OpenCV, no OCR,
-> no YOLO. The reports are kept as the baseline any future pipeline must beat —
-> they are not a description of current behaviour.
+> no YOLO, no Python. The reports are kept as the baseline any future pipeline
+> must beat — they are not a description of current behaviour.
+>
+> **No benchmark exists for the current Gemini Vision pipeline.** The
+> ground-truth tooling this doc describes (`sql/migrate-v2-ground-truth.sql`,
+> `scripts/ground-truth.schema.json`, `scripts/benchmark.ts`,
+> `POST /api/benchmark/run`) **was never built**. Every production threshold
+> today — `DETECTION_REVIEW_THRESHOLD` 0.65, `DETECTION_SKIP_FEATURES_CONFIDENCE`
+> 0.96, the IoU dedupe values — is a reasonable default, **not** a swept
+> operating point. Status: `docs/DETECTION_V2_IMPLEMENTATION_PLAN.md` §Fase 8.
 
 Measurement phases. Production thresholds untouched throughout.
 
