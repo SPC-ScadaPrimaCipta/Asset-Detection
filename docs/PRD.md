@@ -746,6 +746,13 @@ Tambahkan migration berikut:
 sql/migrate-009-gemini-detection-provenance.sql
 ```
 
+> ⚠️ **Nama file di atas tidak pernah ada.** Provenance & `pipeline_version` sudah
+> diimplementasikan lewat `sql/migrate-v2-detection-extensions.sql`, dengan kolom
+> tambahan di `sql/migrate-detection-columns.sql` dan
+> `sql/migrate-field-metadata.sql`. Jalankan `npm run migrate` (bukan `psql -f`
+> per file). Nama `migrate-009-` sekarang dipakai
+> `sql/migrate-009-settings-tuning.sql` untuk kolom `settings.tuning`.
+
 ```sql
 ALTER TABLE detections
   ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'gemini',

@@ -64,11 +64,23 @@ The interface should primarily use:
 ```text
 Tailwind CSS
     +
+Phosphor Icons
+    +
+PDF.js
+    +
+components/ui primitives (button, card, table, Modal, badge, input, Spinner, EmptyState)
+```
+
+> shadcn/ui, Radix primitives, dan TanStack Table **tidak terpasang** — lihat catatan
+> status di §"Recommended" di atas.
+
+```text
+(Target, belum terpasang)
+Tailwind CSS
+    +
 shadcn/ui
     +
 Radix primitives
-    +
-Lucide
     +
 TanStack Table
     +
