@@ -132,10 +132,10 @@ function AssetRegisterContent() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 rounded border border-zinc-300 disabled:opacity-40">←</button>
-          <span className="text-zinc-600">Page {page} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-3 py-1.5 rounded border border-zinc-300 disabled:opacity-40">→</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)', borderRadius: '0 0 var(--radius-md) var(--radius-md)' }}>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1 }}>← Prev</button>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Page <strong>{page}</strong> of <strong>{totalPages}</strong> · {total} total</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} style={{ padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1 }}>Next →</button>
         </div>
       )}
     </div>
@@ -144,7 +144,7 @@ function AssetRegisterContent() {
 
 export default function AssetRegisterPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--foreground-muted)' }}>Loading...</div>}>
       <AssetRegisterContent />
     </Suspense>
   );

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { FileXls, MagnifyingGlass, Eye, CaretLeft, CaretRight, PencilSimple, Trash, FloppyDisk, X } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ interface AssetsResponse {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 25;
 
 const REVIEW_STATUS_OPTS = [
   { label: 'All', value: '' },
@@ -62,6 +63,56 @@ const SORT_OPTS = [
   { label: 'Confidence High–Low', value: 'confidence_desc' },
 ];
 
+// ─── Style constants ──────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+const controlStyle: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '13px',
+  fontFamily: 'inherit',
+  outline: 'none',
+  width: '100%',
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 12px',
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  whiteSpace: 'nowrap',
+};
+
+const tdBase: React.CSSProperties = { padding: '10px 12px' };
+
+const badgeBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 8px',
+  borderRadius: '999px',
+  fontSize: '12px',
+  fontWeight: '500',
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parseEvidence(ev: string[] | string | null): string[] {
@@ -82,20 +133,25 @@ function confToParams(conf: string): { confidence_min?: string; confidence_max?:
   return {};
 }
 
-function ConfBadge({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-xs text-zinc-400">—</span>;
-  const pct = Math.round(value * 100);
-  const cls =
-    value >= 0.95
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-      : value >= 0.80
-      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400'
-      : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
+function Spinner({ size = 16 }: { size?: number } = {}) {
   return (
-    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>
-      {pct}%
-    </span>
+    <svg style={{ width: size, height: size, color: 'var(--foreground-muted)', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
   );
+}
+
+function ConfBadge({ value }: { value: number | null }) {
+  if (value === null) return <span style={{ fontSize: '12px', color: 'var(--foreground-subtle)' }}>—</span>;
+  const pct = Math.round(value * 100);
+  const badge =
+    value >= 0.95
+      ? { ...badgeBase, background: 'var(--success-soft)', color: 'var(--success)' }
+      : value >= 0.80
+      ? { ...badgeBase, background: 'var(--warning-soft)', color: 'var(--warning)' }
+      : { ...badgeBase, background: 'var(--danger-soft)', color: 'var(--danger)' };
+  return <span style={badge}>{pct}%</span>;
 }
 
 function StatusBadge({ reviewStatus }: { reviewStatus: string }) {
@@ -104,17 +160,15 @@ function StatusBadge({ reviewStatus }: { reviewStatus: string }) {
     : reviewStatus === 'REJECTED' ? 'Rejected'
     : reviewStatus === 'PENDING' ? 'Pending'
     : reviewStatus;
-  const cls =
+
+  const badge =
     reviewStatus === 'APPROVED'
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+      ? { ...badgeBase, background: 'var(--success-soft)', color: 'var(--success)' }
       : reviewStatus === 'REJECTED'
-      ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
-      : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300';
-  return (
-    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>
-      {label}
-    </span>
-  );
+      ? { ...badgeBase, background: 'var(--danger-soft)', color: 'var(--danger)' }
+      : { ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' };
+
+  return <span style={badge}>{label}</span>;
 }
 
 // ─── Detail Side Panel ────────────────────────────────────────────────────────
@@ -143,45 +197,47 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
 
   return (
     // Overlay backdrop on narrow screens, side panel on wide
-    <div className="fixed inset-y-0 right-0 z-50 flex">
+    <div style={{ position: 'fixed', inset: '0 0 0 0', zIndex: 50, display: 'flex' }}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 dark:bg-black/40"
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.2)', zIndex: 49 }}
         onClick={onClose}
         aria-hidden="true"
       />
       {/* Panel */}
-      <aside className="relative w-80 bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 flex flex-col shadow-xl overflow-hidden">
+      <aside style={{ position: 'relative', width: 320, background: 'var(--surface)', borderLeft: '1px solid var(--border)', borderTop: '1px solid var(--border)', boxShadow: '0 8px 16px rgba(0, 0, 0, 0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
-          <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm truncate pr-2">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <span style={{ fontWeight: '600', color: 'var(--foreground)', fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px' }}>
             {asset.asset_tag ?? asset.asset_type}
           </span>
           <button
             onClick={onClose}
-            className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             aria-label="Close detail panel"
+            style={{ flexShrink: 0, color: 'var(--foreground-subtle)', borderRadius: 'var(--radius-sm)', padding: 4, cursor: 'pointer', border: 'none', background: 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--foreground-muted)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--foreground-subtle)'; }}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-5 text-sm">
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
           {/* Badges row */}
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             <ConfBadge value={asset.confidence} />
             <StatusBadge reviewStatus={asset.review_status} />
           </div>
 
           {/* Fields */}
-          <dl className="space-y-3">
+          <dl style={{ margin: 0 }}>
             {fields.map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{k}</dt>
-                <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200 break-words">{v}</dd>
+              <div key={k} style={{ marginBottom: '4px' }}>
+                <dt style={{ fontSize: '11px', fontWeight: '500', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>{k}</dt>
+                <dd style={{ margin: '2px 0 0', color: 'var(--foreground)', overflowWrap: 'break-word' }}>{v}</dd>
               </div>
             ))}
           </dl>
@@ -189,11 +245,11 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
           {/* Evidence */}
           {ev.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Evidence</p>
-              <ul className="space-y-1.5">
+              <p style={{ fontSize: '11px', fontWeight: '500', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 8px' }}>Evidence</p>
+              <ul style={{ padding: 0, margin: 0 }}>
                 {ev.map((e, i) => (
-                  <li key={i} className="flex gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                    <span className="text-blue-500 mt-0.5 shrink-0">•</span>
+                  <li key={i} style={{ display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--foreground-muted)', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--accent)', marginTop: 2, flexShrink: 0 }}>•</span>
                     <span>{e}</span>
                   </li>
                 ))}
@@ -220,6 +276,7 @@ function AssetRegisterWorkspace() {
   const [confidence, setConfidence] = useState(searchParams.get('confidence') ?? '');
   const [sort, setSort] = useState(searchParams.get('sort') ?? 'created_at_desc');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // Data
   const [projects, setProjects] = useState<Project[]>([]);
@@ -233,6 +290,12 @@ function AssetRegisterWorkspace() {
 
   // Detail panel
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+
+  // Edit / Delete
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Asset>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Export
   const [includeReviewItems, setIncludeReviewItems] = useState(false);
@@ -275,9 +338,9 @@ function AssetRegisterWorkspace() {
     if (confParams.confidence_max) sp.set('confidence_max', confParams.confidence_max);
     if (sort) sp.set('sort', sort);
     sp.set('page', String(page));
-    sp.set('limit', String(PAGE_SIZE));
+    sp.set('limit', String(pageSize));
     return `/api/assets?${sp.toString()}`;
-  }, [projectId, debouncedQ, assetType, reviewStatus, confidence, sort, page]);
+  }, [projectId, debouncedQ, assetType, reviewStatus, confidence, sort, page, pageSize]);
 
   // ── Fetch assets ──
   const fetchAssets = useCallback(async () => {
@@ -309,6 +372,39 @@ function AssetRegisterWorkspace() {
 
   // Reset to page 1 when filters change (except page itself)
   const resetPage = () => setPage(1);
+
+  // ── Edit / Delete handlers ──
+  const handleEdit = (asset: Asset) => {
+    setEditingAsset(asset);
+    setEditForm({
+      asset_tag: asset.asset_tag ?? '',
+      asset_type: asset.asset_type,
+      equipment_class: asset.equipment_class ?? '',
+      description: asset.description ?? '',
+      service: asset.service ?? '',
+      location: asset.location ?? '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAsset) return;
+    setSavingEdit(true);
+    const r = await fetch(`/api/assets/${editingAsset.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editForm),
+    });
+    if (r.ok) { await fetchAssets(); setEditingAsset(null); }
+    setSavingEdit(false);
+  };
+
+  const handleDelete = async (asset: Asset) => {
+    if (!confirm(`Delete asset "${asset.asset_tag ?? asset.asset_type}"? This cannot be undone.`)) return;
+    setDeletingId(asset.id);
+    await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' });
+    await fetchAssets();
+    setDeletingId(null);
+  };
 
   // ── Stats ──
   const confirmed = assets.filter(a => a.review_status === 'APPROVED').length;
@@ -344,56 +440,56 @@ function AssetRegisterWorkspace() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="space-y-5">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* ── Header ── */}
       <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Asset Register</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Asset Register</h1>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>
           Confirmed and reviewed assets extracted from P&amp;ID documents.
         </p>
       </div>
 
       {/* ── Filter / Action Bar ── */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-        <div className="flex flex-wrap gap-3 items-end">
+      <div style={{ ...cardStyle, padding: '16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
           {/* Project */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Project</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Project</label>
             <select
               value={projectId}
               onChange={e => { setProjectId(e.target.value); resetPage(); }}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40"
+              style={{ ...controlStyle, minWidth: 160 }}
             >
               <option value="">All projects</option>
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-          </label>
+          </div>
 
           {/* Search */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Search</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Search</label>
             <input
               type="text"
               placeholder="Tag, type, description…"
               value={q}
               onChange={e => setQ(e.target.value)}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+              style={{ ...controlStyle, width: 210 }}
             />
-          </label>
+          </div>
 
           {/* Asset Type */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Asset Type</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Asset Type</label>
             {knownTypes.length > 0 ? (
               <select
                 value={assetType}
                 onChange={e => { setAssetType(e.target.value); resetPage(); }}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-36"
+                style={{ ...controlStyle, minWidth: 140 }}
               >
                 <option value="">All types</option>
                 {knownTypes.map(t => (
@@ -406,73 +502,68 @@ function AssetRegisterWorkspace() {
                 placeholder="e.g. Valve"
                 value={assetType}
                 onChange={e => { setAssetType(e.target.value); resetPage(); }}
-                className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-36"
+                style={{ ...controlStyle, width: 140 }}
               />
             )}
-          </label>
+          </div>
 
           {/* Review Status */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Status</label>
             <select
               value={reviewStatus}
               onChange={e => { setReviewStatus(e.target.value); resetPage(); }}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ ...controlStyle, minWidth: 120 }}
             >
               {REVIEW_STATUS_OPTS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-          </label>
+          </div>
 
           {/* Confidence */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Confidence</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Confidence</label>
             <select
               value={confidence}
               onChange={e => { setConfidence(e.target.value); resetPage(); }}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ ...controlStyle, minWidth: 150 }}
             >
               {CONFIDENCE_OPTS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-          </label>
+          </div>
 
           {/* Sort */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Sort</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>Sort</label>
             <select
               value={sort}
               onChange={e => { setSort(e.target.value); resetPage(); }}
-              className="rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ ...controlStyle, minWidth: 170 }}
             >
               {SORT_OPTS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-          </label>
+          </div>
 
           {/* Export button — pushed to right */}
-          <div className="ml-auto flex items-end">
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-300 dark:disabled:bg-zinc-700 text-white text-sm font-medium transition-colors"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)', background: 'var(--success)', color: 'var(--surface)', fontSize: '13px', fontWeight: '500', cursor: 'pointer', opacity: exporting ? 0.6 : 1, transition: 'all 150ms ease-out' }}
             >
               {exporting ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
+                  <Spinner size={14} />
                   Exporting…
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                  </svg>
+                  <FileXls size={16} weight="bold" />
                   Export Excel
                 </>
               )}
@@ -482,115 +573,104 @@ function AssetRegisterWorkspace() {
       </div>
 
       {/* ── Stats Bar ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
         {[
-          { label: 'Total', value: total, color: 'text-zinc-700 dark:text-zinc-300' },
-          { label: 'Confirmed', value: confirmed, color: 'text-emerald-600' },
-          { label: 'Pending', value: pending, color: 'text-yellow-600' },
+          { label: 'Total', value: total, color: 'var(--foreground)' },
+          { label: 'Confirmed', value: confirmed, color: 'var(--success)' },
+          { label: 'Pending', value: pending, color: 'var(--warning)' },
           {
             label: 'Avg Confidence',
             value: avgConfOnPage !== null ? `${avgConfOnPage}%` : '—',
-            color: 'text-blue-600',
+            color: 'var(--info)',
           },
         ].map(s => (
-          <div
-            key={s.label}
-            className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 text-center"
-          >
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-zinc-500 mt-0.5">{s.label}</p>
+          <div key={s.label} style={{ ...cardStyle, padding: '16px', textAlign: 'center' }}>
+            <p style={{ fontSize: '28px', fontWeight: '600', color: s.color, margin: '0 0 4px' }}>{s.value}</p>
+            <p style={{ fontSize: '11px', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* ── Export Section ── */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-5 py-4 flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+      <div style={{ ...cardStyle, padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', userSelect: 'none', fontSize: '14px' }}>
           <input
             type="checkbox"
             checked={includeReviewItems}
             onChange={e => setIncludeReviewItems(e.target.checked)}
-            className="w-4 h-4 rounded border-zinc-300 accent-blue-600"
+            style={{ width: 16, height: 16, borderRadius: 'var(--radius-sm)', accentColor: 'var(--primary)' }}
           />
-          <span className="text-sm text-zinc-700 dark:text-zinc-300">Include review items (pending detections)</span>
+          <span style={{ color: 'var(--foreground)' }}>Include review items (pending detections)</span>
         </label>
 
         <button
           onClick={handleExport}
           disabled={exporting}
-          className="flex items-center gap-2 px-5 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 dark:disabled:bg-zinc-700 text-white text-sm font-semibold transition-colors"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--surface)', fontSize: '14px', fontWeight: '600', cursor: 'pointer', opacity: exporting ? 0.6 : 1, transition: 'all 150ms ease-out' }}
         >
           {exporting ? (
             <>
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
+              <Spinner size={14} />
               Exporting…
             </>
           ) : (
             <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <FileXls size={16} weight="bold" />
               Export Asset Register (.xlsx)
             </>
           )}
         </button>
 
         {exportError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{exportError}</p>
+          <p style={{ fontSize: '12px', color: 'var(--danger)' }}>{exportError}</p>
         )}
       </div>
 
       {/* ── Asset Table ── */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+      <div style={{ ...cardStyle, overflow: 'hidden' }}>
         {error && (
-          <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <div style={{ padding: '12px 16px', background: 'var(--danger-soft)', borderBottom: '1px solid var(--danger-soft)' }}>
+            <p style={{ fontSize: '14px', color: 'var(--danger)', margin: 0 }}>{error}</p>
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+            <thead style={{ background: 'var(--surface-muted)', borderBottom: '1px solid var(--border)' }}>
               <tr>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap w-10">No</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Asset Tag</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Asset Type</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Equipment Class</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap max-w-[200px]">Description</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">P&amp;ID</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Page</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Service</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Legend</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Confidence</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Status</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-zinc-500 whitespace-nowrap">Actions</th>
+                <th style={{ ...thStyle, width: 40 }}>No</th>
+                <th style={thStyle}>Asset Tag</th>
+                <th style={thStyle}>Asset Type</th>
+                <th style={thStyle}>Equipment Class</th>
+                <th style={thStyle}>Description</th>
+                <th style={thStyle}>P&amp;ID</th>
+                <th style={thStyle}>Page</th>
+                <th style={thStyle}>Service</th>
+                <th style={thStyle}>Legend</th>
+                <th style={thStyle}>Confidence</th>
+                <th style={thStyle}>Status</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-2 text-zinc-400">
-                      <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      <span className="text-sm">Loading assets…</span>
+                  <td colSpan={12} style={{ padding: '64px 0', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--foreground-muted)' }}>
+                      <Spinner size={24} />
+                      <span>Loading assets…</span>
                     </div>
                   </td>
                 </tr>
               ) : assets.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-2 text-zinc-400">
-                      <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <td colSpan={12} style={{ padding: '64px 0', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--foreground-muted)' }}>
+                      <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m8-4v8" />
                       </svg>
-                      <p className="text-sm font-medium">No assets found</p>
-                      <p className="text-xs">Try adjusting your filters</p>
+                      <p style={{ fontWeight: '500', margin: 0 }}>No assets found</p>
+                      <p style={{ fontSize: '12px', margin: 0 }}>Try adjusting your filters</p>
                     </div>
                   </td>
                 </tr>
@@ -598,52 +678,81 @@ function AssetRegisterWorkspace() {
                 assets.map((asset, idx) => (
                   <tr
                     key={asset.id}
-                    className={`border-t border-zinc-100 dark:border-zinc-800 transition-colors
-                      ${selectedAsset?.id === asset.id
-                        ? 'bg-blue-50 dark:bg-blue-900/20'
-                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
-                      }`}
+                    style={{
+                      borderTop: '1px solid var(--border)',
+                      transition: 'background 150ms ease-out',
+                      background: selectedAsset?.id === asset.id ? 'var(--accent-soft)' : undefined,
+                    }}
+                    onMouseEnter={e => { if (selectedAsset?.id !== asset.id) e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
+                    onMouseLeave={e => { if (selectedAsset?.id !== asset.id) e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td className="px-3 py-2 text-zinc-400 tabular-nums">
-                      {(page - 1) * PAGE_SIZE + idx + 1}
+                    <td style={{ ...tdBase, color: 'var(--foreground-subtle)', fontVariantNumeric: 'tabular-nums' }}>
+                      {(page - 1) * pageSize + idx + 1}
                     </td>
-                    <td className="px-3 py-2 font-mono font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
-                      {asset.asset_tag ?? <span className="text-zinc-400 italic font-sans">—</span>}
+                    <td style={{ ...tdBase, fontWeight: '500', color: 'var(--foreground)', whiteSpace: 'nowrap', fontFamily: 'var(--font-geist-mono, ui-monospace, monospace)' }}>
+                      {asset.asset_tag ?? <span style={{ color: 'var(--foreground-subtle)', fontStyle: 'italic', fontFamily: 'sans-serif' }}>—</span>}
                     </td>
-                    <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
+                    <td style={{ ...tdBase, color: 'var(--foreground)', whiteSpace: 'nowrap' }}>
                       {asset.asset_type}
                     </td>
-                    <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
                       {asset.equipment_class ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={asset.description ?? undefined}>
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={asset.description ?? undefined}>
                       {asset.description ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-zinc-500 whitespace-nowrap font-mono text-xs">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap', fontFamily: 'var(--font-geist-mono, ui-monospace, monospace)' }}>
                       {asset.pid_number ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-zinc-500 whitespace-nowrap tabular-nums">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                       {asset.pid_page ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
                       {asset.service ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
                       {asset.legend_name ?? '—'}
                     </td>
-                    <td className="px-3 py-2">
+                    <td style={tdBase}>
                       <ConfBadge value={asset.confidence} />
                     </td>
-                    <td className="px-3 py-2">
+                    <td style={tdBase}>
                       <StatusBadge reviewStatus={asset.review_status} />
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => setSelectedAsset(prev => prev?.id === asset.id ? null : asset)}
-                        className="text-xs px-2.5 py-1 rounded-md bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 transition-colors font-medium"
-                      >
-                        View
-                      </button>
+                    <td style={{ ...tdBase, textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        {/* View */}
+                        <button
+                          onClick={() => setSelectedAsset(prev => prev?.id === asset.id ? null : asset)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#F0F2E9', color: '#1F2A22', border: '1px solid #DDE2D8', cursor: 'pointer', transition: 'all 150ms ease-out' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#E4E6DC'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#F0F2E9'; }}
+                        >
+                          <Eye size={13} weight="bold" />
+                          View
+                        </button>
+                        {/* Edit */}
+                        <button
+                          onClick={() => handleEdit(asset)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#002B4E', color: '#FFFFFF', border: '1px solid #002B4E', cursor: 'pointer', transition: 'all 150ms ease-out' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#003d6b'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#002B4E'; }}
+                        >
+                          <PencilSimple size={13} weight="bold" />
+                          Edit
+                        </button>
+                        {/* Delete */}
+                        <button
+                          onClick={() => handleDelete(asset)}
+                          disabled={deletingId === asset.id}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: '#A65A55', color: '#FFFFFF', border: '1px solid #A65A55', cursor: deletingId === asset.id ? 'not-allowed' : 'pointer', transition: 'all 150ms ease-out', opacity: deletingId === asset.id ? 0.4 : 1 }}
+                          onMouseEnter={e => { if (deletingId !== asset.id) e.currentTarget.style.background = '#8f4d48'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#A65A55'; }}
+                        >
+                          <Trash size={13} weight="bold" />
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -653,35 +762,131 @@ function AssetRegisterWorkspace() {
         </div>
 
         {/* ── Pagination ── */}
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-3 text-sm text-zinc-500">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1 || loading}
-              className="px-3 py-1 rounded border border-zinc-200 dark:border-zinc-700 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-xs"
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: 'var(--foreground-muted)' }}>
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1 || loading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === 1 || loading) ? 0.4 : 1 }}
+          >
+            <CaretLeft size={13} weight="bold" />
+            Prev
+          </button>
+          <span style={{ fontSize: '12px' }}>
+            Page <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{page}</span>
+            {' '}of{' '}
+            <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>{totalPages}</span>
+            <span style={{ marginLeft: '8px', color: 'var(--foreground-subtle)' }}>({total} total)</span>
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages || loading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--foreground-muted)', cursor: 'pointer', fontSize: '12px', opacity: (page === totalPages || loading) ? 0.4 : 1 }}
+          >
+            Next
+            <CaretRight size={13} weight="bold" />
+          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
             >
-              ← Prev
-            </button>
-            <span className="text-xs">
-              Page <span className="font-semibold text-zinc-700 dark:text-zinc-300">{page}</span>
-              {' '}of{' '}
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">{totalPages}</span>
-              <span className="ml-2 text-zinc-400">({total} total)</span>
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages || loading}
-              className="px-3 py-1 rounded border border-zinc-200 dark:border-zinc-700 disabled:opacity-40 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-xs"
-            >
-              Next →
-            </button>
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Detail Side Panel ── */}
       {selectedAsset && (
         <DetailPanel asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editingAsset && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Backdrop */}
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.45)', zIndex: 59 }}
+            onClick={() => !savingEdit && setEditingAsset(null)}
+            aria-hidden="true"
+          />
+          {/* Card */}
+          <div style={{ position: 'relative', zIndex: 60, width: 420, maxHeight: '90vh', overflowY: 'auto', ...cardStyle, padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 16px 40px rgba(0,0,0,0.18)' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: 'var(--foreground)' }}>
+                Edit Asset
+              </h2>
+              <button
+                onClick={() => !savingEdit && setEditingAsset(null)}
+                aria-label="Close edit modal"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--foreground-subtle)', borderRadius: 'var(--radius-sm)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--foreground-muted)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--foreground-subtle)'; }}
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+
+            {/* Fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {(
+                [
+                  { key: 'asset_tag', label: 'Asset Tag' },
+                  { key: 'asset_type', label: 'Asset Type' },
+                  { key: 'equipment_class', label: 'Equipment Class' },
+                  { key: 'description', label: 'Description' },
+                  { key: 'service', label: 'Service' },
+                  { key: 'location', label: 'Location' },
+                ] as { key: keyof Asset; label: string }[]
+              ).map(({ key, label }) => (
+                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={fieldLabelStyle}>{label}</label>
+                  <input
+                    type="text"
+                    value={(editForm[key] as string) ?? ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, [key]: e.target.value }))}
+                    style={{ ...controlStyle }}
+                    disabled={savingEdit}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px', borderTop: '1px solid var(--border)' }}>
+              <button
+                onClick={() => !savingEdit && setEditingAsset(null)}
+                disabled={savingEdit}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground-muted)', fontSize: '13px', fontWeight: '500', cursor: savingEdit ? 'not-allowed' : 'pointer', opacity: savingEdit ? 0.5 : 1 }}
+              >
+                <X size={14} weight="bold" />
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid #0078B8', background: '#0078B8', color: '#FFFFFF', fontSize: '13px', fontWeight: '500', cursor: savingEdit ? 'not-allowed' : 'pointer', opacity: savingEdit ? 0.6 : 1, transition: 'all 150ms ease-out' }}
+                onMouseEnter={e => { if (!savingEdit) e.currentTarget.style.background = '#0069a3'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#0078B8'; }}
+              >
+                {savingEdit ? (
+                  <>
+                    <Spinner size={14} />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <FloppyDisk size={14} weight="bold" />
+                    Save
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -690,7 +895,7 @@ function AssetRegisterWorkspace() {
 // Need Suspense for useSearchParams
 export default function AssetsPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--foreground-muted)' }}>Loading...</div>}>
       <AssetRegisterWorkspace />
     </Suspense>
   );

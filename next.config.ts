@@ -9,6 +9,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Prevent Next.js from bundling native/ESM-only packages — let Node.js handle them directly
+  serverExternalPackages: ['mupdf', 'sharp', 'canvas'],
+
   async headers() {
     return [
       {
@@ -18,5 +21,11 @@ const nextConfig: NextConfig = {
     ];
   },
 };
+
+module.exports = {
+  ...nextConfig,
+  allowedDevOrigins: ['192.168.68.86'],
+  serverExternalPackages: ['mupdf', 'sharp', 'canvas'],
+}
 
 export default nextConfig;

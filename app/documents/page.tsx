@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle } from '@phosphor-icons/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,31 +20,92 @@ interface Document {
   status: string;
 }
 
+// ─── Style Constants ──────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  outline: 'none',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--primary)',
+  background: 'var(--primary)',
+  color: 'var(--surface)',
+  fontSize: '13px',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'all 150ms ease-out',
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '12px 16px',
+  fontSize: '12px',
+  fontWeight: '600',
+  color: 'var(--foreground-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+const tdBase: React.CSSProperties = { padding: '12px 16px' };
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const badgeBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 8px',
+  borderRadius: '999px',
+  fontSize: '12px',
+  fontWeight: '500',
+};
 
 function statusBadge(status: string) {
   switch (status?.toUpperCase()) {
     case 'UPLOADED':
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+        <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
           Uploaded
         </span>
       );
     case 'PROCESSING':
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+        <span style={{ ...badgeBase, background: 'var(--info-soft)', color: 'var(--info)' }}>
           Processing
         </span>
       );
     case 'DONE':
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
+        <span style={{ ...badgeBase, background: 'var(--success-soft)', color: 'var(--success)' }}>
           Done
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+        <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
           {status ?? '—'}
         </span>
       );
@@ -52,9 +114,9 @@ function statusBadge(status: string) {
 
 function Spinner() {
   return (
-    <svg className="animate-spin h-5 w-5 text-zinc-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    <svg style={{ width: 20, height: 20, color: 'var(--foreground-muted)', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
     </svg>
   );
 }
@@ -76,6 +138,10 @@ export default function DocumentsPage() {
 
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Pagination
+  const [docPage, setDocPage] = useState(1);
+  const [docPageSize, setDocPageSize] = useState(10);
 
   const fetchDocuments = useCallback(async () => {
     const res = await fetch('/api/documents');
@@ -161,30 +227,30 @@ export default function DocumentsPage() {
   const canUpload = !!selectedProjectId && !!selectedFile && !uploading;
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Documents</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Documents</h1>
+        <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>
           Upload P&amp;ID documents and run asset detection.
         </p>
       </div>
 
       {/* Upload card */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Upload Document</h2>
+      <div style={{ ...cardStyle, padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Upload Document</h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
           {/* Project dropdown */}
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Project <span className="text-red-500">*</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>
+              Project <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <select
               value={selectedProjectId}
               onChange={e => setSelectedProjectId(e.target.value)}
               disabled={uploading}
-              className="w-full text-sm px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 disabled:opacity-50"
+              style={{ ...selectStyle, opacity: uploading ? 0.5 : 1 }}
             >
               <option value="">Select a project…</option>
               {projects.map(p => (
@@ -194,9 +260,9 @@ export default function DocumentsPage() {
           </div>
 
           {/* File input */}
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              PDF File <span className="text-red-500">*</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={fieldLabelStyle}>
+              PDF File <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <input
               ref={fileInputRef}
@@ -204,115 +270,116 @@ export default function DocumentsPage() {
               accept="application/pdf"
               onChange={handleFileChange}
               disabled={uploading}
-              className="w-full text-sm text-zinc-700 dark:text-zinc-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-zinc-200 dark:file:border-zinc-600 file:text-xs file:font-medium file:bg-zinc-50 dark:file:bg-zinc-800 file:text-zinc-700 dark:file:text-zinc-300 hover:file:bg-zinc-100 disabled:opacity-50"
+              style={{ width: '100%', fontSize: '14px', color: 'var(--foreground)', opacity: uploading ? 0.5 : 1 }}
             />
             {selectedFile && (
-              <p className="text-xs text-zinc-400 truncate">{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
             )}
           </div>
         </div>
 
         {/* Progress bar */}
         {uploading && (
-          <div className="space-y-1">
-            <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'var(--border)', overflow: 'hidden' }}>
               <div
-                className="h-1.5 rounded-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
+                style={{ height: '6px', borderRadius: '3px', background: 'var(--info)', width: `${uploadProgress}%`, transition: 'width 300ms ease-out' }}
               />
             </div>
-            <p className="text-xs text-zinc-400">Uploading… {uploadProgress}%</p>
+            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>Uploading… {uploadProgress}%</p>
           </div>
         )}
 
         {/* Error */}
         {uploadError && (
-          <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-md px-3 py-2">
+          <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>
             {uploadError}
           </p>
         )}
 
         {/* Upload button */}
-        <div className="flex items-center gap-3">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={handleUpload}
             disabled={!canUpload}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ ...primaryButtonStyle, opacity: !canUpload ? 0.4 : 1, cursor: !canUpload ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
           >
-            {uploading && <Spinner />}
-            {uploading ? 'Uploading…' : 'Upload PDF'}
+            {uploading ? <><span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />Uploading…</> : <><UploadSimple size={15} weight="bold" />Upload PDF</>}
           </button>
           {uploadProgress === 100 && !uploading && (
-            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">✓ Upload successful</span>
+            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={14} weight="fill" /> Upload successful</span>
           )}
         </div>
       </div>
 
       {/* Document table */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">All Documents</h2>
-          <span className="text-xs text-zinc-400">{documents.length} document{documents.length !== 1 ? 's' : ''}</span>
+      <div style={{ ...cardStyle, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>All Documents</h2>
+          <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>{documents.length} document{documents.length !== 1 ? 's' : ''}</span>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-zinc-400">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)' }}>
             <Spinner />
-            <span className="ml-2 text-sm">Loading…</span>
+            <span style={{ marginLeft: '8px', fontSize: '14px' }}>Loading…</span>
           </div>
         ) : documents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <svg className="w-10 h-10 text-zinc-300 dark:text-zinc-600 mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center' }}>
+            <svg style={{ width: 40, height: 40, color: 'var(--border-strong)', marginBottom: '12px' }} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
             </svg>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">No documents yet. Upload a PDF above.</p>
+            <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>No documents yet. Upload a PDF above.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
+              <thead style={{ background: 'var(--surface-muted)', borderBottom: '1px solid var(--border)' }}>
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Filename</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Pages</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Project</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Upload Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Actions</th>
+                  <th style={thStyle}>Filename</th>
+                  <th style={thStyle}>Pages</th>
+                  <th style={thStyle}>Project</th>
+                  <th style={thStyle}>Upload Date</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {documents.map(doc => (
-                  <tr key={doc.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200 truncate max-w-xs block" title={doc.filename}>
+              <tbody>
+                {documents.slice((docPage - 1) * docPageSize, docPage * docPageSize).map(doc => (
+                  <tr key={doc.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 150ms ease-out' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <td style={tdBase}>
+                      <span style={{ fontWeight: '500', color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: 320 }} title={doc.filename}>
                         {doc.filename}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
                       {doc.page_count ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
                       {projectName(doc.project_id)}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
                       {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '—'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td style={tdBase}>
                       {statusBadge(doc.status ?? 'UPLOADED')}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
+                    <td style={tdBase}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                         <Link
                           href={`/detection?project_id=${doc.project_id}`}
-                          className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 px-2.5 py-1 rounded-md border border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors whitespace-nowrap"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #2D7A3A', background: '#2D7A3A', textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all 150ms ease-out' }}
                         >
-                          Run Detection
+                          <Lightning size={13} weight="fill" /> Run Detection
                         </Link>
                         <button
                           onClick={() => handleDelete(doc)}
                           disabled={deletingId === doc.id}
-                          className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', cursor: 'pointer', opacity: deletingId === doc.id ? 0.4 : 1, transition: 'all 150ms ease-out' }}
                         >
+                          <Trash size={13} weight="bold" />
                           {deletingId === doc.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </div>
@@ -323,6 +390,22 @@ export default function DocumentsPage() {
             </table>
           </div>
         )}
+        {/* Pagination — always visible */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
+          <button onClick={() => setDocPage(p => Math.max(1, p - 1))} disabled={docPage === 1} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage === 1 ? 'not-allowed' : 'pointer', opacity: docPage === 1 ? 0.4 : 1, color: 'var(--foreground-muted)' }}><CaretLeft size={12} weight="bold" /> Prev</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
+            <select
+              value={docPageSize}
+              onChange={e => { setDocPageSize(Number(e.target.value)); setDocPage(1); }}
+              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
+            >
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Page <strong>{docPage}</strong> of <strong>{Math.max(1, Math.ceil(documents.length / docPageSize))}</strong> · {documents.length} total</span>
+          </div>
+          <button onClick={() => setDocPage(p => Math.min(Math.ceil(documents.length / docPageSize), p + 1))} disabled={docPage >= Math.ceil(documents.length / docPageSize)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage >= Math.ceil(documents.length / docPageSize) ? 'not-allowed' : 'pointer', opacity: docPage >= Math.ceil(documents.length / docPageSize) ? 0.4 : 1, color: 'var(--foreground-muted)' }}>Next <CaretRight size={12} weight="bold" /></button>
+        </div>
       </div>
     </div>
   );

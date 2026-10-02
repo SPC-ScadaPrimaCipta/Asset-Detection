@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
+import { getTuning } from "@/lib/tuning";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -42,10 +44,10 @@ export async function GET(request: NextRequest) {
      LEFT JOIN LATERAL (
        SELECT
          COUNT(*)                                          AS total,
-         COUNT(*) FILTER (WHERE d.review_status = 'confirmed') AS confirmed,
-         COUNT(*) FILTER (WHERE d.review_status = 'pending')   AS pending,
-         COUNT(*) FILTER (WHERE d.review_status = 'rejected')  AS rejected,
-         COUNT(*) FILTER (WHERE d.status        = 'detected')  AS detected
+         COUNT(*) FILTER (WHERE d.review_status = 'APPROVED')  AS confirmed,
+         COUNT(*) FILTER (WHERE d.review_status = 'PENDING')   AS pending,
+         COUNT(*) FILTER (WHERE d.review_status = 'REJECTED')  AS rejected,
+         COUNT(*) FILTER (WHERE d.detection_status = 'DETECTED')  AS detected
        FROM detections d
        WHERE d.job_id = j.id
      ) s ON true
@@ -80,22 +82,47 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { document_id, legend_id, project_id } = await request.json();
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  const maxTriggers = (await getTuning()).performance.rateLimitDetectionTriggers;
+  const rl = checkRateLimit(`detection:${ip}`, maxTriggers, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many detection requests. Try again later.' },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
+  const { document_id, legend_id, legend_ids, project_id } = await request.json();
   if (!document_id) return NextResponse.json({ error: "document_id required" }, { status: 400 });
   const id = uuidv4();
-  await db.query("INSERT INTO detection_jobs (id, document_id, legend_id, project_id, status, progress_pct) VALUES ($1,$2,$3,$4,'PENDING',0)", [id, document_id, legend_id ?? null, project_id ?? null]);
-  // BullMQ requires Node.js runtime (not Edge). Dynamic import guards against Edge/build-time errors.
-  try {
-    const { Queue } = await import('bullmq');
-    const IORedis = (await import('ioredis')).default;
-    const conn = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null, enableOfflineQueue: false, lazyConnect: true });
-    await conn.connect().catch(() => {});
-    const q = new Queue('detection', { connection: conn });
-    await q.add('detection', { jobId: id, legendId: legend_id ?? null }, { jobId: id, removeOnComplete: true, removeOnFail: 100 });
-    conn.disconnect();
-  } catch {
-    // Redis unavailable — client polls status; worker process picks up PENDING jobs on restart
-    console.warn(`[detection] Redis unavailable, job ${id} left as PENDING`);
+
+  const { resolveJobLegendIds } = await import('@/lib/job-legends');
+  const resolved = await resolveJobLegendIds({ legend_id, legend_ids });
+  if ('error' in resolved) {
+    return NextResponse.json({ error: resolved.error }, { status: 400 });
   }
-  return NextResponse.json({ id, document_id, legend_id, status: "PENDING" }, { status: 201 });
+  const { legendIds, primaryLegendId } = resolved;
+
+  // Cleanup: delete DETECTED/PENDING detections from previous jobs for this document.
+  // Confirmed (APPROVED) and Rejected detections are preserved — user already reviewed those.
+  // This prevents 473-detection inflation from 20+ repeated runs on the same document.
+  await db.query(
+    `DELETE FROM detections
+     WHERE document_id = $1
+       AND review_status = 'PENDING'
+       AND detection_status = 'DETECTED'`,
+    [document_id]
+  );
+
+  await db.query(
+    "INSERT INTO detection_jobs (id, document_id, legend_id, legend_ids, project_id, status, progress_pct) VALUES ($1,$2,$3,$4,$5,'PENDING',0)",
+    [id, document_id, primaryLegendId, legendIds.length > 0 ? legendIds : null, project_id ?? null],
+  );
+  // Use singleton queue — avoids creating a new Redis connection per request
+  const { enqueueDetectionJob } = await import('@/lib/queue');
+  const enqueued = await enqueueDetectionJob(id, primaryLegendId, legendIds);
+  if (!enqueued) {
+    console.warn(`[detection] Redis unavailable, job ${id} left as PENDING — worker will recover on startup`);
+  }
+  return NextResponse.json({ id, document_id, legend_id: primaryLegendId, legend_ids: legendIds, status: "PENDING" }, { status: 201 });
 }

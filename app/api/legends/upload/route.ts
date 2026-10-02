@@ -1,130 +1,133 @@
-import { NextRequest, NextResponse } from "next/server";
-import { v4 as uuidv4 } from "uuid";
-import db from "@/lib/db";
-import { validatePdfFile, getPdfPageCountFromBuffer } from "@/lib/pdf-render";
-import { getGeminiModel } from "@/lib/gemini";
-import { saveFile } from "@/lib/storage";
+import { NextRequest, NextResponse } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
+import db from '@/lib/db';
+import { validatePdfFile, getPdfPageCountFromBuffer, renderPageToPng } from '@/lib/pdf-render';
+import { saveFile } from '@/lib/storage';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { extractLegendSymbolsRobust } from '@/lib/legend-extract';
+import { cropPageRegion } from '@/lib/image-crop';
+import { createHash } from 'crypto';
+import { LegendSymbolSchema, validateTagPattern } from '@/lib/legend-schemas';
+import { cropAndSaveSymbol } from '@/lib/legend-crop';
+import { getTuning } from '@/lib/tuning';
 
 export async function POST(request: NextRequest) {
-  const form = await request.formData();
-  const file = form.get("file") as File | null;
-  const name = (form.get("name") as string) || file?.name?.replace(/\.pdf$/i, "") || "Uploaded Legend";
-  if (!file) return NextResponse.json({ error: "file required" }, { status: 400 });
-  const v = validatePdfFile(file);
-  if (v) return NextResponse.json({ error: v }, { status: 400 });
-  const buf = Buffer.from(await file.arrayBuffer());
-  await getPdfPageCountFromBuffer(buf);
-
-  const legendId = uuidv4();
-  const storedFilename = `legend-${legendId}.pdf`;
-  await saveFile(storedFilename, buf);
-
-  await db.query("INSERT INTO legends (id, name, description, status) VALUES ($1,$2,$3,$4)", [legendId, name, `Imported from ${file.name}`, 'DRAFT']);
-
-  let draft: any[] = [];
   try {
-    draft = await parseLegendPdf(buf);
-    for (const s of draft) {
-      const parsed = {
-        asset_type: s.assetType ?? s.asset_type ?? "Unknown",
-        symbol_name: s.symbolName ?? s.symbol_name ?? null,
-        tag_pattern: s.tagPattern ?? s.tag_pattern ?? null,
-        description: s.description ?? null,
-        aliases: s.aliases ?? [],
-      };
-      await db.query(
-        "INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, aliases, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT')",
-        [uuidv4(), legendId, parsed.asset_type, parsed.symbol_name, parsed.tag_pattern, parsed.description, parsed.aliases]
-      );
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const maxUploads = (await getTuning()).performance.rateLimitLegendUploads;
+    const rl = checkRateLimit(`legend-upload:${ip}`, maxUploads, 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Too many legend uploads. Try again later.' }, { status: 429, headers: rateLimitHeaders(rl) });
     }
-  } catch (e: any) {
-    console.warn("[legend/upload] AI parse failed:", e.message);
-  }
 
-  return NextResponse.json({ id: legendId, name, symbols: draft }, { status: 201 });
-}
+    const form = await request.formData();
+    const file = form.get('file') as File | null;
+    const name = (form.get('name') as string) || file?.name?.replace(/\.pdf$/i, '') || 'Uploaded Legend';
+    if (!file) return NextResponse.json({ error: 'file required' }, { status: 400 });
 
-async function parseLegendPdf(buf: Buffer): Promise<any[]> {
-  const b64 = buf.toString("base64");
-  const prompt = `You are an expert P&ID legend analyzer. Extract ALL symbol definitions from this P&ID legend document.
+    const v = validatePdfFile(file);
+    if (v) return NextResponse.json({ error: v }, { status: 400 });
 
-For each symbol, extract:
-1. Asset Type (canonical class: Pump, Valve, Vessel, Tank, Compressor, HX, Filter, Motor, Fan, Instrument, PSV, etc.)
-2. Symbol Name (descriptive name visible in legend, e.g., "Pump Symbol", "Gate Valve")
-3. Tag Pattern (if visible, like "P-###", "V-###", "E-##", else null)
-4. Description (brief description of symbol purpose/meaning, or null)
-5. Aliases (alternative names or abbreviations for the symbol)
+    const buf = Buffer.from(await file.arrayBuffer());
+    await getPdfPageCountFromBuffer(buf);
 
-CRITICAL RULES:
-- Examine the entire legend carefully for all symbols shown
-- Extract canonical asset types ONLY (do NOT invent)
-- Return null for values not visible in the legend
-- Do NOT fabricate symbols, tags, or descriptions
-- Each symbol should have at least asset_type and symbol_name
-- Return structured JSON only, no markdown or explanations
+    const legendId = uuidv4();
+    await saveFile(`legend-${legendId}.pdf`, buf);
+    await db.query("INSERT INTO legends (id, name, description, status) VALUES ($1,$2,$3,'DRAFT')", [legendId, name, `Imported from ${file.name}`]);
 
-Return ONLY valid JSON in this exact format:
-{
-  "symbols": [
-    {
-      "assetType": "string",
-      "symbolName": "string or null",
-      "tagPattern": "string or null",
-      "description": "string or null",
-      "aliases": ["string"]
-    }
-  ]
-}`;
-
-  try {
-    const model = getGeminiModel();
-    console.log("[parseLegendPdf] Analyzing legend PDF, size:", buf.length, "bytes");
-    
-    const r = await model.generateContent([
-      { text: prompt },
-      { inlineData: { mimeType: "application/pdf", data: b64 } },
-    ]);
-    
-    const text = r.response.text();
-    console.log("[parseLegendPdf] Gemini response length:", text.length);
-    
-    // Extract JSON: try code block first, then raw JSON
-    let json: any;
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (codeBlockMatch) {
-      json = JSON.parse(codeBlockMatch[1]);
-      console.log("[parseLegendPdf] Parsed from code block");
-    } else {
-      const jsonStart = text.indexOf('{');
-      const jsonEnd = text.lastIndexOf('}');
-      if (jsonStart === -1 || jsonEnd === -1) {
-        console.warn("[parseLegendPdf] No JSON found in response");
-        return [];
+    // Per-page high-res render ΓåÆ Gemini vision (same as reparse)
+    // Phase 1: scale 4.0 (samakan dengan detection) + validasi tag_pattern
+    // + simpan reference crop per simbol untuk few-shot detection.
+    let draft: { asset_type: string; symbol_name: string | null }[] = [];
+    try {
+      const pageCount = await getPdfPageCountFromBuffer(buf);
+      for (let page = 1; page <= pageCount; page++) {
+        let pngBase64: string;
+        let pngW = 0;
+        let pngH = 0;
+        try {
+          const rendered = await renderPageToPng(buf, page, 2.0);
+          pngW = rendered.width;
+          pngH = rendered.height;
+          pngBase64 = rendered.png.toString('base64');
+        } catch (e) {
+          console.warn(`[legend/upload] page ${page} render failed:`, (e as Error).message?.slice(0, 200));
+          continue;
+        }
+        let symbols: Awaited<ReturnType<typeof extractLegendSymbolsRobust>>['symbols'];
+        try {
+          // Robust path: full page first, automatic 2-column chunk fallback
+          // when the page truncates, returns empty, or errors.
+          const r = await extractLegendSymbolsRobust(
+            pngBase64,
+            page,
+            async (b64, box) =>
+              cropPageRegion(b64, box, pngW, pngH, 0) ?? null
+          );
+          symbols = r.symbols;
+          if (r.strategy === 'chunked') {
+            console.log(`[legend/upload] page ${page} used chunked fallback: ${symbols.length} symbols`);
+          }
+        } catch (e) {
+          console.warn(`[legend/upload] page ${page} AI failed:`, (e as Error).message?.slice(0, 300));
+          continue;
+        }
+        for (const s of symbols) {
+          // Validasi schema + tag_pattern sebelum INSERT (cegah pattern salah ketik)
+          const parsed = LegendSymbolSchema.safeParse({
+            asset_type: s.asset_type.slice(0, 120),
+            symbol_name: s.symbol_name,
+            tag_pattern: s.tag_pattern,
+            description: s.description,
+            aliases: s.aliases ?? [],
+            status: 'DRAFT',
+            bbox_x: s.bbox_x, bbox_y: s.bbox_y, bbox_w: s.bbox_w, bbox_h: s.bbox_h,
+            pid_page: page,
+          });
+          if (!parsed.success) {
+            console.warn(`[legend/upload] page ${page} symbol skipped (schema):`, JSON.stringify(parsed.error.flatten()).slice(0, 200));
+            continue;
+          }
+          const patternErr = validateTagPattern(parsed.data.tag_pattern);
+          const safePattern = patternErr ? null : parsed.data.tag_pattern;
+          if (patternErr) {
+            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" ΓåÆ nulled (${patternErr})`);
+          }
+          // Reference crop: potong simbol dari page PNG untuk few-shot detection.
+let refUrl: string | null = null;
+          let refHash: string | null = null;
+          try {
+            if (s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
+              const cropB64 = await cropPageRegion(
+                pngBase64,
+                { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
+                pngW, pngH, 0.05,
+              );
+              if (cropB64) {
+                refHash = createHash('sha256').update(cropB64).digest('hex');
+                const refName = `legend-${legendId}-p${page}-${refHash.slice(0, 12)}.png`;
+                await saveFile(refName, Buffer.from(cropB64, 'base64'));
+                refUrl = refName;
+              }
+            }
+          } catch (cropErr) {
+            console.warn(`[legend/upload] page ${page} ref crop failed (non-fatal):`, (cropErr as Error).message?.slice(0, 150));
+          }
+          await db.query(
+            `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT',$13,$14)`,
+            [uuidv4(), legendId, parsed.data.asset_type, parsed.data.symbol_name, safePattern, parsed.data.description, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, parsed.data.aliases, refUrl, refHash],
+          );
+        }
+        draft.push(...symbols.map(s => ({ asset_type: s.asset_type, symbol_name: s.symbol_name })));
       }
-      json = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
-      console.log("[parseLegendPdf] Parsed from raw text");
+    } catch (e: unknown) {
+      console.warn('[legend/upload] AI parse failed:', (e instanceof Error ? e.message : String(e)).slice(0, 300));
     }
-    
-    if (!json.symbols || !Array.isArray(json.symbols)) {
-      console.warn("[parseLegendPdf] Invalid structure, no symbols array");
-      return [];
-    }
-    
-    // Validate and normalize each symbol
-    const symbols = json.symbols
-      .filter((s: any) => s && s.assetType)
-      .map((s: any) => ({
-        assetType: String(s.assetType).trim(),
-        symbolName: s.symbolName ? String(s.symbolName).trim() : null,
-        tagPattern: s.tagPattern ? String(s.tagPattern).trim() : null,
-        description: s.description ? String(s.description).trim() : null,
-        aliases: Array.isArray(s.aliases) ? s.aliases.map((a: any) => String(a).trim()) : [],
-      }));
-    
-    console.log("[parseLegendPdf] Extracted", symbols.length, "valid symbols");
-    return symbols;
-  } catch (e: any) {
-    console.error("[parseLegendPdf] Failed:", e.message);
-    return [];
+
+    return NextResponse.json({ id: legendId, name, symbols: draft }, { status: 201, headers: rateLimitHeaders(rl) });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[legend/upload]', msg);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
