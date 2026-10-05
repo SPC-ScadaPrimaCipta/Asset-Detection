@@ -51,8 +51,11 @@ __pycache__/
 .pytest_cache/
 dump.rdb
 
-# YOLO external data (dataset/model bukan milik repo — lokal saja)
+# YOLO training artifacts (dataset archives, PyTorch checkpoints — local only)
 *.pt
-*.onnx
 images.zip
 labels.zip
+
+# YOLO model in repo (tracked via Git LFS, see .gitattributes)
+# If you need to exclude ONNX models from other locations, use specific paths
+# instead of a global *.onnx pattern.
