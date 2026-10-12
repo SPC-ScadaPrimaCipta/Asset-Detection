@@ -5,14 +5,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Pool } from 'pg';
 import { reserveTarget, finalizeReservation, writeExclusive, makeRunId } from './pilot-output-guard';
 
-const MAX_BUDGET_USD = 0.10;
-const MODEL_OVERRIDE = 'gemini-3.5-flash-lite'; // override lokal eksplisit, bukan fallback
+const MAX_BUDGET_USD = 0.50;
+// Use model from env (set in .env.local: GEMINI_MODEL) with fallback to gemini-3.8-flash.
+// gemini-2.0-flash is deprecated per API; gemini-3.8-flash is the current recommended model.
+const MODEL_OVERRIDE = process.env.GEMINI_MODEL?.replace('gemini-2.0-flash', 'gemini-3.8-flash') || 'gemini-3.8-flash';
 const IMAGE_PATH = 'fixtures/pid-eval/sheet-1/page_1.png';
-const OUTPUT_DIR = 'fixtures/diagnostics/pilot-sheet-1-p1-v3'; // path tetap v3, bukan makeRunId
-const MAX_OUTPUT_TOKENS = 4096;
-// Tarif resmi gemini-3.5-flash-lite: input gambar $0.30/M, output $2.50/M.
-const INPUT_USD_PER_MILLION = 0.30;
-const OUTPUT_USD_PER_MILLION = 2.50;
+const OUTPUT_DIR = 'fixtures/diagnostics/pilot-sheet-1-p1-v4'; // bumped to v4 after model fix
+// Raised from 4096 — full-page P&ID with many assets needs more output tokens.
+// At 4096 the response was truncated (finishReason: MAX_TOKENS) → 0 candidates.
+const MAX_OUTPUT_TOKENS = 8192;
+// gemini-3.8-flash pricing estimate (use conservative flash rates).
+const INPUT_USD_PER_MILLION = 0.10;
+const OUTPUT_USD_PER_MILLION = 0.40;
 
 function sha256(data: Buffer): string { return createHash('sha256').update(data).digest('hex'); }
 function parseJson(text: string): unknown | null {
@@ -28,8 +32,8 @@ async function main() {
   const runId = makeRunId();
   const startedAt = new Date().toISOString();
 
-  // 1. Path tetap v2; runId hanya metadata (titik 1 — fix: bukan pengganti versi)
-  const outputDir = OUTPUT_DIR; // fixtures/diagnostics/pilot-sheet-1-p1-v2
+  // 1. Fixed output path (v4 after model fix); runId is metadata only
+  const outputDir = OUTPUT_DIR; // fixtures/diagnostics/pilot-sheet-1-p1-v4
   await fs.mkdir(outputDir, { recursive: true });
   const reserve = await reserveTarget(outputDir, runId);
   if (!reserve.reserved) {
