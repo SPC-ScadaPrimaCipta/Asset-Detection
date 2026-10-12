@@ -88,7 +88,7 @@ export async function preprocessForYolo(
   const scaledH = Math.max(1, Math.round(height * meta.scale));
 
   // Letterbox: resize preserving aspect ratio, then extend onto a grey canvas.
-  const letterboxed = await base
+  const letterboxed = await sharp(source)
     .resize(scaledW, scaledH, { fit: 'fill' })
     .removeAlpha()
     .toColourspace('srgb')

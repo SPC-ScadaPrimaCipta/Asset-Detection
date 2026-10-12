@@ -1,0 +1,376 @@
+{
+  "datasetSchemaVersion": "v203-draft-v1",
+  "datasetId": "pid-yolo-v203-ground-truth-draft",
+  "classMapVersion": "yolo-v203-203",
+  "annotationStatusNote": "Unannotated / partial. Full-page review required before considering complete.",
+  "pages": [
+    {
+      "pageId": "sheet-1-p1",
+      "imagePath": "fixtures/pid-eval/sheet-1/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-1\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "e691c8a1101ee40d1056e9f37fd2bb4e2c222f35c314eabbb552e3f76d42892d",
+      "imageBytes": 1013985,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "imagePath": "fixtures/pid-eval/sheet-2/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-2\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "fdfabe26803abc103c989db18c1feca8dd35891bee935bc60f7232572a1879df",
+      "imageBytes": 865479,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-3-p1",
+      "imagePath": "fixtures/pid-eval/sheet-3/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-3\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "04b1f81845709318591becf107eb4c06ab4f05651daeda8a935d7290181cc0a4",
+      "imageBytes": 1086578,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "imagePath": "fixtures/pid-eval/sheet-4/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-4\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "2e18e77e78cfe5fa1b81f71c236462dd6aaf131b9c544732f3249ed070baa620",
+      "imageBytes": 1012434,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-5-p1",
+      "imagePath": "fixtures/pid-eval/sheet-5/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-5\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "02dcb7296eb65886f5442340f63c8eba522e6b102cfcdb0d29e14323961325bc",
+      "imageBytes": 1531454,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "imagePath": "fixtures/pid-eval/sheet-7/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-7\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+      "imageBytes": 845328,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "imagePath": "fixtures/pid-eval/sheet-7-model/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-7-model\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "b999a93c2442f5e9a2764a26c98c8f50dfebe952c2cffbc3c83ebcd5ff2f035b",
+      "imageBytes": 611017,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "imagePath": "fixtures/pid-eval/sheet-7-rev/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-7-rev\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+      "imageBytes": 845328,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "imagePath": "fixtures/pid-eval/sheet-11/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-11\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "63c994a36a006501545a35abeb593d6f1bd74c73c0badadc6849d1f824b4f388",
+      "imageBytes": 718104,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "imagePath": "fixtures/pid-eval/sheet-12/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\sheet-12\\page_1.png",
+      "sourceDimensions": {
+        "width": 3573,
+        "height": 2526
+      },
+      "imageSha256": "a0aff7b19a6b75ed8d0ef529769e2c093b4cd14c590be52b6000e76d9e95dfac",
+      "imageBytes": 531503,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "fire-water-p1",
+      "imagePath": "fixtures/pid-eval/fire-water/page_1.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\fire-water\\page_1.png",
+      "sourceDimensions": {
+        "width": 2526,
+        "height": 3572
+      },
+      "imageSha256": "f655a79b89251b063dd97be5be724cf487399def26fd3db5e84828458c3c7508",
+      "imageBytes": 600327,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    },
+    {
+      "pageId": "fire-water-p2",
+      "imagePath": "fixtures/pid-eval/fire-water/page_2.png",
+      "sourcePathAbsolute": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\pid-eval\\fire-water\\page_2.png",
+      "sourceDimensions": {
+        "width": 2526,
+        "height": 3572
+      },
+      "imageSha256": "be2d39d0cfd44282555072bd79333807cae986e930e92ea65b576b9c9e0c78dd",
+      "imageBytes": 470506,
+      "annotationStatus": "unannotated",
+      "reviewedRegions": [],
+      "excludedRegions": [
+        {
+          "reason": "header/title block / legend area — not scan target for asset symbols",
+          "bbox": {
+            "x": 2800,
+            "y": 2100,
+            "w": 773,
+            "h": 426
+          },
+          "note": "Excluded only for draft structure; actual excluded regions must be verified during annotation"
+        }
+      ],
+      "annotations": [],
+      "unresolvedClassDecisions": [],
+      "provenanceNote": "Dataset v203 draft. Not derived from dataset-v1.json annotations automatically. Historical dataset-v1.json annotations (5 bbox total) remain preserved separately.",
+      "legacyAnnotationReference": null
+    }
+  ],
+  "legacyDatasetReference": {
+    "datasetId": "pid-yolo-baseline-v1",
+    "file": "fixtures/ground-truth/dataset-v1.json",
+    "note": "Historical dataset preserved; v203 draft is independent."
+  },
+  "duplicatePageCluster": {
+    "pageIds": [
+      "sheet-7-p1",
+      "sheet-7-rev-p1"
+    ],
+    "imageSha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+    "status": "identical_binaries",
+    "note": "Both page IDs preserved per instruction; treated as duplicate variants during evaluation.",
+    "uniqueHashCountAmong12Pages": 11
+  },
+  "pageRecordCount": 12,
+  "uniqueImageHashes": 11,
+  "totalAnnotationsInDraft": 0,
+  "legacyAnnotationCountInDatasetV1": 5,
+  "note": "Annotation v203 not considered complete. Full-page scan required to find missed symbols. Prediction model outputs not used as ground truth automatically."
+}

@@ -1,3 +1,10 @@
+/**
+ * OFFLINE ONLY — ANNOTATION ASSISTANCE
+ * NOT GROUND TRUTH. NOT PRODUCTION DETECTION.
+ *
+ * Summarizes YOLO candidates to help a human inspect rendered pages.
+ */
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { runYoloInference } from '../lib/detection/yolo/yolo-inference';

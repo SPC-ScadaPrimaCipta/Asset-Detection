@@ -1,0 +1,190 @@
+{
+  "metadata": {
+    "generatedAt": "2026-10-07T06:01:55.127791+00:00",
+    "environment": {
+      "pythonVersion": "3.14.7",
+      "onnxruntimeVersion": "1.30.0",
+      "numpyVersion": "2.5.3",
+      "opencvVersion": "5.0.0",
+      "executionProvider": "CPUExecutionProvider",
+      "platform": "Windows-11-10.0.26200-SP0"
+    },
+    "model": {
+      "filename": "yolo-pid-v8n-203.onnx",
+      "sha256": "92f22175ade687a0f7e29617c3a3ae9cbf80266dda6df30d74fb9c3c95917e6c"
+    },
+    "config": {
+      "imgsz": 1024,
+      "rect": false,
+      "confidenceThreshold": 0.5,
+      "nmsIouThreshold": 0.7,
+      "maxDetections": 300,
+      "classAware": true,
+      "labelAssignment": "single-label-argmax",
+      "dtype": "float32"
+    }
+  },
+  "fixtures": {
+    "square": {
+      "filename": "Sheet_1-1__x0_y0.png",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sha256": "aea76cc96d521ed8079e8eb33b1888f6ab245180e0db64336c3b7c577d9f80c5",
+      "letterbox": {
+        "scale": 1.0,
+        "scaledWidth": 1024,
+        "scaledHeight": 1024,
+        "padX": 0,
+        "padY": 0,
+        "bottomPad": 0,
+        "rightPad": 0
+      },
+      "detections": [
+        {
+          "rawClassId": 13,
+          "score": 0.6702038645744324,
+          "bbox": [
+            734.2041625976562,
+            661.4797668457031,
+            769.1836547851562,
+            683.0314636230469
+          ]
+        },
+        {
+          "rawClassId": 60,
+          "score": 0.5183606743812561,
+          "bbox": [
+            628.0886535644531,
+            436.8125762939453,
+            671.7892761230469,
+            460.9529266357422
+          ]
+        },
+        {
+          "rawClassId": 16,
+          "score": 0.5092595815658569,
+          "bbox": [
+            595.5720520019531,
+            738.3404235839844,
+            651.1481628417969,
+            769.0387268066406
+          ]
+        }
+      ]
+    },
+    "nonSquareOddPadding": {
+      "filename": "Sheet_1-1__non_square.png",
+      "dimensions": [
+        1024,
+        767
+      ],
+      "sha256": "4fef40a4a637aa18bf04bde034cbfb16d9dabcce50e99b6d92263c08f56bc136",
+      "letterbox": {
+        "scale": 1.0,
+        "scaledWidth": 1024,
+        "scaledHeight": 767,
+        "padX": 0,
+        "padY": 128,
+        "bottomPad": 129,
+        "rightPad": 0
+      },
+      "detections": [
+        {
+          "rawClassId": 13,
+          "score": 0.5782979130744934,
+          "bbox": [
+            734.2886962890625,
+            661.369140625,
+            769.025390625,
+            683.0723876953125
+          ]
+        },
+        {
+          "rawClassId": 60,
+          "score": 0.5173858404159546,
+          "bbox": [
+            628.1144409179688,
+            436.81201171875,
+            671.7744750976562,
+            460.9532470703125
+          ]
+        }
+      ]
+    },
+    "nonSquareResize": {
+      "filename": "Sheet_1-1__crop_1600x1001.png",
+      "dimensions": [
+        1600,
+        1001
+      ],
+      "sha256": "a0bd84a8b54db40de6bcbd747984599e20628c39fa9f1cdcf887d004a6cf67f8",
+      "letterbox": {
+        "scale": 0.64,
+        "scaledWidth": 1024,
+        "scaledHeight": 641,
+        "padX": 0,
+        "padY": 191,
+        "bottomPad": 192,
+        "rightPad": 0
+      },
+      "detections": [
+        {
+          "rawClassId": 13,
+          "score": 0.841645359992981,
+          "bbox": [
+            1368.556308746338,
+            796.8257904052734,
+            1419.8039054870605,
+            827.6117324829102
+          ]
+        },
+        {
+          "rawClassId": 13,
+          "score": 0.5766639709472656,
+          "bbox": [
+            787.2506141662598,
+            844.3132877349854,
+            837.5102043151855,
+            867.3749446868896
+          ]
+        },
+        {
+          "rawClassId": 13,
+          "score": 0.5654850602149963,
+          "bbox": [
+            1373.005485534668,
+            655.2938461303711,
+            1417.6937103271484,
+            696.1580276489258
+          ]
+        },
+        {
+          "rawClassId": 13,
+          "score": 0.564850389957428,
+          "bbox": [
+            1183.0331802368164,
+            844.6128368377686,
+            1235.3212356567383,
+            867.9600238800049
+          ]
+        }
+      ],
+      "sourceCrop": {
+        "sourceFile": "fixtures/pid-eval/sheet-1/page_1.png",
+        "sourceDimensions": [
+          3573,
+          2526
+        ],
+        "sourceSha256": "e691c8a1101ee40d1056e9f37fd2bb4e2c222f35c314eabbb552e3f76d42892d",
+        "cropBox": [
+          0,
+          0,
+          1600,
+          1001
+        ]
+      }
+    }
+  }
+}

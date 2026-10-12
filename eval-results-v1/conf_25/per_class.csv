@@ -1,0 +1,14 @@
+class_id,label,gt_count,tp,fp,fn,precision,recall,f1,insufficient_sample
+11,"Half_Filled_Gate_Valve",2,2,0,0,1.0000,1.0000,1.0000,true
+12,"Gate_Valve_NC",1,0,0,1,0.0000,0.0000,0.0000,true
+13,"Globle_valve_NC",0,0,1,0,0.0000,0.0000,0.0000,true
+14,"Control_Valve",0,0,1,0,0.0000,0.0000,0.0000,true
+16,"Ball_valve_NC",1,1,0,0,1.0000,1.0000,1.0000,true
+19,"Spectacle_blind_Open",0,0,1,0,0.0000,0.0000,0.0000,true
+20,"Reducer",0,0,2,0,0.0000,0.0000,0.0000,true
+21,"Flange_or_Nozzle",0,0,17,0,0.0000,0.0000,0.0000,true
+22,"Rupture_disk",0,0,23,0,0.0000,0.0000,0.0000,true
+24,"Flow_Arrow",1,1,7,0,0.1250,1.0000,0.2222,true
+28,"Instrument_Panel",0,0,6,0,0.0000,0.0000,0.0000,true
+29,"Instrument_Aux_Panel",0,0,17,0,0.0000,0.0000,0.0000,true
+30,"box",0,0,2,0,0.0000,0.0000,0.0000,true

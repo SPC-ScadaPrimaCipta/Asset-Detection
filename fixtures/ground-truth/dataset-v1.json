@@ -1,0 +1,155 @@
+{
+  "datasetId": "pid-yolo-baseline-v1",
+  "version": "1.0",
+  "renderScale": 3,
+  "pages": [
+    {
+      "pageId": "sheet-1-p1",
+      "imagePath": "../pid-eval/sheet-1/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "imagePath": "../pid-eval/sheet-2/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-3-p1",
+      "imagePath": "../pid-eval/sheet-3/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "imagePath": "../pid-eval/sheet-4/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-5-p1",
+      "imagePath": "../pid-eval/sheet-5/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "imagePath": "../pid-eval/sheet-7/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "imagePath": "../pid-eval/sheet-7-model/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": [
+        {
+          "id": "gt-003",
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "bbox": {
+            "x": 2096,
+            "y": 917,
+            "width": 59,
+            "height": 74
+          },
+          "note": "Recovered as correct class from wrong-class prediction"
+        }
+      ]
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "imagePath": "../pid-eval/sheet-7-rev/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "imagePath": "../pid-eval/sheet-11/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": [
+        {
+          "id": "gt-001",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "bbox": {
+            "x": 375,
+            "y": 144,
+            "width": 178,
+            "height": 120
+          },
+          "note": "Confirmed candidate object"
+        },
+        {
+          "id": "gt-002",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "bbox": {
+            "x": 196,
+            "y": 160,
+            "width": 101,
+            "height": 101
+          },
+          "note": "Confirmed candidate object"
+        }
+      ]
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "imagePath": "../pid-eval/sheet-12/page_1.png",
+      "width": 3573,
+      "height": 2526,
+      "annotations": []
+    },
+    {
+      "pageId": "fire-water-p1",
+      "imagePath": "../pid-eval/fire-water/page_1.png",
+      "width": 2526,
+      "height": 3572,
+      "annotations": [
+        {
+          "id": "gt-004",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "bbox": {
+            "x": 124,
+            "y": 3031,
+            "width": 120,
+            "height": 179
+          },
+          "note": "Confirmed candidate object"
+        },
+        {
+          "id": "gt-005",
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "bbox": {
+            "x": 1397,
+            "y": 839,
+            "width": 46,
+            "height": 146
+          },
+          "note": "Confirmed candidate object"
+        }
+      ]
+    },
+    {
+      "pageId": "fire-water-p2",
+      "imagePath": "../pid-eval/fire-water/page_2.png",
+      "width": 2526,
+      "height": 3572,
+      "annotations": []
+    }
+  ],
+  "description": "Conservative human ground truth from formal candidate audit; full-page scan found no additional canonical symbols confidently annotatable without tighter crop review."
+}

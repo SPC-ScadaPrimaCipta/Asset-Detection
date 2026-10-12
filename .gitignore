@@ -59,3 +59,10 @@ labels.zip
 # YOLO model in repo (tracked via Git LFS, see .gitattributes)
 # If you need to exclude ONNX models from other locations, use specific paths
 # instead of a global *.onnx pattern.
+
+# Specific model exclusion — yolo-pid-v8n-203.onnx not yet approved for tracking
+/model/yolo-pid-v8n-203.onnx
+
+# Diagnostics output directory (temporary runtime buffers)
+/fixtures/diagnostics/
+

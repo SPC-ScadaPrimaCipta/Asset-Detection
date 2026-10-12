@@ -6,6 +6,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
+
+// Disable sharp cache and limit concurrency to prevent libvips memory bloat on large batches
+sharp.cache(false);
+sharp.concurrency(1);
+
 import { runYoloInference } from '@/lib/detection/yolo/yolo-inference';
 import { type YoloDetection } from '@/lib/detection/yolo/yolo-decoder';
 import { getYoloModelPath } from '@/lib/detection/feature-flags';
