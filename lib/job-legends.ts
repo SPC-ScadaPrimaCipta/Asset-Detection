@@ -114,6 +114,8 @@ export interface JobLegendSymbolRow {
   standard_code: string | null;
   isa_function_code: string | null;
   iso_category: string | null;
+  /** Storage filename for the reference crop image (e.g. legend-{id}-p1-{hash}.png). */
+  reference_image_url: string | null;
 }
 
 /** A legend with its symbols, in job priority order (index 0 = primary). */
@@ -147,6 +149,7 @@ export function toJobLegendSymbolRows(rows: Record<string, unknown>[]): JobLegen
       standard_code: typeof r.standard_code === 'string' ? r.standard_code : null,
       isa_function_code: typeof r.isa_function_code === 'string' ? r.isa_function_code : null,
       iso_category: typeof r.iso_category === 'string' ? r.iso_category : null,
+      reference_image_url: typeof r.reference_image_url === 'string' ? r.reference_image_url : null,
     };
   });
 }

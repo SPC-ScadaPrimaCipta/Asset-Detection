@@ -16,6 +16,8 @@ export function buildSymbolDetectorPrompt(legendSymbols: Array<{
   sourcePriority?: number | null;
 }>, opts?: {
   referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+  /** True when reference crop images are prepended before the P&ID page in the Gemini call. */
+  hasReferenceCrops?: boolean;
 }): string {
   const hasLegend = legendSymbols.length > 0;
 
@@ -65,6 +67,7 @@ IMPORTANT: If a symbol visually matches any legend entry, use that legend name a
 ${opts?.referenceExamples?.length ? `CONFIRMED REFERENCE EXAMPLES (few-shot — symbols already approved from this legend):
 ${opts.referenceExamples.slice(0, 5).map(s => `• ${s.symbol_name ?? s.asset_type}${s.tag_pattern ? ` [${s.tag_pattern}]` : ''} (${s.asset_type})`).join('\n')}
 Prefer these names when the symbol matches.
+` : ''}${opts?.hasReferenceCrops ? `REFERENCE SYMBOL IMAGES: The images labeled "REFERENCE SYMBOL 1", "REFERENCE SYMBOL 2", etc. immediately before the P&ID page image are VISUAL EXAMPLES of legend symbols from the actual legend document. When detecting symbols on the P&ID, compare their visual shape against these reference images. A shape match to a reference image is strong evidence — use that symbol's name as assetType. Reference images take priority over text-only legend descriptions.
 ` : ''}
 ━━━ STEP 1: READ ALL TEXT FIRST ━━━
 Before detecting symbols, read EVERY alphanumeric tag visible on this drawing.
@@ -196,6 +199,7 @@ export function buildRegionSymbolDetectorPrompt(
   regionLabel: string,
   opts: {
     referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+    hasReferenceCrops?: boolean;
   } = {},
 ): string {
   return `${buildSymbolDetectorPrompt(legendSymbols, opts)}

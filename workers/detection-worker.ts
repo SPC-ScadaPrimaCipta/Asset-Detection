@@ -210,6 +210,38 @@ export const worker = new Worker(
       );
       const tagPatternSources = sourcedPatterns.map((p) => p.legendName);
 
+      // Load reference crop images for top-N legend symbols (quality_status = 'validated' first,
+      // then any symbol with a crop). Sent to Gemini so the model can visually match symbols.
+      // Non-fatal: crop load failures are silently skipped — detection proceeds without them.
+      const MAX_REFERENCE_CROPS = tuning.detection.maxReferenceCrops ?? 10;
+      const referenceCrops = new Map<string, string>();
+      if (!yoloActive && MAX_REFERENCE_CROPS > 0) {
+        // Prefer validated symbols, then any with a crop url, up to the limit.
+        const withCrop = cappedSymbols
+          .filter((s) => typeof (s as any).reference_image_url === 'string' && (s as any).reference_image_url)
+          .sort((a, b) => {
+            // validated first (quality_status from DB row, not on MergedLegendSymbol type)
+            const aq = ((a as any).quality_status === 'validated') ? 0 : 1;
+            const bq = ((b as any).quality_status === 'validated') ? 0 : 1;
+            return aq - bq;
+          })
+          .slice(0, MAX_REFERENCE_CROPS);
+
+        await Promise.all(withCrop.map(async (s) => {
+          const url = (s as any).reference_image_url as string;
+          try {
+            const cropBuf = (await getFile(url)) as unknown as Buffer;
+            referenceCrops.set(s.id, cropBuf.toString('base64'));
+          } catch {
+            // file missing or storage error — skip this crop silently
+          }
+        }));
+
+        if (referenceCrops.size > 0) {
+          log(`loaded ${referenceCrops.size} reference crop(s) for legend symbols`);
+        }
+      }
+
       await db.query(
         `INSERT INTO agent_runs (id, job_id, model, prompt_version, status, input_metadata)
          VALUES ($1,$2,$3,$4,'RUNNING',$5)`,
@@ -308,6 +340,7 @@ export const worker = new Worker(
               pngHeight,
               projectId: jrow.project_id ?? null,
               drawingType,
+              referenceCrops: referenceCrops.size > 0 ? referenceCrops : undefined,
             });
             detections = result.detections;
           } catch (err: unknown) {

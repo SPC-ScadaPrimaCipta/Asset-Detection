@@ -86,6 +86,8 @@ export interface DetectionTuning {
   nmsIouThreshold: number;
   featureBatchSize: number;
   symbolFeatures: { extract: boolean; embed: boolean };
+  /** Max legend symbol reference crops to send to Gemini per page (0 = disabled). */
+  maxReferenceCrops: number;
 }
 
 export interface ValidatorTuning {
@@ -376,6 +378,7 @@ export function buildTuning(overrides?: TuningOverrides | null): Tuning {
       nullFieldConfidenceThreshold: num(d.nullFieldConfidenceThreshold, env.NULL_FIELD_CONFIDENCE_THRESHOLD),
       nmsIouThreshold: num(d.nmsIouThreshold, env.NMS_IOU_THRESHOLD),
       featureBatchSize: num(d.featureBatchSize, env.FEATURE_BATCH_SIZE),
+      maxReferenceCrops: num(d.maxReferenceCrops, 10),
       symbolFeatures: {
         extract: bool(
           isRecord(d.symbolFeatures) ? d.symbolFeatures.extract : undefined,

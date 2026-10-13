@@ -67,6 +67,13 @@ export interface DetectionJobInput {
   pngHeight?: number;
   projectId?: string | null;
   drawingType?: string | null; // e.g. 'P&ID', 'PFD', 'ISOMETRIC' — inferred from filename
+  /**
+   * Reference crop images for legend symbols, keyed by symbol id.
+   * Base64-encoded PNG. Sent to Gemini as inlineData parts alongside the page image
+   * so the model can visually match symbols against these examples.
+   * Max ~10 entries; missing entries are silently skipped.
+   */
+  referenceCrops?: Map<string, string>;
 }
 
 // Extended detection result with rule validation metadata + embedding data
@@ -273,8 +280,9 @@ async function collectRawDetections(
   cfg: Awaited<ReturnType<typeof getAiConfig>>,
 ): Promise<Detection[]> {
   const referenceExamples = legendReferenceExamples(input);
+  const hasReferenceCrops = !!(input.referenceCrops && input.referenceCrops.size > 0);
   const fullPagePrompt = () =>
-    buildSymbolDetectorPrompt(input.legendSymbols, { referenceExamples });
+    buildSymbolDetectorPrompt(input.legendSymbols, { referenceExamples, hasReferenceCrops });
 
   const tuning = await getTuning();
   const regionsCfg = tuning.regions;
@@ -315,7 +323,7 @@ async function collectRawDetections(
     const prompt = buildRegionSymbolDetectorPrompt(
       input.legendSymbols,
       crop.region.label,
-      { referenceExamples },
+      { referenceExamples, hasReferenceCrops },
     );
     try {
       const raw = await callWithRetry(
@@ -709,6 +717,28 @@ async function runWithGemini(
     },
   };
 
+  // Build reference crop parts: one inlineData per validated legend symbol crop.
+  // Only included when referenceCrops map is non-empty and this is a full-page call
+  // (not a region sub-crop, where the coord frame is different and adding more images
+  // risks confusing the model about which image to annotate).
+  const refCropParts: Part[] = [];
+  if (input.referenceCrops && input.referenceCrops.size > 0 && !opts?.regionLabel) {
+    // Build a lookup: symbolId → symbol name for the intro text block
+    const symbolNameById = new Map<string, string>(
+      input.legendSymbols.map((s) => [
+        (s as any).id as string,
+        (s.symbol_name ?? s.asset_type),
+      ])
+    );
+    let idx = 0;
+    for (const [symbolId, cropBase64] of input.referenceCrops) {
+      const name = symbolNameById.get(symbolId) ?? 'Legend Symbol';
+      refCropParts.push({ text: `REFERENCE SYMBOL ${idx + 1}: ${name}` });
+      refCropParts.push({ inlineData: { mimeType: 'image/png' as const, data: cropBase64 } });
+      idx++;
+    }
+  }
+
   const drawingTypeBlock = input.drawingType
     ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
     : "";
@@ -775,6 +805,7 @@ Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${i
       const result = await model.generateContent([
         { text: prompt },
         { text: contextText },
+        ...refCropParts,
         mediaPart,
       ]);
       const raw = result.response.text();
