@@ -11,8 +11,15 @@ import { getTuning } from "@/lib/tuning";
 import {
   deleteDetectionsForPage,
   persistDetections,
+  type PersistableDetection,
 } from "@/lib/detection/persistence/detection-repository";
 import { isTerminalJobStatus } from "@/lib/detection/job-status";
+import { isYoloEnabled } from "@/lib/detection/feature-flags";
+import { runYoloGeo2Page } from "@/lib/detection/yolo/yolo-geo2-runner";
+import {
+  DEFAULT_GEO2_CONFIG,
+  getEffectiveGeo2Config,
+} from "@/lib/detection/yolo/yolo-geo2-config";
 
 /**
  * Detection worker — 100% Gemini Vision, per page.
@@ -77,9 +84,10 @@ export const worker = new Worker(
     const log = (msg: string, extra?: Record<string, unknown>) =>
       console.log(`[detection] job=${jobId} ${msg}`, extra ?? "");
 
+    const yoloActive = isYoloEnabled();
     const agentRunId = uuidv4();
-    const modelName = "gemini-vision-only";
-    const promptVersion = "v2";
+    const modelName = yoloActive ? "yolo-pid-v8n-203.onnx" : "gemini-vision-only";
+    const promptVersion = yoloActive ? "geo2" : "v2";
 
     try {
       // Terminal-state guard, BEFORE any state write. A stalled or duplicated
@@ -135,8 +143,10 @@ export const worker = new Worker(
       const tuning = await getTuning();
       const NULL_THRESHOLD = tuning.detection.nullFieldConfidenceThreshold;
       const NMS_IOU = tuning.detection.nmsIouThreshold;
-      const renderScale = tuning.detection.renderScale;
-      const regionMode = tuning.regions.mode;
+      const renderScale = yoloActive
+        ? DEFAULT_GEO2_CONFIG.pdfRenderScale
+        : tuning.detection.renderScale;
+      const regionMode = yoloActive ? "yolo-tiling-1280" : tuning.regions.mode;
 
       log("start", {
         documentId: doc.id,
@@ -147,7 +157,7 @@ export const worker = new Worker(
         renderScale,
         regionMode,
       });
-      console.log(`[Detection] pipeline=gemini-vision-only regions=${regionMode}`);
+      console.log(`[Detection] pipeline=${yoloActive ? "yolo-geo2-local" : "gemini-vision-only"} regions=${regionMode}`);
       console.log("[Detection] ocr=false");
       console.log("[Detection] cv=false");
       console.log(`[Detection] render scale=${renderScale}`);
@@ -207,6 +217,8 @@ export const worker = new Worker(
           promptVersion,
           JSON.stringify({
             pageCount,
+            engine: yoloActive ? "YOLO_GEO2" : "GEMINI_VISION",
+            effectiveConfig: yoloActive ? getEffectiveGeo2Config() : undefined,
             legendCount: cappedSymbols.length,
             legendIds: effectiveLegendIds.length > 0 ? effectiveLegendIds : null,
             renderScale,
@@ -222,6 +234,7 @@ export const worker = new Worker(
         const pageStart = Date.now();
 
         let pageImageBase64: string;
+        let pngBuffer: Buffer;
         let pngWidth: number;
         let pngHeight: number;
         try {
@@ -230,6 +243,7 @@ export const worker = new Worker(
             page,
             renderScale,
           );
+          pngBuffer = png;
           pageImageBase64 = png.toString("base64");
           pngWidth = width;
           pngHeight = height;
@@ -246,41 +260,61 @@ export const worker = new Worker(
           return 0;
         }
 
-        let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"];
-        try {
-          const result = await runDetectionAgent({
-            page,
-            pageImageBase64,
-            legendId: effectiveLegendId ?? "",
-            legendSymbols: cappedSymbols,
-            pngWidth,
-            pngHeight,
-            projectId: jrow.project_id ?? null,
-            drawingType,
-          });
-          detections = result.detections;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
-          return -1; // -1 = AI error (distinct from 0 = AI returned empty detections)
-        }
+        let deduped: PersistableDetection[];
+        if (yoloActive) {
+          try {
+            const yoloResult = await runYoloGeo2Page(pngBuffer, pngWidth, pngHeight);
+            deduped = yoloResult.detections;
+            log(`page ${page} YOLO GEO-2 finished`, {
+              page,
+              rawCandidates: yoloResult.rawCandidatesBeforeMerge,
+              retained: yoloResult.retainedDetections,
+              suppressed: yoloResult.suppressedCount,
+              durationMs: yoloResult.durationMs,
+            });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`page ${page} YOLO error`, { page, error: msg.slice(0, 500) });
+            return -1; // -1 = error (distinct from 0 = empty array)
+          }
+        } else {
+          // Legacy Gemini Vision flow
+          let detections: Awaited<ReturnType<typeof runDetectionAgent>>["detections"];
+          try {
+            const result = await runDetectionAgent({
+              page,
+              pageImageBase64,
+              legendId: effectiveLegendId ?? "",
+              legendSymbols: cappedSymbols,
+              pngWidth,
+              pngHeight,
+              projectId: jrow.project_id ?? null,
+              drawingType,
+            });
+            detections = result.detections;
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`page ${page} AI error`, { page, error: msg.slice(0, 500) });
+            return -1; // -1 = AI error (distinct from 0 = AI returned empty detections)
+          }
 
-        // Legend tag-pattern validation + proximity tag recovery (pure TS).
-        // Sources name the matching legend per tag when several are selected.
-        const validated = associateTagsToSymbols(detections, tagPatterns, tagPatternSources);
+          // Legend tag-pattern validation + proximity tag recovery (pure TS).
+          // Sources name the matching legend per tag when several are selected.
+          const validated = associateTagsToSymbols(detections, tagPatterns, tagPatternSources);
 
-        // NMS pre-persist — merge overlapping boxes carrying the same tag.
-        const nmsInput = validated.map((d) => ({
-          ...d,
-          bbox: { x: d.bbox.x, y: d.bbox.y, width: d.bbox.width, height: d.bbox.height },
-        }));
-        const deduped = applyNMS(nmsInput, Number.isFinite(NMS_IOU) ? NMS_IOU : 0.5);
-        if (deduped.length !== validated.length) {
-          log(`page ${page} NMS merged ${validated.length - deduped.length} overlapping duplicate(s)`, {
-            page,
-            before: validated.length,
-            after: deduped.length,
-          });
+          // NMS pre-persist — merge overlapping boxes carrying the same tag.
+          const nmsInput = validated.map((d) => ({
+            ...d,
+            bbox: { x: d.bbox.x, y: d.bbox.y, width: d.bbox.width, height: d.bbox.height },
+          }));
+          deduped = applyNMS(nmsInput, Number.isFinite(NMS_IOU) ? NMS_IOU : 0.5) as PersistableDetection[];
+          if (deduped.length !== validated.length) {
+            log(`page ${page} NMS merged ${validated.length - deduped.length} overlapping duplicate(s)`, {
+              page,
+              before: validated.length,
+              after: deduped.length,
+            });
+          }
         }
 
         // Page persistence is idempotent: drop whatever this job wrote for this
@@ -297,7 +331,7 @@ export const worker = new Worker(
 
         await persistDetections(
           db,
-          deduped as Parameters<typeof persistDetections>[1],
+          deduped,
           {
             jobId,
             docId: doc.id,
@@ -320,7 +354,7 @@ export const worker = new Worker(
       // Pages are processed in batches. The configured size always wins; when it
       // is null it is derived from the render scale, because a high scale means
       // a large PNG per page and the batch is what bounds peak memory.
-      const defaultBatch = renderScale >= 5 ? 2 : 3;
+      const defaultBatch = yoloActive ? 1 : (renderScale >= 5 ? 2 : 3);
       const PAGE_BATCH_SIZE = tuning.detection.pageBatchSize ?? defaultBatch;
 
       // Cancellation is checked between batches (not mid-batch).
@@ -350,7 +384,9 @@ export const worker = new Worker(
       // If every page failed with AI error → mark job FAILED so user knows to retry
       if (totalAiErrors === pageCount) {
         throw new Error(
-          `All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`,
+          yoloActive
+            ? `All ${pageCount} page(s) failed YOLO detection. Check model path and ONNX runtime.`
+            : `All ${pageCount} page(s) failed AI detection — Gemini API unavailable or all models exhausted. Check API key and model availability.`,
         );
       }
 
@@ -439,7 +475,14 @@ export const worker = new Worker(
       );
       await db.query(
         "UPDATE agent_runs SET status='COMPLETED', completed_at=NOW(), output_metadata=$1 WHERE id=$2",
-        [JSON.stringify({ durationMs: Date.now() - start }), agentRunId],
+        [
+          JSON.stringify({
+            durationMs: Date.now() - start,
+            engine: yoloActive ? "YOLO_GEO2" : "GEMINI_VISION",
+            effectiveConfig: yoloActive ? getEffectiveGeo2Config() : undefined,
+          }),
+          agentRunId,
+        ],
       );
       log("completed", { durationMs: Date.now() - start });
       return { jobId, status: "COMPLETED" };

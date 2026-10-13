@@ -26,6 +26,13 @@ export const YOLO_ENABLED =
   DETECTION_V3_ENABLED && process.env.YOLO_ENABLED === 'true';
 
 /**
+ * Returns true if both DETECTION_V3_ENABLED and YOLO_ENABLED are active at call time.
+ */
+export function isYoloEnabled(): boolean {
+  return process.env.DETECTION_V3_ENABLED === 'true' && process.env.YOLO_ENABLED === 'true';
+}
+
+/**
  * Enable OCR (tesseract.js) for tag/label/code extraction from candidate crops.
  * Requires DETECTION_V3_ENABLED.
  */
