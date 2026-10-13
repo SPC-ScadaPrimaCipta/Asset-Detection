@@ -20,6 +20,7 @@ import {
   DEFAULT_GEO2_CONFIG,
   getEffectiveGeo2Config,
 } from "@/lib/detection/yolo/yolo-geo2-config";
+import { runHybridPipeline } from "@/lib/detection/hybrid-pipeline";
 
 /**
  * Detection worker — 100% Gemini Vision, per page.
@@ -157,9 +158,11 @@ export const worker = new Worker(
         renderScale,
         regionMode,
       });
-      console.log(`[Detection] pipeline=${yoloActive ? "yolo-geo2-local" : "gemini-vision-only"} regions=${regionMode}`);
-      console.log("[Detection] ocr=false");
-      console.log("[Detection] cv=false");
+      console.log(`[Detection] pipeline=${yoloActive ? "yolo-hybrid" : "gemini-vision-only"} regions=${regionMode}`);
+      console.log(`[Detection] ocr=${yoloActive ? (env.OCR_ENGINE ?? "tesseract") : "none"}`);
+      console.log(`[Detection] cv=${yoloActive && env.CV_SERVICE_ENABLED === "true" ? "python-fastapi" : "none"}`);
+      console.log(`[Detection] gemini-verifier=${yoloActive && env.GEMINI_VERIFIER_ENABLED === "true" ? "enabled" : "disabled"}`);
+      console.log(`[Detection] gemini-fallback=${yoloActive && env.GEMINI_FALLBACK_ENABLED === "true" ? "enabled" : "disabled"}`);
       console.log(`[Detection] render scale=${renderScale}`);
       console.log(`[Detection] input pages=${pageCount}`);
 
@@ -263,19 +266,34 @@ export const worker = new Worker(
         let deduped: PersistableDetection[];
         if (yoloActive) {
           try {
-            const yoloResult = await runYoloGeo2Page(pngBuffer, pngWidth, pngHeight);
-            deduped = yoloResult.detections;
-            log(`page ${page} YOLO GEO-2 finished`, {
+            const hybridResult = await runHybridPipeline(
+              {
+                pngBuffer,
+                pageImageBase64,
+                pageWidth: pngWidth,
+                pageHeight: pngHeight,
+                page,
+                legendId: effectiveLegendId ?? "",
+                legendSymbols: cappedSymbols as Parameters<typeof runHybridPipeline>[0]["legendSymbols"],
+                projectId: jrow.project_id ?? null,
+                drawingType,
+              },
+              (msg, extra) => log(msg, extra),
+            );
+            deduped = hybridResult.detections;
+            log(`page ${page} hybrid pipeline finished`, {
               page,
-              rawCandidates: yoloResult.rawCandidatesBeforeMerge,
-              retained: yoloResult.retainedDetections,
-              suppressed: yoloResult.suppressedCount,
-              durationMs: yoloResult.durationMs,
+              yoloDetections: hybridResult.stats.yoloDetections,
+              yoloWithTags: hybridResult.stats.yoloWithTags,
+              geminiVerifierCalls: hybridResult.stats.geminiVerifierCalls,
+              geminiFallbackNew: hybridResult.stats.geminiFallbackDetections,
+              totalFinal: hybridResult.stats.totalFinal,
+              durationMs: hybridResult.stats.durationMs,
             });
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            log(`page ${page} YOLO error`, { page, error: msg.slice(0, 500) });
-            return -1; // -1 = error (distinct from 0 = empty array)
+            log(`page ${page} hybrid pipeline error`, { page, error: msg.slice(0, 500) });
+            return -1;
           }
         } else {
           // Legacy Gemini Vision flow
@@ -390,66 +408,130 @@ export const worker = new Worker(
         );
       }
 
-      // Post-job entity resolution: group detections by normalized asset_tag in
-      // this job. Highest-confidence becomes CANONICAL, the rest DUPLICATE and
-      // NEEDS_REVIEW. Never auto-rejects — the human reviewer decides.
+      // Post-job entity resolution: spatial-aware.
+      // True duplicate = same asset_tag + same asset_type + bbox overlap (IoU ≥ 0.3)
+      // OR centroid distance < 80 units (0-1000 space).
+      // Same tag but different type = different component → NOT duplicate.
+      // Same tag+type but different location on page → NOT duplicate.
       try {
-        const dupRows = await db.query(
-          `SELECT
-             UPPER(TRIM(asset_tag)) AS normalized_tag,
-             COUNT(*) AS cnt,
-             array_agg(id ORDER BY confidence DESC NULLS LAST) AS ids
+        // Fetch all candidate rows with bbox info for spatial check
+        const allDetRows = await db.query<{
+          id: string;
+          asset_tag: string;
+          asset_type: string;
+          confidence: number | null;
+          bbox_x: number | null;
+          bbox_y: number | null;
+          bbox_w: number | null;
+          bbox_h: number | null;
+        }>(
+          `SELECT id, asset_tag, asset_type, confidence, bbox_x, bbox_y, bbox_w, bbox_h
            FROM detections
            WHERE job_id = $1
-             AND asset_tag IS NOT NULL
-             AND asset_tag != ''
+             AND asset_tag IS NOT NULL AND asset_tag != ''
              AND detection_status != 'REJECTED'
-           GROUP BY UPPER(TRIM(asset_tag))
-           HAVING COUNT(*) > 1`,
+           ORDER BY COALESCE(confidence, 0) DESC NULLS LAST`,
           [jobId],
         );
 
-        if (dupRows.rows.length > 0) {
-          log(`entity resolution: ${dupRows.rows.length} tag(s) with multiple detections`);
+        const dets = allDetRows.rows;
 
-          for (const row of dupRows.rows) {
-            const normalizedTag = row.normalized_tag as string;
-            const detectionIds = row.ids as string[];
-            const canonicalId = detectionIds[0]; // highest confidence is first
-            const duplicateIds = detectionIds.slice(1);
+        function workerIoU(
+          ax: number, ay: number, aw: number, ah: number,
+          bx: number, by: number, bw: number, bh: number,
+        ): number {
+          const ix0 = Math.max(ax, bx), iy0 = Math.max(ay, by);
+          const ix1 = Math.min(ax + aw, bx + bw), iy1 = Math.min(ay + ah, by + bh);
+          const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
+          const inter = iw * ih;
+          if (inter === 0) return 0;
+          const union = aw * ah + bw * bh - inter;
+          return union > 0 ? inter / union : 0;
+        }
 
-            const canonicalNote = `CANONICAL: this detection selected as representative for tag "${normalizedTag}" (highest confidence among ${detectionIds.length} detections)`;
-            await db.query(
-              `UPDATE detections
-               SET evidence = evidence || $1::jsonb
-               WHERE id = $2
-                 AND NOT (evidence::text LIKE '%CANONICAL:%')`,
-              [JSON.stringify([canonicalNote]), canonicalId],
-            );
+        function workerCentDist(
+          ax: number, ay: number, aw: number, ah: number,
+          bx: number, by: number, bw: number, bh: number,
+        ): number {
+          return Math.hypot(ax + aw / 2 - (bx + bw / 2), ay + ah / 2 - (by + bh / 2));
+        }
 
-            if (duplicateIds.length > 0) {
-              const dupNote = `DUPLICATE: tag "${normalizedTag}" also detected in ${duplicateIds.length + 1} locations — canonical detection is ${canonicalId.slice(0, 8)}… — review required`;
-              await db.query(
-                `UPDATE detections
-                 SET evidence = evidence || $1::jsonb,
-                     validation_status = CASE
-                       WHEN validation_status = 'CONFLICT' THEN 'CONFLICT'
-                       ELSE 'NEEDS_REVIEW'
-                     END
-                 WHERE id = ANY($2::uuid[])
-                   AND NOT (evidence::text LIKE '%DUPLICATE:%')`,
-                [JSON.stringify([dupNote]), `{${duplicateIds.join(",")}}`],
-              );
+        const IOU_THRESHOLD = 0.3;
+        const CENTROID_THRESHOLD = 80; // 0-1000 space
+
+        // Build spatial duplicate groups
+        const canonicalMap = new Map<string, string>();   // duplicateId → canonicalId
+        const groupMap = new Map<string, string[]>();     // canonicalId → [duplicateIds]
+        const processed = new Set<string>();
+
+        for (let i = 0; i < dets.length; i++) {
+          const a = dets[i];
+          if (processed.has(a.id)) continue;
+          processed.add(a.id);
+
+          const aTag = a.asset_tag.toUpperCase().trim();
+          const aType = (a.asset_type ?? '').toUpperCase().trim();
+          const duplicatesOfA: string[] = [];
+
+          for (let j = i + 1; j < dets.length; j++) {
+            const b = dets[j];
+            if (processed.has(b.id)) continue;
+
+            const bTag = b.asset_tag.toUpperCase().trim();
+            const bType = (b.asset_type ?? '').toUpperCase().trim();
+
+            // Different tag or different type → not a duplicate
+            if (aTag !== bTag) continue;
+            if (aType && bType && aType !== bType) continue;
+
+            // Spatial check
+            const aHas = a.bbox_x !== null && a.bbox_y !== null && a.bbox_w !== null && a.bbox_h !== null;
+            const bHas = b.bbox_x !== null && b.bbox_y !== null && b.bbox_w !== null && b.bbox_h !== null;
+
+            let isSpatial = false;
+            if (aHas && bHas) {
+              const overlap = workerIoU(a.bbox_x!, a.bbox_y!, a.bbox_w!, a.bbox_h!, b.bbox_x!, b.bbox_y!, b.bbox_w!, b.bbox_h!);
+              const cdist = workerCentDist(a.bbox_x!, a.bbox_y!, a.bbox_w!, a.bbox_h!, b.bbox_x!, b.bbox_y!, b.bbox_w!, b.bbox_h!);
+              isSpatial = overlap >= IOU_THRESHOLD || cdist < CENTROID_THRESHOLD;
+            } else {
+              // No bbox — fall back to tag+type match only
+              isSpatial = true;
+            }
+
+            if (isSpatial) {
+              processed.add(b.id);
+              duplicatesOfA.push(b.id);
+              canonicalMap.set(b.id, a.id);
             }
           }
 
-          const totalResolved = dupRows.rows.reduce(
-            (s: number, r: { cnt: string }) => s + parseInt(r.cnt, 10),
-            0,
-          );
-          log(
-            `entity resolution complete: ${totalResolved} detections resolved across ${dupRows.rows.length} canonical groups`,
-          );
+          if (duplicatesOfA.length > 0) {
+            groupMap.set(a.id, duplicatesOfA);
+          }
+        }
+
+        if (groupMap.size > 0) {
+          log(`entity resolution: ${groupMap.size} canonical group(s) with spatial duplicates`);
+
+          for (const [canonicalId, duplicateIds] of groupMap) {
+            const canonicalNote = `CANONICAL: selected as representative (highest confidence, spatial duplicate group of ${duplicateIds.length + 1})`;
+            await db.query(
+              `UPDATE detections SET evidence = evidence || $1::jsonb
+               WHERE id = $2 AND NOT (evidence::text LIKE '%CANONICAL:%')`,
+              [JSON.stringify([canonicalNote]), canonicalId],
+            );
+
+            const dupNote = `DUPLICATE: same tag+type detected at overlapping location — canonical is ${canonicalId.slice(0, 8)}… — review required`;
+            await db.query(
+              `UPDATE detections
+               SET evidence = evidence || $1::jsonb,
+                   validation_status = CASE WHEN validation_status = 'CONFLICT' THEN 'CONFLICT' ELSE 'NEEDS_REVIEW' END
+               WHERE id = ANY($2::uuid[]) AND NOT (evidence::text LIKE '%DUPLICATE:%')`,
+              [JSON.stringify([dupNote]), `{${duplicateIds.join(",")}}`],
+            );
+          }
+
+          log(`entity resolution complete: ${groupMap.size} canonical groups, ${Array.from(groupMap.values()).reduce((s, v) => s + v.length, 0)} duplicates marked`);
         }
       } catch (resolveErr: unknown) {
         // Non-fatal — entity resolution is advisory only

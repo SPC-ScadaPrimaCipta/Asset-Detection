@@ -2531,65 +2531,75 @@ function DetectionWorkspace() {
   const searchParams = useSearchParams();
   const initProjectId = searchParams.get("project_id") ?? "";
 
-  // Load from localStorage on mount
-  const [projectId, setProjectId] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('det_projectId') || initProjectId;
-    return initProjectId;
-  });
-  const [documentId, setDocumentId] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('det_documentId') || "";
-    return "";
-  });
-  const [legendIds, setLegendIds] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
+  // ── Hydration-safe localStorage ───────────────────────────────────────────
+  // Always start with empty/default values (SSR-safe), then hydrate from
+  // localStorage in a single useEffect after mount. This prevents the
+  // SSR vs client mismatch that caused React hydration errors and blank viewer.
+  const [mounted, setMounted] = useState(false);
+  const [projectId, setProjectId] = useState(initProjectId);
+  const [documentId, setDocumentId] = useState("");
+  const [legendIds, setLegendIds] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
+
+  // Single effect: read all persisted state after first client render
+  useEffect(() => {
+    const savedProject = localStorage.getItem('det_projectId');
+    const savedDoc = localStorage.getItem('det_documentId');
+    const savedPage = localStorage.getItem('det_currentPage');
+
+    if (savedProject) setProjectId(savedProject);
+    if (savedDoc) setDocumentId(savedDoc);
+    if (savedPage) setCurrentPage(parseInt(savedPage, 10));
+
     try {
       const raw = localStorage.getItem('det_legendIds');
       if (raw) {
         const arr = JSON.parse(raw);
         if (Array.isArray(arr)) {
-          return arr.filter((v): v is string => typeof v === 'string' && v !== '').slice(0, 3);
+          setLegendIds(arr.filter((v): v is string => typeof v === 'string' && v !== '').slice(0, 3));
         }
+      } else {
+        const legacy = localStorage.getItem('det_legendId');
+        if (legacy) setLegendIds([legacy]);
       }
-    } catch { /* corrupted storage falls through to legacy key */ }
-    const legacy = localStorage.getItem('det_legendId');
-    return legacy ? [legacy] : [];
-  });
-  /** Primary legend = first selected. Kept for ManualAddModal, which takes one legend. */
-  const legendId = legendIds[0] ?? "";
-  const [currentPage, setCurrentPage] = useState<number | null>(() => {
-    if (typeof window !== 'undefined') {
-      const p = localStorage.getItem('det_currentPage');
-      return p ? parseInt(p, 10) : null;
-    }
-    return null;
-  });
+    } catch { /* corrupted storage — start empty */ }
 
-  // Sync to localStorage
+    setMounted(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
+
+  /** Primary legend = first selected. Kept for ManualAddModal. */
+  const legendId = legendIds[0] ?? "";
+
+  // Sync to localStorage (only after mounted to avoid server-side writes)
   useEffect(() => {
+    if (!mounted) return;
     if (projectId) localStorage.setItem('det_projectId', projectId);
     else localStorage.removeItem('det_projectId');
-  }, [projectId]);
+  }, [projectId, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     if (documentId) localStorage.setItem('det_documentId', documentId);
     else localStorage.removeItem('det_documentId');
-  }, [documentId]);
+  }, [documentId, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     if (legendIds.length > 0) {
       localStorage.setItem('det_legendIds', JSON.stringify(legendIds));
-      // Legacy single key kept in sync so older UI builds still see the primary.
       localStorage.setItem('det_legendId', legendIds[0]);
     } else {
       localStorage.removeItem('det_legendIds');
       localStorage.removeItem('det_legendId');
     }
-  }, [legendIds]);
+  }, [legendIds, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     if (currentPage) localStorage.setItem('det_currentPage', String(currentPage));
     else localStorage.removeItem('det_currentPage');
-  }, [currentPage]);
+  }, [currentPage, mounted]);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -2636,16 +2646,61 @@ function DetectionWorkspace() {
       )
     : null;
 
-  // Count duplicates (same UPPER(asset_tag)|UPPER(asset_type) per document)
+  // Spatial-aware duplicate count.
+  // True duplicate = same tag (non-empty) + same type + bbox overlap OR close centroid.
   const duplicateCount = (() => {
-    const seen = new Map<string, number>();
-    for (const d of detections) {
-      const key = `${(d.asset_tag ?? "").toUpperCase().trim()}|${(d.asset_type ?? "").toUpperCase().trim()}`;
-      seen.set(key, (seen.get(key) ?? 0) + 1);
+    const IOU_THRESHOLD = 0.3;
+    const CENTROID_THRESHOLD = 80; // 0-1000 space
+
+    function uiIoU(a: Detection, b: Detection): number {
+      if (a.bbox_x === null || b.bbox_x === null) return 0;
+      const ax2 = (a.bbox_x ?? 0) + (a.bbox_w ?? 0);
+      const ay2 = (a.bbox_y ?? 0) + (a.bbox_h ?? 0);
+      const bx2 = (b.bbox_x ?? 0) + (b.bbox_w ?? 0);
+      const by2 = (b.bbox_y ?? 0) + (b.bbox_h ?? 0);
+      const ix0 = Math.max(a.bbox_x ?? 0, b.bbox_x ?? 0);
+      const iy0 = Math.max(a.bbox_y ?? 0, b.bbox_y ?? 0);
+      const ix1 = Math.min(ax2, bx2), iy1 = Math.min(ay2, by2);
+      const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
+      const inter = iw * ih;
+      if (inter === 0) return 0;
+      const aw = a.bbox_w ?? 0, ah = a.bbox_h ?? 0;
+      const bw = b.bbox_w ?? 0, bh = b.bbox_h ?? 0;
+      const union = aw * ah + bw * bh - inter;
+      return union > 0 ? inter / union : 0;
     }
-    let dupes = 0;
-    seen.forEach((cnt) => { if (cnt > 1) dupes += cnt - 1; });
-    return dupes;
+
+    function uiCentDist(a: Detection, b: Detection): number {
+      if (a.bbox_x === null || b.bbox_x === null) return Infinity;
+      const acx = (a.bbox_x ?? 0) + (a.bbox_w ?? 0) / 2;
+      const acy = (a.bbox_y ?? 0) + (a.bbox_h ?? 0) / 2;
+      const bcx = (b.bbox_x ?? 0) + (b.bbox_w ?? 0) / 2;
+      const bcy = (b.bbox_y ?? 0) + (b.bbox_h ?? 0) / 2;
+      return Math.hypot(acx - bcx, acy - bcy);
+    }
+
+    const isDuplicate = new Set<string>();
+    for (let i = 0; i < detections.length; i++) {
+      const a = detections[i];
+      if (isDuplicate.has(a.id)) continue;
+      const aTag = (a.asset_tag ?? "").toUpperCase().trim();
+      const aType = (a.asset_type ?? "").toUpperCase().trim();
+      if (!aTag) continue;
+      for (let j = i + 1; j < detections.length; j++) {
+        const b = detections[j];
+        if (isDuplicate.has(b.id)) continue;
+        const bTag = (b.asset_tag ?? "").toUpperCase().trim();
+        const bType = (b.asset_type ?? "").toUpperCase().trim();
+        if (aTag !== bTag) continue;
+        if (aType && bType && aType !== bType) continue;
+        const overlap = uiIoU(a, b);
+        const cdist = uiCentDist(a, b);
+        if (overlap >= IOU_THRESHOLD || cdist < CENTROID_THRESHOLD) {
+          isDuplicate.add(b.id); // mark lower-confidence one (detections not sorted here, but mark j)
+        }
+      }
+    }
+    return isDuplicate.size;
   })();
 
   const [deduping, setDeduping] = useState(false);
@@ -2919,7 +2974,7 @@ function DetectionWorkspace() {
                 setCurrentJobId(null);
                 setDetections([]);
               }}
-              disabled={!projectId}
+              disabled={!mounted || !projectId}
               style={selectStyle}
             >
               <option value="">Select document…</option>
@@ -2942,9 +2997,9 @@ function DetectionWorkspace() {
 
           <button
             onClick={handleRunDetection}
-            disabled={running || !documentId}
+            disabled={!mounted || running || !documentId}
             style={
-              running || !documentId
+              !mounted || running || !documentId
                 ? { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', opacity: 0.5, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
                 : { ...primaryButtonStyle, background: '#2D7A3A', border: '1px solid #2D7A3A', display: 'flex', alignItems: 'center', gap: '6px' }
             }
@@ -2965,9 +3020,9 @@ function DetectionWorkspace() {
                 setSelectedDetection(null);
               }
             }}
-            disabled={!documentId}
+            disabled={!mounted || !documentId}
             style={
-              !documentId
+              !mounted || !documentId
                 ? { ...buttonStyle, opacity: 0.4, cursor: "not-allowed", display: 'flex', alignItems: 'center', gap: '6px' }
                 : drawMode
                   ? { ...primaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }

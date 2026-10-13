@@ -218,6 +218,7 @@ export function bboxIoU(
 export function applyNMS<T extends {
   bbox: { x: number; y: number; width: number; height: number };
   assetTag?: string | null;
+  assetType?: string | null;
   confidence: number;
   evidence?: string[];
 }>(detections: T[], iouThreshold = 0.5): T[] {
@@ -230,12 +231,17 @@ export function applyNMS<T extends {
     const cur = sorted[i];
     kept.push(cur);
     const curTag = (cur.assetTag ?? '').toUpperCase().trim();
-    if (!curTag) continue; // tanpa tag → jangan suppress yang lain
+    const curType = (cur.assetType ?? '').toUpperCase().trim();
+    // No tag → only suppress by IoU + type (not tag alone)
     for (let j = i + 1; j < sorted.length; j++) {
       if (suppressed[j]) continue;
       const nxt = sorted[j];
       const nxtTag = (nxt.assetTag ?? '').toUpperCase().trim();
-      if (nxtTag !== curTag) continue;
+      const nxtType = (nxt.assetType ?? '').toUpperCase().trim();
+      // Different asset type = different component → never suppress
+      if (curType && nxtType && curType !== nxtType) continue;
+      // Both have tags but different → different physical assets → never suppress
+      if (curTag && nxtTag && curTag !== nxtTag) continue;
       if (bboxIoU(cur.bbox, nxt.bbox) > iouThreshold) {
         suppressed[j] = true;
       }

@@ -288,6 +288,33 @@ const envSchema = z.object({
   // Must match the DB column width (vector(768)) or every insert is rejected.
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
   EMBEDDING_REQUEST_DELAY_MS: z.coerce.number().int().min(0).default(200),
+
+  // ── Hybrid Detection Pipeline (V3) ───────────────────────────────────────
+  // Python CV service URL (FastAPI: YOLO, OCR, OpenCV, bbox refinement)
+  CV_SERVICE_URL: z.string().default('http://localhost:8765'),
+  // Whether to use Python CV service for YOLO + OCR + template matching
+  // Falls back to Node-side YOLO (onnxruntime) when false or service unavailable
+  CV_SERVICE_ENABLED: z.enum(['true', 'false']).default('false'),
+  // OCR engine preference: 'tesseract' (Node), 'cv-service' (Python auto), 'none'
+  OCR_ENGINE: z.enum(['tesseract', 'cv-service', 'none']).default('tesseract'),
+  // Gemini verifier: call Gemini for UNKNOWN or low-confidence YOLO detections
+  GEMINI_VERIFIER_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Confidence threshold below which Gemini verifier is invoked for YOLO detections
+  GEMINI_VERIFIER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
+  // Gemini full-page fallback: run Gemini on full page after YOLO to catch missed symbols
+  GEMINI_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Min IoU for merging YOLO + Gemini detections (avoid double-counting same symbol)
+  HYBRID_MERGE_IOU: z.coerce.number().min(0).max(1).default(0.4),
+  // BBox refinement via OpenCV contour detection (requires CV_SERVICE_ENABLED)
+  BBOX_REFINE_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Template matching via OpenCV (requires CV_SERVICE_ENABLED)
+  TEMPLATE_MATCH_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Min template match score to create a detection
+  TEMPLATE_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.70),
+  // Negative learning penalty applied during YOLO path rule validation
+  NEGATIVE_LEARNING_ENABLED: z.enum(['true', 'false']).default('true'),
+  // How many YOLO detections to process OCR in parallel per page
+  OCR_BATCH_SIZE: z.coerce.number().int().positive().default(5),
 });
 
 let parsed: z.infer<typeof envSchema>;

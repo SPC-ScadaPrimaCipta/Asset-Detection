@@ -249,23 +249,27 @@ This crop shows region: "${regionLabel}"
 YOUR MISSION: Find EVERY SINGLE symbol graphic in this crop. Missing even one is a failure.
 
 For EACH distinct symbol graphic/icon/drawing visible:
-1. Read the exact label/name printed next to or below it
-2. Identify asset type  
-3. Provide TIGHT bounding box around ONLY the icon/drawing graphic
+1. Read the EXACT label/name printed next to or below it
+2. Identify asset type from this list: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|Flange|Reducer|Tee|Elbow|other
+3. Read tag pattern if shown (e.g. P-###, XV-###, FV-##). Use null if not shown.
+4. Read aliases/abbreviations if shown next to the label (e.g. "P", "XV"). Use [] if none.
+5. Provide TIGHT bounding box around ONLY the icon/drawing graphic:
    - Coordinates 0-1000 where (0,0)=top-left of THIS CROP, (1000,1000)=bottom-right
    - Format: [ymin, xmin, ymax, xmax]
    - TIGHT = box edges touch the outermost pixels of the symbol graphic only
-   - Do NOT include text labels, whitespace padding in the box
+   - Do NOT include text labels, whitespace padding, or empty space in the box
 
 Return JSON ONLY (no markdown, no explanation):
-{"symbols":[{"name":"exact label text","assetType":"Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|other","tagPattern":"P-### or null","description":"short or null","aliases":[],"bbox":[ymin,xmin,ymax,xmax]}]}
+{"symbols":[{"name":"exact label text","assetType":"type from list above","tagPattern":"P-### or null","description":"one short phrase or null","aliases":["abbrev1","abbrev2"],"bbox":[ymin,xmin,ymax,xmax]}]}
 
-IMPORTANT:
-- Scan systematically top-to-bottom, left-to-right — do not skip any row
+RULES:
+- Scan systematically top-to-bottom, left-to-right — do not skip any row or column
 - Include ALL symbols including partial ones at crop edges
-- Small/simple symbols (single line, circle, rectangle) must be included too
-- Do NOT include: title headers, text-only rows, grid lines, notes
-- If truly no symbols: return {"symbols":[]}`;
+- Small/simple symbols (single line, circle, rectangle, triangle) MUST be included
+- Each symbol graphic = one entry. If same symbol appears twice, return both with their labels.
+- Do NOT include: title headers, text-only rows, grid lines, page numbers, notes sections
+- Aliases: short codes printed near the label, e.g. "XV" for "Solenoid Valve", "P" for "Pump"
+- If truly no symbols visible: return {"symbols":[]}`;
 }
 
 /** Untrusted model field → nullable string column. */
@@ -449,16 +453,22 @@ function buildRegions(cols: number, rows: number, overlap = 0.05): Region[] {
  * or a looser IoU when only the name matches. Tuned separately from
  * `dedupeSymbols` because this runs mid-sweep on region-local output, where
  * boxes are already page-space but noisier.
+ *
+ * Name normalization: lowercase + strip punctuation/spaces so
+ * "Gate Valve", "gate-valve", "gate valve" all match.
  */
 function deduplicateSymbols(
   symbols: ParsedSymbol[],
   iouThreshold: number = env.LEGEND_DEDUPE_NAME_IOU,
 ): ParsedSymbol[] {
+  // Normalize: lowercase, strip non-alphanumeric, collapse spaces
+  const fuzzyName = (s: string | null | undefined) =>
+    String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
   const out: ParsedSymbol[] = [];
   for (const s of symbols) {
     const isDupe = out.some(existing => {
       if (!existing.bbox_x || !s.bbox_x) return false;
-      // IoU overlap check
       const ax1 = existing.bbox_x, ay1 = existing.bbox_y!;
       const ax2 = ax1 + existing.bbox_w!, ay2 = ay1 + existing.bbox_h!;
       const bx1 = s.bbox_x, by1 = s.bbox_y!;
@@ -470,9 +480,11 @@ function deduplicateSymbols(
       const areaB = s.bbox_w! * s.bbox_h!;
       const union = areaA + areaB - intersection;
       const iou = union > 0 ? intersection / union : 0;
-      // Also check name similarity
-      const nameSim = existing.symbol_name?.toLowerCase() === s.symbol_name?.toLowerCase();
-      return iou > iouThreshold || nameSim;
+      // Fuzzy name match: strip punctuation/case → "Gate Valve" == "gate-valve"
+      const fa = fuzzyName(existing.symbol_name);
+      const fb = fuzzyName(s.symbol_name);
+      const nameMatch = fa !== '' && fa === fb;
+      return iou > iouThreshold || nameMatch;
     });
     if (!isDupe) out.push(s);
   }
@@ -661,21 +673,24 @@ export async function extractLegendSymbolsFromPng(
     const detectedNames = deduplicated
       .filter(s => s.symbol_name)
       .map(s => s.symbol_name!)
-      .slice(0, 60); // cap to avoid prompt overflow
+      .slice(0, 120); // cap raised from 60 — dense legends have 80-100+ symbols
 
     const catchupPrompt = `You are a P&ID legend digitizer. This is a FULL legend page.
 
 Already detected symbols (do NOT repeat these):
 ${detectedNames.map(n => `- ${n}`).join('\n')}
 
-YOUR TASK: Find ONLY symbols NOT in the list above that exist in this image.
-Look especially for: small symbols, symbols near borders, symbols in dense areas that might have been missed.
+YOUR TASK: Find ONLY symbols NOT in the above list that exist in this image.
+Focus on: small symbols, symbols near page borders, symbols in dense/crowded areas, symbols whose label is partially obscured.
+
+Asset types: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|other
 
 Return JSON ONLY:
-{"symbols":[{"name":"exact label","assetType":"type","tagPattern":"P-### or null","description":"null","aliases":[],"bbox":[ymin,xmin,ymax,xmax]}]}
+{"symbols":[{"name":"exact label","assetType":"type from list","tagPattern":"P-### or null","description":"short or null","aliases":["abbrev"],"bbox":[ymin,xmin,ymax,xmax]}]}
 
-If all symbols already detected, return: {"symbols":[]}
-bbox: 0-1000 coords relative to full image, tight around icon only.`;
+- bbox: 0-1000 coords relative to full image, TIGHT around icon only (not text)
+- aliases: short codes near the label, e.g. "XV", "P", "FV". Use [] if none.
+- If all symbols already detected: return {"symbols":[]}`;
 
     // Walk the chain instead of picking one model up front. The previous version
     // took the first usable candidate and gave up if that single model failed,
