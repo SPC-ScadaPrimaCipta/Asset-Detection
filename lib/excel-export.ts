@@ -32,14 +32,29 @@ export interface ExportAsset {
   tagNoProposed: string | null;
 }
 
+export interface ExportThresholds {
+  /** Confidence >= this = "High". Default 0.95. */
+  high: number;
+  /** Confidence >= this AND < high = "Medium". Default 0.80. */
+  medium: number;
+  /** Confidence < medium = "Needs Review". Should match DETECTION_REVIEW_THRESHOLD. Default 0.65. */
+  review: number;
+}
+
+const DEFAULT_THRESHOLDS: ExportThresholds = { high: 0.95, medium: 0.80, review: 0.65 };
+
 export async function buildAssetRegisterWorkbook(
   assets: ExportAsset[],
   legendName: string,
-  opts: { includeReviewItems: boolean }
+  opts: { includeReviewItems: boolean; thresholds?: Partial<ExportThresholds> }
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Asset Detection";
   wb.created = new Date();
+
+  // Merge caller thresholds with defaults — ensures Excel bands match the real
+  // DETECTION_REVIEW_THRESHOLD used by UI and DB validation_status.
+  const thr: ExportThresholds = { ...DEFAULT_THRESHOLDS, ...opts.thresholds };
 
   // Sheet 1: Asset Register (rejected excluded; review filtered by opts)
   const ws = wb.addWorksheet("Asset Register", { properties: { tabColor: { argb: "FF4361EE" } } });
@@ -152,9 +167,10 @@ export async function buildAssetRegisterWorkbook(
   ws3.getRow(1).font = { bold: true };
   ws3.addRows([
     { k: "Total Assets", v: filtered.length },
-    { k: "High Confidence (>=0.95)", v: filtered.filter((a) => (a.confidence ?? 0) >= 0.95).length },
-    { k: "Medium (0.80-0.94)", v: filtered.filter((a) => { const c = a.confidence ?? 0; return c >= 0.8 && c < 0.95; }).length },
-    { k: "Needs Review (<0.80)", v: filtered.filter((a) => (a.confidence ?? 0) < 0.8).length },
+    { k: `High Confidence (>=${thr.high})`, v: filtered.filter((a) => (a.confidence ?? 0) >= thr.high).length },
+    { k: `Medium (${thr.medium}-${thr.high - 0.01})`, v: filtered.filter((a) => { const c = a.confidence ?? 0; return c >= thr.medium && c < thr.high; }).length },
+    { k: `Needs Review (<${thr.medium})`, v: filtered.filter((a) => (a.confidence ?? 0) < thr.medium).length },
+    { k: `Review Threshold (DETECTION_REVIEW_THRESHOLD)`, v: thr.review },
   ]);
 
   // Sheet 4: Legend Used

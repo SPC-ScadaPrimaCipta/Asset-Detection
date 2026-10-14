@@ -23,6 +23,7 @@ interface Document {
   filename: string;
   page_count: number;
   status: string;
+  file_type?: string;
 }
 interface Legend {
   id: string;
@@ -699,6 +700,17 @@ function JobProgress({
           Analyzing P&ID with AI…
         </p>
       )}
+      {job.status === "PENDING" && (
+        <p
+          style={{
+            fontSize: "12px",
+            color: "var(--warning, #f59e0b)",
+            margin: 0,
+          }}
+        >
+          Waiting for worker… If stuck, run: <code style={{ fontFamily: "monospace", background: "rgba(0,0,0,0.15)", padding: "1px 4px", borderRadius: "3px" }}>npm run worker</code> in a separate terminal.
+        </p>
+      )}
       {job.status === "FAILED" && job.error_detail && (
         <p
           style={{
@@ -743,8 +755,59 @@ function JobProgress({
 
 // ─── PidViewer ───────────────────────────────────────────────────────────────
 
+// CAD canvas constants
+const CAD_BG = '#1e1e1e';
+const CAD_GRID_COLOR = 'rgba(255,255,255,0.06)';
+const CAD_GRID_MAJOR_COLOR = 'rgba(255,255,255,0.12)';
+const CAD_TOOLBAR_BG = '#141414';
+const CAD_TOOLBAR_BORDER = '#2a2a2a';
+
+const cadToolBtn: React.CSSProperties = {
+  padding: '5px 10px',
+  fontSize: '11px',
+  fontFamily: 'ui-monospace, monospace',
+  fontWeight: '500',
+  borderRadius: '3px',
+  border: '1px solid #3a3a3a',
+  background: '#222',
+  color: '#c8c8c8',
+  cursor: 'pointer',
+  letterSpacing: '0.02em',
+  transition: 'background 100ms, border-color 100ms, color 100ms',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px',
+  lineHeight: '1',
+  whiteSpace: 'nowrap' as const,
+};
+
+const cadToolBtnActive: React.CSSProperties = {
+  ...cadToolBtn,
+  background: '#1a3a4a',
+  border: '1px solid #00bcd4',
+  color: '#00bcd4',
+};
+
+const cadSep: React.CSSProperties = {
+  width: 1,
+  height: 16,
+  background: '#3a3a3a',
+  flexShrink: 0,
+};
+
+// Neon bbox color per review status / confidence
+function cadBboxColor(d: Detection): string {
+  if (d.review_status === 'APPROVED') return '#00e676';   // neon green — confirmed
+  if (d.review_status === 'REJECTED') return '#ff5252';   // red — rejected
+  const conf = d.confidence ?? 0;
+  if (conf >= 0.9) return '#00bcd4';  // cyan — high confidence
+  if (conf >= 0.7) return '#ffd600';  // yellow — medium
+  return '#ff6d00';                   // orange — low/needs review
+}
+
 function PidViewer({
   documentId,
+  fileType,
   detections,
   selectedId,
   onSelect,
@@ -759,6 +822,7 @@ function PidViewer({
   onShowAllChange,
 }: {
   documentId: string;
+  fileType?: string;
   detections: Detection[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -778,6 +842,8 @@ function PidViewer({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0); // 0 | 90 | 180 | 270
   const [fullscreen, setFullscreen] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Natural image dimensions — used to map bbox coords to display space
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(
     null,
@@ -811,26 +877,85 @@ function PidViewer({
     setDrawRect(null);
   }, [selectedId, page, documentId, drawMode]);
 
+  const isDxf = fileType === 'dxf';
+
+  // For DXF: load SVG from /api/documents/[id]/pages/[page]/svg
+  const [dxfSvgUrl, setDxfSvgUrl] = useState<string | null>(null);
+  const [dxfSvgLoading, setDxfSvgLoading] = useState(false);
+  const [dxfSvgError, setDxfSvgError] = useState(false);
+  // Revoke previous blob URL on cleanup
+  const dxfBlobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isDxf || !documentId) {
+      setDxfSvgUrl(null);
+      setDxfSvgLoading(false);
+      setDxfSvgError(false);
+      return;
+    }
+    setDxfSvgLoading(true);
+    setDxfSvgError(false);
+    setDxfSvgUrl(null);
+    setImgNatural(null);
+
+    fetch(`/api/documents/${documentId}/pages/${page}/svg`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`SVG fetch ${r.status}`);
+        return r.blob();
+      })
+      .then((blob) => {
+        // Revoke previous blob URL
+        if (dxfBlobUrlRef.current) URL.revokeObjectURL(dxfBlobUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        dxfBlobUrlRef.current = url;
+        setDxfSvgUrl(url);
+        setDxfSvgLoading(false);
+      })
+      .catch(() => {
+        setDxfSvgLoading(false);
+        setDxfSvgError(true);
+      });
+
+    return () => {
+      // Revoke on unmount / re-run
+      if (dxfBlobUrlRef.current) {
+        URL.revokeObjectURL(dxfBlobUrlRef.current);
+        dxfBlobUrlRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDxf, documentId, page]);
+
+  // For PDF: direct image URL. For DXF: use blob URL from above.
   const imgSrc = documentId
-    ? `/api/documents/${documentId}/pages/${page}/image`
+    ? isDxf
+      ? dxfSvgUrl
+      : `/api/documents/${documentId}/pages/${page}/image`
     : null;
 
   // Reset image state on page or document change
   useEffect(() => {
-    setImgNatural(null);
-    setImgLoading(!!documentId);
-    setImgError(false);
-  }, [documentId, page]);
+    if (isDxf) {
+      // DXF image loading managed by the useEffect above
+      setImgLoading(false);
+      setImgError(false);
+    } else {
+      setImgNatural(null);
+      setImgLoading(!!documentId);
+      setImgError(false);
+    }
+  }, [documentId, page, isDxf]);
 
   // Prefetch halaman tetangga agar navigasi ◀/▶ instan (browser cache 1 jam)
+  // DXF tidak punya halaman gambar — skip
   useEffect(() => {
-    if (!documentId) return;
+    if (!documentId || isDxf) return;
     for (const p of [page - 1, page + 1]) {
       if (p < 1 || p > totalPages) continue;
       const img = new Image();
       img.src = `/api/documents/${documentId}/pages/${p}/image`;
     }
-  }, [documentId, page, totalPages]);
+  }, [documentId, page, totalPages, isDxf]);
 
   // Reset pan/zoom/rotation when page changes
   useEffect(() => {
@@ -887,8 +1012,21 @@ function PidViewer({
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const d = e.deltaY > 0 ? -0.15 : 0.15;
-      setZoom((p) => Math.max(0.2, Math.min(6, p + d)));
+      const delta = e.deltaY > 0 ? -0.15 : 0.15;
+      const rect = el.getBoundingClientRect();
+      // Cursor position relative to viewport center
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      setZoom((prevZoom) => {
+        const nextZoom = Math.max(0.15, Math.min(10, prevZoom + delta));
+        // Adjust pan so content under cursor stays fixed
+        const zoomRatio = nextZoom / prevZoom;
+        setPan((prevPan) => ({
+          x: cx - (cx - prevPan.x) * zoomRatio,
+          y: cy - (cy - prevPan.y) * zoomRatio,
+        }));
+        return nextZoom;
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -910,6 +1048,13 @@ function PidViewer({
   const clampNum = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Middle button = pan regardless of mode
+    if (e.button === 1) {
+      e.preventDefault();
+      setDragging(true);
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      return;
+    }
     // Draw mode: mousedown di area kosong mulai gambar kotak baru
     if (drawMode && rotation === 0) {
       if ((e.target as HTMLElement).closest("[data-bbox]")) return;
@@ -963,6 +1108,17 @@ function PidViewer({
   const rotate = () => setRotation((r) => (r + 90) % 360);
   const resetView = () => {
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setRotation(0);
+  };
+  const zoomExtents = () => {
+    // Fit image to viewport
+    const el = viewerRef.current;
+    if (!el || !imgNatural) { resetView(); return; }
+    const rect = el.getBoundingClientRect();
+    const scaleX = (rect.width * 0.9) / imgNatural.w;
+    const scaleY = (rect.height * 0.9) / imgNatural.h;
+    setZoom(Math.min(scaleX, scaleY));
     setPan({ x: 0, y: 0 });
     setRotation(0);
   };
@@ -1060,81 +1216,158 @@ function PidViewer({
 
   const viewerContent = (
     <>
-      {/* Toolbar */}
+      {/* CAD Toolbar */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "8px",
-          padding: "10px 16px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--surface)",
+          gap: "6px",
+          padding: "6px 12px",
+          borderBottom: `1px solid ${CAD_TOOLBAR_BORDER}`,
+          background: CAD_TOOLBAR_BG,
           flexWrap: "wrap",
+          minHeight: 38,
         }}
       >
-        {/* Page nav */}
+        {/* Page nav — only for multi-page PDF */}
         {totalPages > 1 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <>
             <button
               onClick={() => onPageChange(Math.max(1, page - 1))}
               disabled={page <= 1}
-              style={{ ...toolButtonStyle, opacity: page <= 1 ? 0.4 : 1 }}
-            >
-              ◀
-            </button>
-            <span
-              style={{
-                fontSize: "12px",
-                color: "var(--foreground-muted)",
-                padding: "0 8px",
-                fontWeight: "500",
-              }}
-            >
-              Page {page} / {totalPages}
+              style={{ ...cadToolBtn, opacity: page <= 1 ? 0.35 : 1 }}
+              title="Previous page"
+            >◀</button>
+            <span style={{ fontSize: "11px", color: "#888", fontFamily: "ui-monospace,monospace", padding: "0 2px" }}>
+              {page}/{totalPages}
             </span>
             <button
               onClick={() => onPageChange(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages}
-              style={{
-                ...toolButtonStyle,
-                opacity: page >= totalPages ? 0.4 : 1,
-              }}
-            >
-              ▶
-            </button>
-          </div>
+              style={{ ...cadToolBtn, opacity: page >= totalPages ? 0.35 : 1 }}
+              title="Next page"
+            >▶</button>
+            <div style={cadSep} />
+          </>
         )}
 
-        <div style={{ width: 1, height: 16, background: "var(--border)" }} />
+        {/* Zoom Extents */}
+        <button onClick={zoomExtents} style={cadToolBtn} title="Zoom Extents (fit to view)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+          </svg>
+          Extents
+        </button>
 
-        {/* Zoom */}
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        {/* Zoom controls */}
+        <button
+          onClick={() => setZoom((z) => Math.max(0.15, +(z - 0.2).toFixed(2)))}
+          style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
+          title="Zoom out"
+        >−</button>
+        <span style={{ fontSize: "11px", color: "#aaa", fontFamily: "ui-monospace,monospace", minWidth: 42, textAlign: "center" }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          onClick={() => setZoom((z) => Math.min(10, +(z + 0.2).toFixed(2)))}
+          style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
+          title="Zoom in"
+        >+</button>
+
+        <div style={cadSep} />
+
+        {/* Grid toggle */}
+        <button
+          onClick={() => setShowGrid((g) => !g)}
+          style={showGrid ? cadToolBtnActive : cadToolBtn}
+          title="Toggle CAD grid"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+          </svg>
+          Grid
+        </button>
+
+        {/* Rotate */}
+        <button
+          onClick={rotate}
+          style={rotation > 0 ? cadToolBtnActive : cadToolBtn}
+          title="Rotate 90°"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          {rotation > 0 ? `${rotation}°` : "Rotate"}
+        </button>
+
+        {/* Reset */}
+        <button onClick={resetView} style={cadToolBtn} title="Reset view (zoom/pan/rotation)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 1018 0 9 9 0 00-18 0"/>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3"/>
+          </svg>
+          Reset
+        </button>
+
+        <div style={cadSep} />
+
+        {/* Show All bboxes */}
+        {onShowAllChange && (
           <button
-            onClick={() => setZoom((z) => Math.max(0.2, +(z - 0.2).toFixed(1)))}
-            style={{ ...toolButtonStyle, fontWeight: "600" }}
+            onClick={() => onShowAllChange(!showAll)}
+            style={showAll ? cadToolBtnActive : cadToolBtn}
+            title={showAll ? "Show selected bbox only" : "Show all bounding boxes"}
           >
-            −
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+            {showAll ? "All ON" : "Show All"}
           </button>
-          <span
-            style={{
-              fontSize: "12px",
-              color: "var(--foreground-muted)",
-              width: 48,
-              textAlign: "center",
-              fontFamily: "var(--font-geist-mono, monospace)",
-            }}
-          >
-            {Math.round(zoom * 100)}%
+        )}
+
+        {/* Status hints */}
+        {bboxSavedFlash && selectedId && (
+          <span style={{ fontSize: "11px", color: "#00e676", fontWeight: "600", fontFamily: "ui-monospace,monospace" }}>✓ BBox saved</span>
+        )}
+        {drawMode && (
+          <span style={{ fontSize: "11px", color: "#00bcd4", fontWeight: "600", fontFamily: "ui-monospace,monospace" }}>
+            ⊞ Draw mode — drag canvas · Esc cancel
+          </span>
+        )}
+        {(selectedId || drawMode) && rotation !== 0 && (
+          <span style={{ fontSize: "11px", color: "#ffd600", fontFamily: "ui-monospace,monospace" }}>
+            Reset rotation to 0° to edit bbox
+          </span>
+        )}
+
+        {/* Right: info + fullscreen */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "11px", color: "#666", fontFamily: "ui-monospace,monospace" }}>
+            {showAll
+              ? `${visible.length} bbox`
+              : visible.length > 0
+                ? (visible[0].asset_tag ?? visible[0].asset_type).slice(0, 20)
+                : "—"}
           </span>
           <button
-            onClick={() => setZoom((z) => Math.min(6, +(z + 0.2).toFixed(1)))}
-            style={{ ...toolButtonStyle, fontWeight: "600" }}
+            onClick={() => setFullscreen((f) => !f)}
+            style={cadToolBtn}
+            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
           >
-            +
+            {fullscreen ? (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+              </svg>
+            )}
+            {fullscreen ? "Exit" : "Full"}
           </button>
         </div>
-
-        {/* Rotate button */}
+      </div>
         <button
           onClick={rotate}
           title="Rotate 90°"
@@ -1319,16 +1552,19 @@ function PidViewer({
                   alt={`P&ID page ${page}`}
                   onLoad={(e) => {
                     const img = e.currentTarget;
-                    setImgNatural({
-                      w: img.naturalWidth,
-                      h: img.naturalHeight,
-                    });
+                    // SVG loaded via blob URL may report naturalWidth/Height=0 in some browsers.
+                    // Fall back to the SVG viewBox size (2000×2000) for DXF.
+                    const w = img.naturalWidth || (isDxf ? 2000 : img.naturalWidth);
+                    const h = img.naturalHeight || (isDxf ? 2000 : img.naturalHeight);
+                    setImgNatural({ w, h });
                     setImgLoading(false);
                     setImgError(false);
+                    if (isDxf) setDxfSvgLoading(false);
                   }}
                   onError={() => {
                     setImgLoading(false);
                     setImgError(true);
+                    if (isDxf) { setDxfSvgLoading(false); setDxfSvgError(true); }
                   }}
                   style={{
                     display: "block",
@@ -1336,7 +1572,7 @@ function PidViewer({
                     height: "auto",
                     maxWidth: fullscreen ? "88vw" : "100%",
                     maxHeight: fullscreen ? "calc(100vh - 200px)" : "560px",
-                    opacity: imgLoading ? 0 : 1,
+                    opacity: (isDxf ? dxfSvgLoading : imgLoading) ? 0 : 1,
                     transition: "opacity 0.2s ease",
                   }}
                   draggable={false}
@@ -1523,8 +1759,8 @@ function PidViewer({
               </div>
             )}
 
-            {/* Loading */}
-            {imgLoading && (
+            {/* Loading — PDF or DXF SVG */}
+            {(imgLoading || dxfSvgLoading) && (
               <div
                 style={{
                   position: "absolute",
@@ -1564,13 +1800,15 @@ function PidViewer({
                       d="M4 12a8 8 0 018-8v8H4z"
                     />
                   </svg>
-                  <p style={{ fontSize: 12 }}>Rendering page {page}…</p>
+                  <p style={{ fontSize: 12 }}>
+                    {isDxf ? "Rendering DXF vector…" : `Rendering page ${page}…`}
+                  </p>
                 </div>
               </div>
             )}
 
             {/* Error / empty */}
-            {(imgError || !imgSrc) && !imgLoading && (
+            {((imgError || dxfSvgError) || !imgSrc) && !imgLoading && !dxfSvgLoading && (
               <div
                 style={{
                   position: "absolute",
@@ -1600,12 +1838,12 @@ function PidViewer({
                     />
                   </svg>
                   <p style={{ fontSize: 13 }}>
-                    {imgError
-                      ? "Failed to load page"
+                    {imgError || dxfSvgError
+                      ? isDxf ? "Failed to render DXF" : "Failed to load page"
                       : "Select document to view"}
                   </p>
                   <p style={{ fontSize: 11, marginTop: 4 }}>
-                    {imgError
+                    {imgError || dxfSvgError
                       ? "Check server logs"
                       : "Run detection to see bounding boxes"}
                   </p>
@@ -2085,24 +2323,37 @@ function AssetDetail({
 
 const STATUS_OPTS = ["", "DETECTED", "CONFIRMED", "REJECTED", "MANUAL"];
 const CONF_OPTS = [
-  { label: "All", value: "" },
+  { label: "All Conf.", value: "" },
   { label: "≥95% High", value: "high" },
   { label: "≥80% Medium", value: "medium" },
   { label: "<80% Review", value: "low" },
+];
+const VALIDATION_OPTS = [
+  { label: "All Validation", value: "" },
+  { label: "NEEDS REVIEW", value: "NEEDS_REVIEW" },
+  { label: "VALID", value: "VALID" },
+  { label: "CONFLICT", value: "CONFLICT" },
 ];
 
 function DetectionsTable({
   detections,
   selectedId,
   onSelect,
+  onBulkAction,
+  currentViewerPage,
 }: {
   detections: Detection[];
   selectedId: string | null;
   onSelect: (d: Detection) => void;
+  onBulkAction?: (action: "confirm" | "reject", ids: string[]) => Promise<void>;
+  currentViewerPage?: number | null;
 }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [conf, setConf] = useState("");
+  const [validationFilter, setValidationFilter] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState("");
+  const [syncPage, setSyncPage] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<
     "tag" | "type" | "page" | "conf" | "status"
@@ -2111,6 +2362,10 @@ function DetectionsTable({
   // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
   const [hideDupes, setHideDupes] = useState(true);
   const [pageSize, setPageSize] = useState(15);
+
+  // Bulk select
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // M1: Build dedup map — for each normalized key keep highest-confidence detection
   const dedupMap = useMemo(() => {
@@ -2125,6 +2380,13 @@ function DetectionsTable({
       }
     }
     return { map, countMap };
+  }, [detections]);
+
+  // Unique asset types for filter dropdown
+  const assetTypes = useMemo(() => {
+    const types = new Set<string>();
+    for (const d of detections) if (d.asset_type) types.add(normalizeType(d.asset_type));
+    return Array.from(types).sort();
   }, [detections]);
 
   const filtered = (() => {
@@ -2155,6 +2417,10 @@ function DetectionsTable({
       )
         return false;
       if (conf === "low" && (d.confidence ?? 0) >= 0.8) return false;
+      if (validationFilter && d.validation_status !== validationFilter) return false;
+      if (assetTypeFilter && normalizeType(d.asset_type) !== assetTypeFilter) return false;
+      // Page sync: filter to viewer page when enabled
+      if (syncPage && currentViewerPage && d.pid_page !== currentViewerPage) return false;
       return true;
     });
   })();
@@ -2278,6 +2544,50 @@ function DetectionsTable({
             </option>
           ))}
         </select>
+        {/* Asset type filter */}
+        <select
+          value={assetTypeFilter}
+          onChange={(e) => { setAssetTypeFilter(e.target.value); setPage(1); }}
+          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
+        >
+          <option value="">All Types</option>
+          {assetTypes.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        {/* Validation status filter */}
+        <select
+          value={validationFilter}
+          onChange={(e) => { setValidationFilter(e.target.value); setPage(1); }}
+          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
+        >
+          {VALIDATION_OPTS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {/* Sync to viewer page */}
+        {onBulkAction !== undefined && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              fontSize: "12px",
+              color: syncPage ? "var(--primary)" : "var(--foreground-muted)",
+              cursor: "pointer",
+              userSelect: "none",
+              fontWeight: syncPage ? "600" : "400",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={syncPage}
+              onChange={(e) => { setSyncPage(e.target.checked); setPage(1); }}
+              style={{ cursor: "pointer" }}
+            />
+            Sync to viewer page
+          </label>
+        )}
         {/* M1: Dedup toggle */}
         <label
           style={{
@@ -2316,6 +2626,127 @@ function DetectionsTable({
         </span>
       </div>
 
+      {/* Quick-select helpers — always visible when bulk actions enabled */}
+      {onBulkAction && (
+        <div
+          style={{
+            padding: "6px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px",
+            alignItems: "center",
+            background: "var(--surface-muted)",
+          }}
+        >
+          <span style={{ fontSize: "11px", color: "var(--foreground-muted)", fontWeight: "600", marginRight: "2px" }}>Quick:</span>
+          <button
+            onClick={() => {
+              const highConf = filtered.filter((d) => (d.confidence ?? 0) >= 0.95);
+              setSelected(new Set(highConf.map((d) => d.id)));
+            }}
+            style={{ ...toolButtonStyle, fontSize: "11px", padding: "3px 8px" }}
+          >
+            Select High Conf (≥95%)
+          </button>
+          <button
+            onClick={() => {
+              const pending = filtered.filter((d) => d.review_status === "PENDING");
+              setSelected(new Set(pending.map((d) => d.id)));
+            }}
+            style={{ ...toolButtonStyle, fontSize: "11px", padding: "3px 8px" }}
+          >
+            Select All Pending
+          </button>
+          <button
+            disabled={bulkLoading}
+            onClick={async () => {
+              const highConf = filtered.filter((d) => (d.confidence ?? 0) >= 0.95).map((d) => d.id);
+              if (!highConf.length) return;
+              setBulkLoading(true);
+              try { await onBulkAction("confirm", highConf); } finally { setBulkLoading(false); setSelected(new Set()); }
+            }}
+            style={{
+              ...toolButtonStyle,
+              fontSize: "11px",
+              padding: "3px 8px",
+              color: "var(--success)",
+              border: "1px solid var(--success)",
+              opacity: bulkLoading ? 0.5 : 1,
+            }}
+          >
+            ✓ Confirm All High Conf
+          </button>
+        </div>
+      )}
+
+      {/* Bulk actions bar — shown when items are selected */}
+      {onBulkAction && selected.size > 0 && (
+        <div
+          style={{
+            padding: "8px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: "var(--primary-soft)",
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--primary)" }}>
+            {selected.size} selected
+          </span>
+          <button
+            disabled={bulkLoading}
+            onClick={async () => {
+              setBulkLoading(true);
+              try { await onBulkAction("confirm", Array.from(selected)); setSelected(new Set()); }
+              finally { setBulkLoading(false); }
+            }}
+            style={{
+              ...toolButtonStyle,
+              fontSize: "12px",
+              padding: "4px 10px",
+              color: "var(--success)",
+              border: "1px solid var(--success)",
+              opacity: bulkLoading ? 0.5 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <CheckCircle size={13} weight="fill" /> Confirm Selected
+          </button>
+          <button
+            disabled={bulkLoading}
+            onClick={async () => {
+              setBulkLoading(true);
+              try { await onBulkAction("reject", Array.from(selected)); setSelected(new Set()); }
+              finally { setBulkLoading(false); }
+            }}
+            style={{
+              ...toolButtonStyle,
+              fontSize: "12px",
+              padding: "4px 10px",
+              color: "var(--danger)",
+              border: "1px solid var(--danger)",
+              opacity: bulkLoading ? 0.5 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <XCircle size={13} weight="fill" /> Reject Selected
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            style={{ ...toolButtonStyle, fontSize: "12px", padding: "4px 10px" }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ flex: 1, overflowY: "auto" }}>
         <table
@@ -2334,6 +2765,34 @@ function DetectionsTable({
             }}
           >
             <tr>
+              {onBulkAction && (
+                <th
+                  style={{
+                    textAlign: "left",
+                    ...cellBase,
+                    fontWeight: "600",
+                    color: "var(--foreground-muted)",
+                    width: "32px",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={slice.length > 0 && slice.every((d) => selected.has(d.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelected((prev) => new Set([...prev, ...slice.map((d) => d.id)]));
+                      } else {
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          slice.forEach((d) => next.delete(d.id));
+                          return next;
+                        });
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                  />
+                </th>
+              )}
               <th
                 style={{
                   textAlign: "left",
@@ -2355,7 +2814,7 @@ function DetectionsTable({
             {slice.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={onBulkAction ? 7 : 6}
                   style={{
                     padding: "48px 12px",
                     textAlign: "center",
@@ -2389,6 +2848,26 @@ function DetectionsTable({
                       e.currentTarget.style.background = "transparent";
                   }}
                 >
+                  {onBulkAction && (
+                    <td
+                      style={{ ...cellBase, width: "32px" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(d.id)}
+                        onChange={(e) => {
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(d.id);
+                            else next.delete(d.id);
+                            return next;
+                          });
+                        }}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </td>
+                  )}
                   <td
                     style={{ ...cellBase, color: "var(--foreground-subtle)" }}
                   >
@@ -2608,6 +3087,7 @@ function DetectionWorkspace() {
 
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(
     null,
   );
@@ -2621,6 +3101,9 @@ function DetectionWorkspace() {
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
     : 1;
+
+  // Derive selected document object for file_type check
+  const selectedDocument = documents.find((d) => d.id === documentId) ?? null;
 
   // Detections filtered to current page (null means all pages)
   const pageDetections = currentPage
@@ -2786,20 +3269,36 @@ function DetectionWorkspace() {
   const handleRunDetection = async () => {
     if (!documentId) return;
     setRunning(true);
+    setRunError(null);
     setDetections([]);
     setSelectedDetection(null);
-    const r = await fetch("/api/detection/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        document_id: documentId,
-        legend_ids: legendIds,
-        project_id: projectId || null,
-      }),
-    });
-    const j = await r.json();
-    setCurrentJobId(j.id);
-    setRunning(false);
+    try {
+      const r = await fetch("/api/detection/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_id: documentId,
+          legend_ids: legendIds,
+          project_id: projectId || null,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setRunError(j.error ?? `Failed to start job (HTTP ${r.status})`);
+        setRunning(false);
+        return;
+      }
+      if (!j.id) {
+        setRunError("Job created but no ID returned — Redis/worker may be down. Run: npm run worker");
+        setRunning(false);
+        return;
+      }
+      setCurrentJobId(j.id);
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Network error starting detection job");
+    } finally {
+      setRunning(false);
+    }
   };
 
   const handleJobComplete = useCallback(async () => {
@@ -3034,6 +3533,25 @@ function DetectionWorkspace() {
         </div>
       </div>
 
+      {/* Run Detection error */}
+      {runError && (
+        <div style={{
+          padding: "10px 16px",
+          background: "rgba(239,68,68,0.1)",
+          border: "1px solid rgba(239,68,68,0.4)",
+          borderRadius: "var(--radius-sm)",
+          color: "#f87171",
+          fontSize: "13px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
+        }}>
+          <span>⚠ {runError}</span>
+          <button onClick={() => setRunError(null)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "16px", lineHeight: 1 }}>✕</button>
+        </div>
+      )}
+
       {/* Stats bar */}
       {detections.length > 0 && (
         <div
@@ -3243,6 +3761,7 @@ function DetectionWorkspace() {
             <div style={{ flex: 1, minHeight: 640 }}>
               <PidViewer
                 documentId={documentId}
+                fileType={selectedDocument?.file_type}
                 detections={pageDetections}
                 selectedId={selectedId}
                 onSelect={(id) => {

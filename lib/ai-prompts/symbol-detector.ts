@@ -64,6 +64,14 @@ ${legendRef}
 
 IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
 ` : `No legend provided. Use your knowledge of ISA 5.1 and ISO 10628-2 P&ID standards.`}
+
+COMMON SPECIALTY EQUIPMENT — detect these even when not in legend:
+• Pig Launcher (tag prefix PL-): cylindrical vessel with closure head, launching barrel, kicker line — assetType "Pig Launcher"
+• Pig Receiver (tag prefix PR-): similar to launcher but with receiver trap — assetType "Pig Receiver"
+• Mixer / Static Mixer (tag prefix MX-): inline mixing element symbol or vessel with agitator — assetType "Mixer"
+• Slug Catcher: large multi-finger or single vessel for slug separation — assetType "Slug Catcher"
+• Production Storage Tank (tag prefix T-): open-top or fixed-roof cylinder — assetType "Storage Tank"
+If these appear and no legend entry matches, use the assetType names above and set confidence 0.70-0.80.
 ${opts?.referenceExamples?.length ? `CONFIRMED REFERENCE EXAMPLES (few-shot — symbols already approved from this legend):
 ${opts.referenceExamples.slice(0, 5).map(s => `• ${s.symbol_name ?? s.asset_type}${s.tag_pattern ? ` [${s.tag_pattern}]` : ''} (${s.asset_type})`).join('\n')}
 Prefer these names when the symbol matches.
@@ -77,6 +85,11 @@ Read tags even if text is small, rotated, or partially obscured.
 Write down mentally all tags you see before assigning them to symbols.
 On dense pages (>20 symbols): list tags first, then assign — do NOT skip trailing rows.
 
+IGNORE THESE — NOT ASSET TAGS:
+• Valve status annotations: NC, NO, FC, FO, LC, LO — these mean Normally Closed/Open, Fail Closed/Open, Lock Closed/Open. They describe valve state, NOT an asset tag.
+• Cross-sheet references: any text matching "TO [EQUIPMENT] SHEET N", "FROM [EQUIPMENT] SHEET N", "SHEET N OF N", "SEE SHEET N" — these are navigation references, not assets on this sheet.
+• Equipment specification blocks: multi-line text blocks containing SIZE, DESIGN PRESS, DESIGN TEMP, OPERATING PRESS, OPERATING TEMP — these are specification data for the named vessel/equipment above them, not separate asset tags.
+
 ━━━ STEP 2: DETECT ALL SYMBOLS ━━━
 Scan systematically top-left → bottom-right.
 Detect EVERY distinct equipment symbol — instruments, valves, pumps, vessels, junction boxes, panels, fire & gas devices, safety devices.
@@ -89,6 +102,7 @@ For EACH symbol:
 - The closest tag that matches industrial naming convention is the asset tag
 - If two symbols are close, assign each tag to its spatially nearest symbol
 - Tags positioned directly above, below, or beside a symbol belong to that symbol
+- SKIP text that is a valve status (NC/NO/FC/FO/LC/LO), pipe spec, or part of an equipment specification block (SIZE / DESIGN PRESS / TEMP / OPERATING) even if it appears nearby — these do not become assetTag
 
 ━━━ STEP 4: READ EQUIPMENT DESCRIPTORS (size, fromRef, toRef, ofOrAtRef) ━━━
 For each detected asset, read equipment descriptors associated with the symbol or tag:
@@ -117,6 +131,10 @@ DO NOT DETECT:
 ✗ Title blocks, revision clouds, drawing borders, north arrows
 ✗ Text-only annotations without an associated symbol
 ✗ Pipe sizes like "6\\" or "DN150" — these are NOT asset tags
+✗ Valve status text: NC, NO, FC, FO, LC, LO — these are operating status labels on valves, not asset tags
+✗ Cross-sheet navigation text: "TO [TAG] SHEET N", "FROM [TAG] SHEET N", "SHEET N OF N" — the equipment these reference lives on another sheet, do not create a detection for it on this sheet
+✗ Equipment specification blocks: text blocks with SIZE / DESIGN PRESS / DESIGN TEMP / OPERATING PRESS / OPERATING TEMP — do not associate these lines as asset tags; they describe the parent vessel/equipment already detected above them
+✗ Approval/revision stamps: APPROVED, NOT APPROVED, APPROVED AS NOTE, FOR INFORMATION boxes in title block or drawing card
 
 ━━━ FIELD RULES ━━━
 

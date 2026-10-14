@@ -18,6 +18,7 @@ interface Document {
   project_id: string;
   created_at: string;
   status: string;
+  file_type?: string;
 }
 
 // ─── Style Constants ──────────────────────────────────────────────────────────
@@ -262,18 +263,23 @@ export default function DocumentsPage() {
           {/* File input */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={fieldLabelStyle}>
-              PDF File <span style={{ color: 'var(--danger)' }}>*</span>
+              PDF / DXF File <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf"
+              accept="application/pdf,.pdf,.dxf"
               onChange={handleFileChange}
               disabled={uploading}
               style={{ width: '100%', fontSize: '14px', color: 'var(--foreground)', opacity: uploading ? 0.5 : 1 }}
             />
             {selectedFile && (
-              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                {selectedFile.name.toLowerCase().endsWith('.dxf') && (
+                  <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '4px', background: 'var(--info-soft, #dbeafe)', color: 'var(--info, #1d4ed8)', fontSize: '10px', fontWeight: 600 }}>DXF</span>
+                )}
+              </p>
             )}
           </div>
         </div>
@@ -353,6 +359,9 @@ export default function DocumentsPage() {
                       <span style={{ fontWeight: '500', color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: 320 }} title={doc.filename}>
                         {doc.filename}
                       </span>
+                      {doc.file_type === 'dxf' && (
+                        <span style={{ padding: '1px 6px', borderRadius: '4px', background: 'var(--info-soft, #dbeafe)', color: 'var(--info, #1d4ed8)', fontSize: '10px', fontWeight: 600, marginTop: '2px', display: 'inline-block' }}>DXF</span>
+                      )}
                     </td>
                     <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
                       {doc.page_count ?? '—'}

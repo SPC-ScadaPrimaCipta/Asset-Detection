@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { buildAssetRegisterWorkbook } from "@/lib/excel-export";
+import { getTuning } from "@/lib/tuning";
 
 function parseEvidence(ev: unknown): string[] {
   if (!ev) return [];
@@ -72,7 +73,9 @@ export async function GET(request: NextRequest) {
       bboxH: r.bbox_h as number | null,
     }));
 
-    const buf = await buildAssetRegisterWorkbook(assets, legendName, { includeReviewItems });
+    const tuning = await getTuning();
+    const thresholds = { review: tuning.detection.reviewThreshold };
+    const buf = await buildAssetRegisterWorkbook(assets, legendName, { includeReviewItems, thresholds });
     return new NextResponse(buf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

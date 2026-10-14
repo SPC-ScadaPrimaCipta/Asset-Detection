@@ -237,6 +237,23 @@ export function dedupeRegionDetections(
   iouThreshold = env.DETECTION_REGION_DEDUPE_IOU,
 ): Detection[] {
   const kept: Detection[] = [];
+
+  /**
+   * Fuzzy type match for untagged detections.
+   * Handles slight naming differences ("Pressure Transmitter" vs
+   * "Differential Pressure Transmitter") from overlapping region passes.
+   */
+  const typeNorm = (t: string) => t.toLowerCase().trim();
+  const typesOverlap = (a: string, b: string): boolean => {
+    const na = typeNorm(a);
+    const nb = typeNorm(b);
+    if (na === nb) return true;
+    if (na.includes(nb) || nb.includes(na)) return true;
+    const wa = na.split(' ')[0];
+    const wb = nb.split(' ')[0];
+    return wa.length > 2 && wa === wb;
+  };
+
   for (const d of detections) {
     const tag = (d.assetTag ?? "").toUpperCase().trim();
     const type = (d.assetType ?? "").toLowerCase();
@@ -244,10 +261,18 @@ export function dedupeRegionDetections(
       const kTag = (k.assetTag ?? "").toUpperCase().trim();
       const kType = (k.assetType ?? "").toLowerCase();
       const sameTag = tag !== "" && kTag !== "" && tag === kTag;
-      // Untagged detections can only be matched by type, so require a tight box.
-      const sameUntaggedType = tag === "" && kTag === "" && type !== "" && type === kType;
+      // Untagged: fuzzy type match + looser IoU (0.7× threshold)
+      // because dense instrument clusters are tight and type names drift
+      // slightly between region passes.
+      const sameUntaggedType =
+        tag === "" && kTag === "" &&
+        type !== "" && kType !== "" &&
+        typesOverlap(type, kType);
       if (!sameTag && !sameUntaggedType) return false;
-      return bboxIou1000(k.bbox, d.bbox) > iouThreshold;
+      const effectiveThreshold = sameUntaggedType && !sameTag
+        ? iouThreshold * 0.7
+        : iouThreshold;
+      return bboxIou1000(k.bbox, d.bbox) > effectiveThreshold;
     });
 
     if (dupIdx === -1) {
@@ -363,12 +388,28 @@ async function collectRawDetections(
         () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
         { label: `detection page ${input.page} catch-up` },
       );
+      // Pre-filter: skip catch-up detections already covered by a region pass.
+      // Avoids O(n²) bloat in dedupeRegionDetections for dense pages and
+      // prevents the same symbol entering the DB as two rows when dedupe
+      // misses a near-duplicate (e.g. slightly different bbox from full-page
+      // vs region coordinate systems).
+      let catchupNew = 0;
       for (const d of raw.detections) {
+        const tag = (d.assetTag ?? '').toUpperCase().trim();
+        const covered = collected.some((e) => {
+          if (tag !== '' && tag === (e.assetTag ?? '').toUpperCase().trim()) return true;
+          return bboxIou1000(e.bbox, d.bbox) > regionsCfg.dedupeIou;
+        });
+        if (covered) continue;
+        catchupNew++;
         collected.push({
           ...d,
           evidence: [...(d.evidence ?? []), "Full-page catch-up pass"],
         });
       }
+      console.log(
+        `[detection] page ${input.page} catch-up: ${raw.detections.length} raw, ${catchupNew} new`,
+      );
     } catch (e: unknown) {
       console.warn(
         `[detection] page ${input.page} catch-up failed (non-fatal): ${
@@ -556,6 +597,38 @@ async function resolveDetections(
         : validation.resolvedAssetType;
     const finalConfidence = validation.confidence;
 
+    // Fix #7: Legend quality feedback.
+    // When detection resolves to UNKNOWN and a legend is selected, log a miss
+    // to legend_symbols.quality_reasons so users can see which legend crops
+    // are failing to match. Fire-and-forget — never blocks detection.
+    if (validation.source === "UNKNOWN" && imageHash && input.legendId && input.legendSymbols.length > 0) {
+      const firstWord = (d.assetType ?? '').split(' ')[0];
+      const missEntry = JSON.stringify([{
+        reason: 'detection_miss',
+        assetType: d.assetType,
+        tag: d.assetTag ?? null,
+        confidence: d.confidence,
+        ts: new Date().toISOString(),
+      }]);
+      setImmediate(async () => {
+        try {
+          const { default: dbPool } = await import('@/lib/db');
+          await dbPool.query(
+            `UPDATE legend_symbols
+                SET quality_reasons = COALESCE(quality_reasons, '[]'::jsonb) || $1::jsonb
+              WHERE legend_id = $2
+                AND asset_type ILIKE $3
+                AND crop_file IS NOT NULL
+                AND quality_status IS DISTINCT FROM 'rejected'
+              LIMIT 1`,
+            [missEntry, input.legendId, `%${firstWord}%`],
+          );
+        } catch {
+          // silent — logging failure must never break detection
+        }
+      });
+    }
+
     // F5: Compute validation_status
     const ruleText = validation.ruleApplied ?? "";
     const hasConflict =
@@ -687,7 +760,86 @@ async function resolveDetections(
   }
 
   // Step 3: Calibrate confidence
-  return calibrateConfidence(resolvedDetections, det);
+  const calibrated = calibrateConfidence(resolvedDetections, det);
+
+  // Step 4 (opt-in): Gemini verifier for NEEDS_REVIEW band detections.
+  // Only runs when det.enableVerifier === true (default: false).
+  // Conservative budget: max 5 calls per page to protect free-tier quota.
+  if (det.enableVerifier && input.pageImageBase64 && input.pngWidth && input.pngHeight) {
+    const { createVerifierSession } = await import('@/lib/detection/ai/verifier');
+    const session = createVerifierSession({ maxCallsPerPage: 5 });
+    const legendLabels = input.legendSymbols.slice(0, 20).map((s) => ({
+      symbolId: s.id,
+      label: s.symbol_name ?? s.asset_type,
+    }));
+
+    for (const resolved of calibrated) {
+      if (resolved.validation_status !== 'NEEDS_REVIEW') continue;
+      if (resolved.confidence < det.reviewThreshold) continue; // LOW band — skip
+
+      try {
+        const cropBase64 = await cropPageRegion(
+          input.pageImageBase64,
+          adaptiveExpandBBox(resolved.bbox),
+          input.pngWidth,
+          input.pngHeight,
+          0.0,
+        );
+        if (!cropBase64) continue;
+
+        const cropHash = resolved.image_hash ?? hashImage(cropBase64);
+        const result = await session.verify({
+          candidateId: resolved.assetTag ?? resolved.assetType ?? 'unknown',
+          pageId: String(input.page),
+          deterministic: {
+            confidence: resolved.confidence,
+            decisionBand: 'REVIEW',
+            topLabel: resolved.assetType,
+            topSymbolId: null,
+            margin: 0,
+            reasons: resolved.evidence ?? [],
+            configVersion: 'gemini-vision-only',
+          },
+          ocr: { rawText: null, normalizedText: null, isTag: null },
+          selectedLegend: {
+            legendId: input.legendId,
+            version: '1',
+            labels: legendLabels,
+          },
+          crops: {
+            candidateCropB64: cropBase64,
+            contextCropB64: cropBase64,
+            cropHash,
+          },
+        });
+
+        if (result.gemini.status === 'success' && result.gemini.verdict) {
+          if (result.gemini.verdict === 'CORRECT' && result.gemini.suggestedLabel) {
+            resolved.resolved_asset_name = result.gemini.suggestedLabel;
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier: ${result.gemini.explanation ?? result.gemini.verdict}`,
+            ];
+          } else if (result.gemini.verdict === 'CONFIRM') {
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier confirmed: ${result.gemini.explanation ?? 'CONFIRM'}`,
+            ];
+          } else if (result.gemini.verdict === 'NO_SYMBOL') {
+            // Symbol visually not present — annotate for human review, no auto-reject.
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier: symbol not visible — ${result.gemini.explanation ?? 'NO_SYMBOL'}`,
+            ];
+          }
+        }
+      } catch {
+        // verifier failure must never break detection
+      }
+    }
+  }
+
+  return calibrated;
 }
 
 async function runWithGemini(

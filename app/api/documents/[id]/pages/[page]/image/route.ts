@@ -32,12 +32,20 @@ export async function GET(
   }
 
   try {
-    const doc = await db.query('SELECT file_path, page_count FROM documents WHERE id=$1', [id]);
+    const doc = await db.query('SELECT file_path, page_count, file_type FROM documents WHERE id=$1', [id]);
     if (doc.rows.length === 0) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
-    const { file_path, page_count } = doc.rows[0];
+    const { file_path, page_count, file_type } = doc.rows[0];
+
+    // DXF documents don't have rendered page images
+    if (file_type === 'dxf') {
+      return NextResponse.json(
+        { error: 'DXF documents do not have page images. Use the DXF viewer instead.' },
+        { status: 422 }
+      );
+    }
 
     if (page_count !== null && pageNumber > page_count) {
       return NextResponse.json(

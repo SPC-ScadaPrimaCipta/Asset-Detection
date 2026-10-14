@@ -1,0 +1,29 @@
+# Python CV Service — requirements
+# Generated for Python 3.13
+# Install: pip install -r services/cv/requirements.txt
+
+fastapi==0.139.0
+uvicorn[standard]==0.34.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# Computer Vision
+opencv-python-headless==5.0.0.93
+numpy==2.4.6
+
+# ONNX Runtime (YOLO inference — CPU)
+onnxruntime==1.27.0
+
+# OCR
+pytesseract==0.3.13
+easyocr==1.7.2
+
+# Image processing
+pillow==12.3.0
+
+# HTTP client (for health checks between services)
+httpx==0.28.1
+
+# Utilities
+scipy==1.18.0
+shapely==2.1.2

@@ -15,7 +15,8 @@
     "seed:standards": "tsx --env-file=.env.local scripts/seed-standards.ts",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "cleanup": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register scripts/cleanup-storage.ts"
+    "cleanup": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register scripts/cleanup-storage.ts",
+    "benchmark": "tsx --env-file=.env.local scripts/benchmark-gemini.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -24,6 +25,7 @@
     "@types/uuid": "^10.0.0",
     "bullmq": "^6.3.6",
     "dotenv": "16.4.5",
+    "dxf-parser": "^1.1.2",
     "exceljs": "^4.4.0",
     "ioredis": "^6.0.0",
     "lucide-react": "^1.45.0",

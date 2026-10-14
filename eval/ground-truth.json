@@ -1,0 +1,13 @@
+{
+  "_instructions": "Fill in 'document' (exact filename as uploaded), 'page' number, and manually annotated assets. Run: npm run benchmark",
+  "document": "YOUR_DOCUMENT_FILENAME.pdf",
+  "page": 1,
+  "assets": [
+    {
+      "_comment": "Example entry — replace with real assets from your P&ID. bbox is optional (null = match by tag only).",
+      "assetTag": "TAG-001",
+      "assetType": "Pump",
+      "bbox": null
+    }
+  ]
+}

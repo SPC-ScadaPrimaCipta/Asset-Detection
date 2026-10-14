@@ -21,6 +21,8 @@ import {
   getEffectiveGeo2Config,
 } from "@/lib/detection/yolo/yolo-geo2-config";
 import { runHybridPipeline } from "@/lib/detection/hybrid-pipeline";
+import { runDxfDetection } from "@/lib/dxf-detection";
+import type { LegendSymbolRef } from "@/lib/dxf-detection";
 
 /**
  * Detection worker — 100% Gemini Vision, per page.
@@ -139,6 +141,103 @@ export const worker = new Worker(
 
       const buf = (await getFile(doc.file_path)) as unknown as Buffer;
       const pageCount: number = doc.page_count ?? 1;
+
+      // ── DXF fast path ────────────────────────────────────────────────────
+      // DXF documents skip PDF render + Gemini Vision entirely.
+      // Entities were pre-parsed at upload time (stored in dxf_entities),
+      // but we re-parse from the raw file here for accuracy.
+      if (doc.file_type === 'dxf') {
+        log("dxf pipeline start", { documentId: doc.id });
+        const tuningForDxf = await getTuning();
+
+        // Build legend symbol refs for DXF block matching
+        const dxfLegendSymbols: LegendSymbolRef[] = effectiveLegendIds.length > 0
+          ? ((await db.query(
+              "SELECT id, asset_type, symbol_name, tag_pattern, aliases FROM legend_symbols WHERE legend_id = ANY($1::uuid[]) AND status='ACTIVE'",
+              [`{${effectiveLegendIds.join(",")}}`],
+            )).rows as LegendSymbolRef[])
+          : [];
+
+        let dxfResult: Awaited<ReturnType<typeof runDxfDetection>>;
+        try {
+          dxfResult = runDxfDetection(buf, dxfLegendSymbols);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await db.query(
+            "UPDATE detection_jobs SET status='FAILED', error_detail=$1, completed_at=NOW() WHERE id=$2",
+            [msg.slice(0, 500), jobId]
+          );
+          log("dxf parse failed", { error: msg.slice(0, 200) });
+          return { jobId, status: "FAILED" };
+        }
+
+        log("dxf parse done", {
+          entities: dxfResult.parseStats.totalEntities,
+          inserts: dxfResult.parseStats.insertCount,
+          detections: dxfResult.detections.length,
+        });
+
+        // Get document_page_id for page 1
+        const pageRow = (await db.query(
+          "SELECT id FROM document_pages WHERE document_id=$1 AND page_number=1",
+          [doc.id]
+        )).rows[0] as { id: string } | undefined;
+        const documentPageId = pageRow?.id ?? null;
+
+        // Delete previous detections for this job (re-run safety)
+        await db.query("DELETE FROM detections WHERE job_id=$1", [jobId]);
+
+        // Persist DXF detections
+        const NULL_THR = tuningForDxf.detection.nullFieldConfidenceThreshold;
+        const dxfInserts: Array<unknown[]> = [];
+        for (const det of dxfResult.detections) {
+          dxfInserts.push([
+            uuidv4(),
+            jobId,
+            doc.id,
+            documentPageId,
+            det.confidence >= NULL_THR ? (det.assetTag ?? null) : null,
+            det.assetType,
+            det.confidence,
+            det.bbox.x,
+            det.bbox.y,
+            det.bbox.width,
+            det.bbox.height,
+            JSON.stringify(det.evidence),
+            'DETECTED',
+            'PENDING',
+            'DXF',
+            1, // pid_page = 1 for DXF
+            effectiveLegendId ?? null,
+          ]);
+        }
+
+        if (dxfInserts.length > 0) {
+          for (const row of dxfInserts) {
+            await db.query(
+              `INSERT INTO detections
+                 (id, job_id, document_id, document_page_id,
+                  asset_tag, asset_type, confidence,
+                  bbox_x, bbox_y, bbox_w, bbox_h,
+                  evidence, detection_status, review_status,
+                  detection_source, pid_page, legend_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+              row
+            );
+          }
+        }
+
+        await db.query(
+          `UPDATE detection_jobs
+              SET status='COMPLETED', progress_pct=100, completed_at=NOW()
+            WHERE id=$1`,
+          [jobId]
+        );
+
+        log("dxf pipeline done", { detections: dxfInserts.length });
+        return { jobId, status: "COMPLETED", dxf: true, detections: dxfInserts.length };
+      }
+      // ── End DXF fast path ────────────────────────────────────────────────
 
       // Resolve tuning once per job, before any page work.
       const tuning = await getTuning();
@@ -267,6 +366,16 @@ export const worker = new Worker(
       // NOTE: DB inserts are safe to run concurrently — each page writes independent rows.
       async function processOnePage(page: number): Promise<number> {
         const pageStart = Date.now();
+
+        // Non-P&ID page filter: skip cover (page 1) and revision history (last
+        // page) in documents with more than 3 pages. Opt-in via tuning so small
+        // or non-standard docs are unaffected.
+        if (tuning.detection.skipNonPidPages && pageCount > 3) {
+          if (page === 1 || page === pageCount) {
+            log(`page ${page} skipped (likely non-P&ID: ${page === 1 ? "cover/title" : "revision history"})`);
+            return 0;
+          }
+        }
 
         let pageImageBase64: string;
         let pngBuffer: Buffer;

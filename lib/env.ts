@@ -121,6 +121,10 @@ const envSchema = z.object({
   // Full-page pass after the region sweep, to catch symbols the grid split
   // awkwardly. Set to false to skip it (saves one call per page).
   DETECTION_REGION_CATCHUP: z.enum(['true', 'false']).default('true'),
+  // Skip likely non-P&ID pages (cover/title page 1, revision history last page)
+  // in multi-page documents. Safe default: false (opt-in). Enable when documents
+  // consistently have cover/revision pages that produce false positives.
+  DETECTION_SKIP_NON_PID_PAGES: z.enum(['true', 'false']).default('false'),
   // Two detections merge when same tag (or same type when untagged) AND IoU
   // exceeds this. Higher = stricter = keeps more near-duplicates.
   DETECTION_REGION_DEDUPE_IOU: z.coerce.number().min(0).max(1).default(0.3),

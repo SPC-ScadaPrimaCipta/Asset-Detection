@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { buildAssetRegisterWorkbook, ExportAsset } from "@/lib/excel-export";
+import { getTuning } from "@/lib/tuning";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -63,7 +64,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       bboxH: a.bbox_h as number | null,
     }));
 
-    const buf = await buildAssetRegisterWorkbook(exportAssets, legendName, { includeReviewItems: includeReview });
+    const tuning = await getTuning();
+    const thresholds = { review: tuning.detection.reviewThreshold };
+    const buf = await buildAssetRegisterWorkbook(exportAssets, legendName, { includeReviewItems: includeReview, thresholds });
     const filename = `Asset-Register-${(doc.filename as string).replace(/\.pdf$/i, "")}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
     return new NextResponse(buf as unknown as BodyInit, {

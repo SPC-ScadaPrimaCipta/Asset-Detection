@@ -205,6 +205,17 @@ async function migrate() {
       console.warn('  007 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 008: DXF document support (file_type + dxf_entities).
+    try {
+      const dxfsql = join(__dirname, '..', 'sql', 'migrate-008-dxf-support.sql');
+      if (existsSync(dxfsql)) {
+        await p.query(readFileSync(dxfsql, 'utf-8'));
+        console.log('  008-dxf: documents.file_type + document_pages.dxf_entities OK');
+      }
+    } catch (e) {
+      console.warn('  008-dxf migration warning (non-fatal):', e.message);
+    }
+
     // Migration 008: legend review decision reason (Stage 3.5).
     // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
     try {
