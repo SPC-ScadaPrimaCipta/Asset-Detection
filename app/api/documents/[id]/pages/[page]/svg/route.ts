@@ -57,7 +57,7 @@ export async function GET(
 
     // Disk cache: render once, serve from cache on subsequent requests.
     // Version suffix ensures old v1 renders are not served after renderer upgrade.
-    const RENDERER_VERSION = 'v2';
+    const RENDERER_VERSION = 'v3';
     const cacheName = `dxf-svg-${id}-p${pageNumber}-${RENDERER_VERSION}.svg`;
     try {
       if (await fileExists(cacheName)) {
