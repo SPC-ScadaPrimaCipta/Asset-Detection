@@ -33,7 +33,12 @@ export async function POST(request: NextRequest) {
 
     // Try dxf-parser directly
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const DxfParser = require('dxf-parser');
+    const DxfParserModule = require('dxf-parser');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const DxfParser: any =
+      typeof DxfParserModule === 'function'
+        ? DxfParserModule
+        : DxfParserModule?.default ?? DxfParserModule?.DxfParser ?? DxfParserModule;
     const parser = new DxfParser();
 
     let parseResult: { ok: boolean; entities?: number; error?: string } = { ok: false };

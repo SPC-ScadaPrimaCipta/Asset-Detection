@@ -9,8 +9,28 @@ import React, {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { Lightning, CheckCircle, XCircle, PencilSimple, FloppyDisk, FileXls, PlusCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
 import { LegendSelector } from '../../components/ui/LegendSelector';
+
+const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
+  ssr: false,
+  loading: () => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '520px',
+        background: '#161719',
+        color: '#9ca3af',
+        fontSize: '13px',
+      }}
+    >
+      Memuat WebGL CAD Viewer...
+    </div>
+  ),
+});
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -878,65 +898,16 @@ function PidViewer({
   }, [selectedId, page, documentId, drawMode]);
 
   const isDxf = fileType === 'dxf';
+  const dxfRawUrl = documentId && isDxf ? `/api/documents/${documentId}/raw` : null;
 
-  // For DXF: load SVG from /api/documents/[id]/pages/[page]/svg
-  const [dxfSvgUrl, setDxfSvgUrl] = useState<string | null>(null);
-  const [dxfSvgLoading, setDxfSvgLoading] = useState(false);
-  const [dxfSvgError, setDxfSvgError] = useState(false);
-  // Revoke previous blob URL on cleanup
-  const dxfBlobUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!isDxf || !documentId) {
-      setDxfSvgUrl(null);
-      setDxfSvgLoading(false);
-      setDxfSvgError(false);
-      return;
-    }
-    setDxfSvgLoading(true);
-    setDxfSvgError(false);
-    setDxfSvgUrl(null);
-    setImgNatural(null);
-
-    fetch(`/api/documents/${documentId}/pages/${page}/svg`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`SVG fetch ${r.status}`);
-        return r.blob();
-      })
-      .then((blob) => {
-        // Revoke previous blob URL
-        if (dxfBlobUrlRef.current) URL.revokeObjectURL(dxfBlobUrlRef.current);
-        const url = URL.createObjectURL(blob);
-        dxfBlobUrlRef.current = url;
-        setDxfSvgUrl(url);
-        setDxfSvgLoading(false);
-      })
-      .catch(() => {
-        setDxfSvgLoading(false);
-        setDxfSvgError(true);
-      });
-
-    return () => {
-      // Revoke on unmount / re-run
-      if (dxfBlobUrlRef.current) {
-        URL.revokeObjectURL(dxfBlobUrlRef.current);
-        dxfBlobUrlRef.current = null;
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDxf, documentId, page]);
-
-  // For PDF: direct image URL. For DXF: use blob URL from above.
-  const imgSrc = documentId
-    ? isDxf
-      ? dxfSvgUrl
-      : `/api/documents/${documentId}/pages/${page}/image`
+  // For PDF: direct image URL. For DXF: handled by WebGL DxfViewer component.
+  const imgSrc = documentId && !isDxf
+    ? `/api/documents/${documentId}/pages/${page}/image`
     : null;
 
   // Reset image state on page or document change
   useEffect(() => {
     if (isDxf) {
-      // DXF image loading managed by the useEffect above
       setImgLoading(false);
       setImgError(false);
     } else {
@@ -1251,63 +1222,72 @@ function PidViewer({
           </>
         )}
 
-        {/* Zoom Extents */}
-        <button onClick={zoomExtents} style={cadToolBtn} title="Zoom Extents (fit to view)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
-          </svg>
-          Extents
-        </button>
+        {isDxf ? (
+          <span style={{ fontSize: "11px", color: "#60a5fa", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6", display: "inline-block" }} />
+            AutoCAD WebGL Mode
+          </span>
+        ) : (
+          <>
+            {/* Zoom Extents */}
+            <button onClick={zoomExtents} style={cadToolBtn} title="Zoom Extents (fit to view)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+              </svg>
+              Extents
+            </button>
 
-        {/* Zoom controls */}
-        <button
-          onClick={() => setZoom((z) => Math.max(0.15, +(z - 0.2).toFixed(2)))}
-          style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
-          title="Zoom out"
-        >−</button>
-        <span style={{ fontSize: "11px", color: "#aaa", fontFamily: "ui-monospace,monospace", minWidth: 42, textAlign: "center" }}>
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          onClick={() => setZoom((z) => Math.min(10, +(z + 0.2).toFixed(2)))}
-          style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
-          title="Zoom in"
-        >+</button>
+            {/* Zoom controls */}
+            <button
+              onClick={() => setZoom((z) => Math.max(0.15, +(z - 0.2).toFixed(2)))}
+              style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
+              title="Zoom out"
+            >−</button>
+            <span style={{ fontSize: "11px", color: "#aaa", fontFamily: "ui-monospace,monospace", minWidth: 42, textAlign: "center" }}>
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom((z) => Math.min(10, +(z + 0.2).toFixed(2)))}
+              style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
+              title="Zoom in"
+            >+</button>
 
-        <div style={cadSep} />
+            <div style={cadSep} />
 
-        {/* Grid toggle */}
-        <button
-          onClick={() => setShowGrid((g) => !g)}
-          style={showGrid ? cadToolBtnActive : cadToolBtn}
-          title="Toggle CAD grid"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
-          </svg>
-          Grid
-        </button>
+            {/* Grid toggle */}
+            <button
+              onClick={() => setShowGrid((g) => !g)}
+              style={showGrid ? cadToolBtnActive : cadToolBtn}
+              title="Toggle CAD grid"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+              </svg>
+              Grid
+            </button>
 
-        {/* Rotate */}
-        <button
-          onClick={rotate}
-          style={rotation > 0 ? cadToolBtnActive : cadToolBtn}
-          title="Rotate 90°"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-          </svg>
-          {rotation > 0 ? `${rotation}°` : "Rotate"}
-        </button>
+            {/* Rotate */}
+            <button
+              onClick={rotate}
+              style={rotation > 0 ? cadToolBtnActive : cadToolBtn}
+              title="Rotate 90°"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              {rotation > 0 ? `${rotation}°` : "Rotate"}
+            </button>
 
-        {/* Reset */}
-        <button onClick={resetView} style={cadToolBtn} title="Reset view (zoom/pan/rotation)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 1018 0 9 9 0 00-18 0"/>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3"/>
-          </svg>
-          Reset
-        </button>
+            {/* Reset */}
+            <button onClick={resetView} style={cadToolBtn} title="Reset view (zoom/pan/rotation)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 1018 0 9 9 0 00-18 0"/>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3"/>
+              </svg>
+              Reset
+            </button>
+          </>
+        )}
 
         <div style={cadSep} />
 
@@ -1368,132 +1348,21 @@ function PidViewer({
           </button>
         </div>
       </div>
-        <button
-          onClick={rotate}
-          title="Rotate 90°"
-          style={{
-            ...toolButtonStyle,
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-        >
-          <svg
-            style={{ width: 14, height: 14 }}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Rotate{rotation > 0 ? ` (${rotation}°)` : ""}
-        </button>
-
-        {/* Reset */}
-        <button onClick={resetView} title="Reset view" style={toolButtonStyle}>
-          Reset
-        </button>
-
-        {/* Show All toggle */}
-        {onShowAllChange && (
-          <button
-            onClick={() => onShowAllChange(!showAll)}
-            title={showAll ? "Show selected only" : "Show all bounding boxes"}
-            style={{
-              ...toolButtonStyle,
-              background: showAll ? "var(--primary)" : "var(--surface)",
-              color: showAll ? "var(--surface)" : "var(--foreground-muted)",
-              border: showAll ? "1px solid var(--primary)" : "1px solid var(--border)",
-              fontWeight: showAll ? "600" : "500",
-            }}
-          >
-            {showAll ? "⊞ All" : "⊞ Show All"}
-          </button>
-        )}
-
-        {/* Phase 5/legend-style: autosave saat mouseup — indikator sukses */}
-        {bboxSavedFlash && selectedId && (
-          <span style={{ fontSize: "11px", color: "var(--success)", fontWeight: "600" }}>
-            ✓ BBox saved
-          </span>
-        )}
-        {drawMode && (
-          <span style={{ fontSize: "11px", color: "var(--info)", fontWeight: "600" }}>
-            ⊞ Draw mode — drag di gambar untuk buat kotak (Esc batal)
-          </span>
-        )}
-        {(selectedId || drawMode) && rotation !== 0 && (
-          <span style={{ fontSize: "11px", color: "var(--warning)" }}>
-            Reset rotation ke 0° untuk edit bbox
-          </span>
-        )}
-
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-            {showAll
-              ? `Showing all: ${visible.length} bbox`
-              : visible.length > 0
-                ? `Showing: ${(visible[0].asset_tag ?? visible[0].asset_type).slice(0, 24)}`
-                : "Bbox hidden — select an asset or Show All"}
-          </span>
-          {/* Fullscreen toggle */}
-          <button
-            onClick={() => setFullscreen((f) => !f)}
-            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
-            style={{
-              ...toolButtonStyle,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            {fullscreen ? (
-              <svg
-                style={{ width: 14, height: 14 }}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            ) : (
-              <svg
-                style={{ width: 14, height: 14 }}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                />
-              </svg>
-            )}
-            {fullscreen ? "Exit" : "Fullscreen"}
-          </button>
-        </div>
-      </div>
 
       {/* Viewer area */}
+      {isDxf && dxfRawUrl ? (
+        <DxfViewer
+          url={dxfRawUrl}
+          detections={detections}
+          selectedId={selectedId}
+          onSelectAsset={onSelect}
+          showAll={showAll}
+          style={{
+            minHeight: fullscreen ? "calc(100vh - 80px)" : 600,
+            flex: 1,
+          }}
+        />
+      ) : (
       <div
         style={{
           position: "relative",
@@ -1552,19 +1421,15 @@ function PidViewer({
                   alt={`P&ID page ${page}`}
                   onLoad={(e) => {
                     const img = e.currentTarget;
-                    // SVG loaded via blob URL may report naturalWidth/Height=0 in some browsers.
-                    // Fall back to the SVG viewBox size (2000×2000) for DXF.
-                    const w = img.naturalWidth || (isDxf ? 2000 : img.naturalWidth);
-                    const h = img.naturalHeight || (isDxf ? 2000 : img.naturalHeight);
+                    const w = img.naturalWidth  || img.width  || 2400;
+                    const h = img.naturalHeight || img.height || 1600;
                     setImgNatural({ w, h });
                     setImgLoading(false);
                     setImgError(false);
-                    if (isDxf) setDxfSvgLoading(false);
                   }}
                   onError={() => {
                     setImgLoading(false);
                     setImgError(true);
-                    if (isDxf) { setDxfSvgLoading(false); setDxfSvgError(true); }
                   }}
                   style={{
                     display: "block",
@@ -1572,7 +1437,7 @@ function PidViewer({
                     height: "auto",
                     maxWidth: fullscreen ? "88vw" : "100%",
                     maxHeight: fullscreen ? "calc(100vh - 200px)" : "560px",
-                    opacity: (isDxf ? dxfSvgLoading : imgLoading) ? 0 : 1,
+                    opacity: imgLoading ? 0 : 1,
                     transition: "opacity 0.2s ease",
                   }}
                   draggable={false}
@@ -1759,8 +1624,8 @@ function PidViewer({
               </div>
             )}
 
-            {/* Loading — PDF or DXF SVG */}
-            {(imgLoading || dxfSvgLoading) && (
+            {/* Loading — PDF */}
+            {imgLoading && (
               <div
                 style={{
                   position: "absolute",
@@ -1801,14 +1666,14 @@ function PidViewer({
                     />
                   </svg>
                   <p style={{ fontSize: 12 }}>
-                    {isDxf ? "Rendering DXF vector…" : `Rendering page ${page}…`}
+                    {`Rendering page ${page}…`}
                   </p>
                 </div>
               </div>
             )}
 
             {/* Error / empty */}
-            {((imgError || dxfSvgError) || !imgSrc) && !imgLoading && !dxfSvgLoading && (
+            {(imgError || !imgSrc) && !imgLoading && (
               <div
                 style={{
                   position: "absolute",
@@ -1838,14 +1703,10 @@ function PidViewer({
                     />
                   </svg>
                   <p style={{ fontSize: 13 }}>
-                    {imgError || dxfSvgError
-                      ? isDxf ? "Failed to render DXF" : "Failed to load page"
-                      : "Select document to view"}
+                    {imgError ? "Failed to load page" : "Select document to view"}
                   </p>
                   <p style={{ fontSize: 11, marginTop: 4 }}>
-                    {imgError || dxfSvgError
-                      ? "Check server logs"
-                      : "Run detection to see bounding boxes"}
+                    {imgError ? "Check server logs" : "Run detection to see bounding boxes"}
                   </p>
                 </div>
               </div>
@@ -1853,6 +1714,7 @@ function PidViewer({
           </div>
         </div>
       </div>
+      )}
 
       {/* Legend bar */}
       <div

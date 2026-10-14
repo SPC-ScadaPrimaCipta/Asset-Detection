@@ -11,10 +11,15 @@
  * using the page extents computed here.
  */
 
-// dxf-parser exports the constructor as the module default (not a named export).
-// `require('dxf-parser')` returns the constructor function directly.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const DxfParser = require('dxf-parser');
+import DxfParserModule from 'dxf-parser';
+
+// Resolve constructor across Next.js ESM/Turbopack bundling, tsx, and Node CommonJS.
+// In Next.js Turbopack/Webpack, require() or import may yield an ES namespace object { default: [Function: DxfParser] }.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const DxfParser: any =
+  typeof DxfParserModule === 'function'
+    ? DxfParserModule
+    : (DxfParserModule as any)?.default ?? (DxfParserModule as any)?.DxfParser ?? DxfParserModule;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +87,9 @@ export interface DxfParseResult {
   extents: DxfPageExtents;
   /** Block definitions (name → list of sub-entities) */
   blockNames: string[];
+  /** Raw block definitions for geometry expansion in renderer */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  blocks: Record<string, any>;
   /** Raw DXF header variables useful for units conversion */
   units: number; // $INSUNITS DXF code: 0=unitless, 4=mm, 6=m, etc.
 }
@@ -161,7 +169,10 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
 
   for (const enc of encodings) {
     try {
-      const text = buffer.toString(enc);
+      let text = buffer.toString(enc);
+      if (enc === 'utf-8') {
+        text = text.replace(/^\uFEFF/, '');
+      }
       dxf = parser.parseSync(text);
       break;
     } catch (e) {
@@ -179,6 +190,8 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
 
   const entities: DxfEntity[] = [];
   const layerSet = new Set<string>();
+  // Two-pass: first collect all entities, then compute clean extents
+  // filtering out degenerate origin-area artifacts.
   const ext = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 
   // ── Process entities ────────────────────────────────────────────────────────
@@ -192,7 +205,6 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
 
     if (type === 'INSERT') {
       const pos = pt(e.position as { x?: number; y?: number });
-      expandExtents(ext, pos.x, pos.y);
 
       // Collect ATTRIB children if present
       const attrs: DxfInsertEntity['attributes'] = [];
@@ -218,7 +230,6 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
       });
     } else if (type === 'TEXT' || type === 'MTEXT') {
       const pos = pt((e.position ?? e.insertionPoint) as { x?: number; y?: number });
-      expandExtents(ext, pos.x, pos.y);
       const rawText = String(e.text ?? e.string ?? '').trim();
       if (rawText) {
         entities.push({
@@ -232,13 +243,12 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
     } else if (type === 'LINE') {
       const start = pt(e.start as { x?: number; y?: number });
       const end = pt(e.end as { x?: number; y?: number });
-      expandExtents(ext, start.x, start.y);
-      expandExtents(ext, end.x, end.y);
+      // Skip degenerate zero-length lines
+      if (Math.hypot(start.x - end.x, start.y - end.y) < 0.0001) continue;
       entities.push({ kind: 'LINE', start, end, layer });
     } else if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
       const verts = (e.vertices as Array<{ x?: number; y?: number }> | undefined) ?? [];
       const pts: DxfPoint[] = verts.map(pt);
-      pts.forEach((p) => expandExtents(ext, p.x, p.y));
       if (pts.length >= 2) {
         entities.push({
           kind: 'LWPOLYLINE',
@@ -246,6 +256,47 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
           layer,
           closed: Boolean(e.closed ?? false),
         });
+      }
+    }
+  }
+
+  // ── Compute extents (origin-artifact-resistant) ──────────────────────────────
+  // Collect candidate bounds from all entities, then reject outliers that are
+  // far (>10x median distance) from the drawing centroid. This removes stray
+  // lines/inserts at (0,0) that are artefacts of CAD templates.
+  type Pt = { x: number; y: number };
+  const allPts: Pt[] = [];
+  for (const entity of entities) {
+    if (entity.kind === 'LINE') {
+      allPts.push(entity.start, entity.end);
+    } else if (entity.kind === 'LWPOLYLINE') {
+      allPts.push(...entity.vertices);
+    } else if (entity.kind === 'INSERT' || entity.kind === 'TEXT' || entity.kind === 'MTEXT') {
+      allPts.push(entity.position);
+    }
+  }
+
+  if (allPts.length > 0) {
+    // Compute median centroid (robust to outliers)
+    const xs = allPts.map((p) => p.x).sort((a, b) => a - b);
+    const ys = allPts.map((p) => p.y).sort((a, b) => a - b);
+    const medX = xs[Math.floor(xs.length / 2)];
+    const medY = ys[Math.floor(ys.length / 2)];
+
+    // Compute median deviation in each axis
+    const dxs = allPts.map((p) => Math.abs(p.x - medX)).sort((a, b) => a - b);
+    const dys = allPts.map((p) => Math.abs(p.y - medY)).sort((a, b) => a - b);
+    const madX = dxs[Math.floor(dxs.length / 2)] || 1;
+    const madY = dys[Math.floor(dys.length / 2)] || 1;
+
+    // Reject points more than 15× MAD from median (very aggressive outlier removal)
+    const OUTLIER_FACTOR = 15;
+    for (const p of allPts) {
+      if (
+        Math.abs(p.x - medX) <= OUTLIER_FACTOR * madX &&
+        Math.abs(p.y - medY) <= OUTLIER_FACTOR * madY
+      ) {
+        expandExtents(ext, p.x, p.y);
       }
     }
   }
@@ -269,9 +320,11 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
   for (const l of layers) layerMap[l] = categoriseLayer(l);
 
   const blockNames = Object.keys(dxf?.blocks ?? {});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blocks: Record<string, any> = dxf?.blocks ?? {};
   const units = Number(dxf?.header?.$INSUNITS ?? 0);
 
-  return { entities, layers, layerMap, extents, blockNames, units };
+  return { entities, layers, layerMap, extents, blockNames, blocks, units };
 }
 
 // ── Coordinate normalisation to 0-1000 space ─────────────────────────────────
