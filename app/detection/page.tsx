@@ -1373,7 +1373,7 @@ function PidViewer({
       <div
         style={{
           position: "relative",
-          background: "var(--surface-muted)",
+          background: CAD_BG,
           overflow: "hidden",
           userSelect: "none",
           flex: 1,
@@ -1386,6 +1386,31 @@ function PidViewer({
         onMouseLeave={handleMouseUp}
         ref={viewerRef}
       >
+        {/* CAD Grid overlay — fixed to viewport, not affected by pan/zoom */}
+        {showGrid && (
+          <svg
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          >
+            <defs>
+              <pattern id="cad-grid-minor" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke={CAD_GRID_COLOR} strokeWidth="0.5"/>
+              </pattern>
+              <pattern id="cad-grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+                <rect width="100" height="100" fill="url(#cad-grid-minor)"/>
+                <path d="M 100 0 L 0 0 0 100" fill="none" stroke={CAD_GRID_MAJOR_COLOR} strokeWidth="1"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#cad-grid-major)"/>
+          </svg>
+        )}
+
         {/* Transformed container — zoom + pan, centered */}
         <div
           style={{
@@ -1499,22 +1524,7 @@ function PidViewer({
                         : (nh / 1000) * imgNatural.h;
                       const selected = d.id === selectedId;
                       const editable = isSel && rotation === 0 && !!onBboxChange;
-                      const color =
-                        d.review_status === "APPROVED"
-                          ? getComputedStyle(document.documentElement)
-                              .getPropertyValue("--success")
-                              .trim()
-                          : (d.confidence ?? 0) >= 0.95
-                            ? getComputedStyle(document.documentElement)
-                                .getPropertyValue("--info")
-                                .trim()
-                            : (d.confidence ?? 0) >= 0.8
-                              ? getComputedStyle(document.documentElement)
-                                  .getPropertyValue("--warning")
-                                  .trim()
-                              : getComputedStyle(document.documentElement)
-                                  .getPropertyValue("--danger")
-                                  .trim();
+                      const color = cadBboxColor(d);
                       const labelW = Math.max(w, 80);
                       const labelY = y > 22 ? y - 22 : y + h + 4;
                       // Handle resize 8-titik (koordinat pixel SVG)
@@ -1649,7 +1659,7 @@ function PidViewer({
                 <div
                   style={{
                     textAlign: "center",
-                    color: "var(--foreground-muted)",
+                    color: "#666",
                   }}
                 >
                   <svg
@@ -1697,7 +1707,8 @@ function PidViewer({
                 <div
                   style={{
                     textAlign: "center",
-                    color: "var(--foreground-subtle)",
+                    color: "#555",
+                    fontFamily: "ui-monospace, monospace",
                   }}
                 >
                   <svg
@@ -1730,72 +1741,47 @@ function PidViewer({
         </div>
       </div>
 
-      {/* Legend bar */}
+      {/* Legend bar — CAD dark style */}
       <div
         style={{
           display: "flex",
           gap: "16px",
           flexWrap: "wrap",
           alignItems: "center",
-          padding: "8px 16px",
-          borderTop: "1px solid var(--border)",
-          background: "var(--surface)",
+          padding: "5px 12px",
+          borderTop: `1px solid ${CAD_TOOLBAR_BORDER}`,
+          background: CAD_TOOLBAR_BG,
+          fontSize: "11px",
+          fontFamily: "ui-monospace, monospace",
+          color: "#888",
         }}
       >
-        <span style={legendItemStyle}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 12,
-              height: 2,
-              background: "var(--info)",
-              borderRadius: 1,
-            }}
-          />
-          ≥90% High
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ display: "inline-block", width: 18, height: 2, background: "#00bcd4", borderRadius: 1 }}/>
+          ≥90%
         </span>
-        <span style={legendItemStyle}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 12,
-              height: 2,
-              background: "var(--warning)",
-              borderRadius: 1,
-            }}
-          />
-          ≥70% Medium
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ display: "inline-block", width: 18, height: 2, background: "#ffd600", borderRadius: 1 }}/>
+          ≥70%
         </span>
-        <span style={legendItemStyle}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 12,
-              height: 2,
-              background: "var(--danger)",
-              borderRadius: 1,
-            }}
-          />
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ display: "inline-block", width: 18, height: 2, background: "#ff6d00", borderRadius: 1 }}/>
           Review
         </span>
-        <span style={legendItemStyle}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 12,
-              height: 2,
-              background: "var(--success)",
-              borderRadius: 1,
-            }}
-          />
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ display: "inline-block", width: 18, height: 2, background: "#00e676", borderRadius: 1 }}/>
           Confirmed
         </span>
-        <span style={{ marginLeft: "auto", color: "var(--foreground-subtle)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ display: "inline-block", width: 18, height: 2, background: "#ff5252", borderRadius: 1 }}/>
+          Rejected
+        </span>
+        <span style={{ marginLeft: "auto", color: "#555", letterSpacing: "0.02em" }}>
           {drawMode
-            ? "Draw mode: drag di gambar untuk buat kotak · Esc batal"
+            ? "DRAW MODE · drag canvas · ESC cancel"
             : showAll
-              ? "Show All aktif: klik bbox untuk pilih aset · Scroll zoom · Drag pan"
-              : "Scroll to zoom · Drag to pan · Drag bbox/handle untuk koreksi · Select asset untuk tampilkan bbox"}
+              ? `SHOW ALL · ${visible.length} bbox · scroll=zoom · drag=pan`
+              : "scroll=zoom · drag=pan · drag bbox/handle to adjust"}
         </span>
       </div>
     </>
@@ -1809,7 +1795,7 @@ function PidViewer({
           position: "fixed",
           inset: 0,
           zIndex: 50,
-          background: "var(--background)",
+          background: CAD_BG,
           display: "flex",
           flexDirection: "column",
         }}
@@ -1831,7 +1817,9 @@ function PidViewer({
   return (
     <div
       style={{
-        ...cardStyle,
+        background: CAD_BG,
+        border: `1px solid ${CAD_TOOLBAR_BORDER}`,
+        borderRadius: "var(--radius-md)",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
