@@ -1,8 +1,11 @@
 /**
- * DXF → SVG Renderer
+ * DXF → SVG Renderer — v3
  *
- * Converts parsed DXF entities into an SVG string suitable for display in the
- * P&ID viewer.
+ * Correct world-space block instance rendering:
+ *   Block entities are in block-local coordinates.
+ *   To render, each point is transformed to world space:
+ *     worldPt = INSERT.position + rotate(scale(blockPt - block.base), rotation)
+ *   Then mapped to SVG via toSvgX/toSvgY as normal world coordinates.
  *
  * Design goals (AutoCAD-like appearance):
  *   - Dark background (#1a1a1a) matching AutoCAD Model Space default
@@ -22,38 +25,35 @@
  *   Flip: svgY = (maxY - dxfY) * scale
  *
  * Output SVG: isotropic scale, preserving true aspect ratio.
+ *
+ * This is correct for ALL cases including scale=1, rotation=0 (most common in P&IDs).
+
  */
 
-import { parseDxf, type DxfParseResult, type DxfEntity } from '@/lib/dxf-parser';
+import { parseDxf, type DxfParseResult, type DxfEntity, type DxfBlockDef, type DxfPoint } from '@/lib/dxf-parser';
 
 const SVG_TARGET_WIDTH = 2400; // target SVG width in pixels
+const SVG_BASE = 2000;
 const BG_COLOR = '#1a1a1a';
 
-// ── Layer category → color (AutoCAD-inspired palette on dark background) ──────
 
-const CATEGORY_COLOR: Record<string, string> = {
-  pipe:       '#00bcd4', // cyan — process/pipe lines
-  instrument: '#ffd600', // yellow — instrument/signal
-  equipment:  '#69f0ae', // light-green — equipment/symbols
-  text:       '#ffab40', // amber — annotation/text layers
-  other:      '#b0bec5', // blue-grey — unknown/default
+const SVG_BASE = 2000;
+const BG_COLOR = '#1e1e1e';
+
+// ── AutoCAD Color Index (ACI) → RGB ──────────────────────────────────────────
+
+const ACI_COLORS: Record<number, string> = {
+  1: '#ff0000', 2: '#ffff00', 3: '#00ff00', 4: '#00ffff',
+  5: '#0000ff', 6: '#ff00ff', 7: '#ffffff', 8: '#808080', 9: '#c0c0c0',
 };
 
-// Layer-name based color: derive from category, not random hash
-function layerColor(layer: string, layerMap: Record<string, string>): string {
-  const cat = layerMap[layer] ?? 'other';
-  return CATEGORY_COLOR[cat] ?? CATEGORY_COLOR.other;
-}
-
-// ── Coordinate normalisation ──────────────────────────────────────────────────
-
-interface Scale {
-  scale: number;
-  minX: number;
-  maxY: number;
-  svgWidth: number;
-  svgHeight: number;
-}
+const CATEGORY_COLOR: Record<string, string> = {
+  pipe:       '#00bcd4',
+  instrument: '#ffd600',
+  equipment:  '#69f0ae',
+  text:       '#ffab40',
+  other:      '#b0bec5',
+};
 
 function buildScale(ext: DxfParseResult['extents']): Scale {
   const dxfWidth  = ext.maxX - ext.minX;
@@ -72,7 +72,14 @@ function sy(y: number, sc: Scale): number {
   return Math.round((sc.maxY - y) * sc.scale * 10) / 10;
 }
 
-// ── Text height ───────────────────────────────────────────────────────────────
+function resolveColor(aciColor: number, layer: string, layerMap: Record<string, string>): string {
+  if (!aciColor || aciColor === 0 || aciColor === 256) {
+    return CATEGORY_COLOR[layerMap[layer] ?? 'other'] ?? CATEGORY_COLOR.other;
+  }
+  if (ACI_COLORS[aciColor]) return ACI_COLORS[aciColor];
+  const hue = Math.round(((aciColor - 10) / 240) * 360) % 360;
+  return `hsl(${Math.max(0, hue)},90%,65%)`;
+}
 
 function textSizePx(dxfHeight: number, sc: Scale): number {
   if (dxfHeight <= 0) return 9;
@@ -80,17 +87,15 @@ function textSizePx(dxfHeight: number, sc: Scale): number {
   return Math.max(8, Math.min(22, Math.round(raw)));
 }
 
-// ── XML escaping ──────────────────────────────────────────────────────────────
-
-function escXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
-// ── SVG element builders ──────────────────────────────────────────────────────
+// ── XML escaping ──────────────────────────────────────────────────────────────
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── MTEXT strip ───────────────────────────────────────────────────────────────
 
 function buildLine(
   e: Extract<DxfEntity, { kind: 'LINE' }>,
@@ -134,113 +139,47 @@ function buildText(
   return `<text x="${px}" y="${py}" font-family="monospace,sans-serif" font-size="${fs}" fill="${col}" dominant-baseline="text-after-edge" opacity="0.9">${label}</text>`;
 }
 
-/**
- * Expand an INSERT entity into the actual geometry from its block definition.
- * Applies position, rotation, and scale transforms from the INSERT entity.
- * Falls back to a small cross marker if block has no geometry.
- */
-function buildInsert(
-  e: Extract<DxfEntity, { kind: 'INSERT' }>,
-  sc: Scale,
-  layerMap: Record<string, string>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  blocks: Record<string, any>,
-): string {
-  const col = layerColor(e.layer, layerMap);
-  const insX = e.position.x;
-  const insY = e.position.y;
-  const rot = Number(e.rotation || 0);
-  const rotRad = (rot * Math.PI) / 180;
-  const cosA = Math.cos(rotRad);
-  const sinA = Math.sin(rotRad);
-  const scaleX = Number(e.xScale ?? 1);
-  const scaleY = Number(e.yScale ?? 1);
-
-  // Transform a block-local point to DXF world coords
-  const tfDxf = (lx: number, ly: number) => {
-    const rx = (lx * cosA - ly * sinA) * scaleX;
-    const ry = (lx * sinA + ly * cosA) * scaleY;
-    return { x: insX + rx, y: insY + ry };
-  };
-
-  const blk = blocks?.[e.blockName];
-  const subEntities = blk?.entities as unknown[] | undefined;
-
-  if (Array.isArray(subEntities) && subEntities.length > 0) {
-    const parts: string[] = [];
-    for (const raw of subEntities) {
-      const sub = raw as Record<string, unknown>;
-      const subType = String(sub.type ?? '').toUpperCase();
-      // Inherit parent color if sub-entity is on layer '0' (standard CAD practice)
-      const subLayer = String(sub.layer ?? '0');
-      const subCol = (subLayer !== '0' && subLayer !== '')
-        ? layerColor(subLayer, layerMap)
-        : col;
-
-      if (subType === 'LINE') {
-        const s = sub.start as { x?: number; y?: number } | undefined;
-        const en = sub.end as { x?: number; y?: number } | undefined;
-        if (!s || !en) continue;
-        const p1 = tfDxf(s.x ?? 0, s.y ?? 0);
-        const p2 = tfDxf(en.x ?? 0, en.y ?? 0);
-        parts.push(`<line x1="${sx(p1.x, sc)}" y1="${sy(p1.y, sc)}" x2="${sx(p2.x, sc)}" y2="${sy(p2.y, sc)}" stroke="${subCol}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
-      } else if (subType === 'LWPOLYLINE' || subType === 'POLYLINE') {
-        const verts = (sub.vertices as Array<{ x?: number; y?: number }> | undefined) ?? [];
-        if (verts.length < 2) continue;
-        const pts = verts.map((v) => {
-          const p = tfDxf(v.x ?? 0, v.y ?? 0);
-          return `${sx(p.x, sc)},${sy(p.y, sc)}`;
-        });
-        const tag = (sub.closed) ? 'polygon' : 'polyline';
-        parts.push(`<${tag} points="${pts.join(' ')}" fill="none" stroke="${subCol}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
-      } else if (subType === 'CIRCLE') {
-        const c = sub.center as { x?: number; y?: number } | undefined;
-        if (!c) continue;
-        const cp = tfDxf(c.x ?? 0, c.y ?? 0);
-        const r = Math.round(Number(sub.radius ?? 1) * Math.abs(scaleX) * sc.scale * 10) / 10;
-        if (r < 0.1) continue;
-        parts.push(`<circle cx="${sx(cp.x, sc)}" cy="${sy(cp.y, sc)}" r="${r}" fill="none" stroke="${subCol}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
-      } else if (subType === 'ARC') {
-        const c = sub.center as { x?: number; y?: number } | undefined;
-        if (!c) continue;
-        const cp = tfDxf(c.x ?? 0, c.y ?? 0);
-        const r = Math.round(Number(sub.radius ?? 1) * Math.abs(scaleX) * sc.scale * 10) / 10;
-        if (r < 0.1) continue;
-        const startAngle = Number(sub.startAngle ?? 0);
-        const endAngle   = Number(sub.endAngle   ?? 360);
-        // Convert DXF arc angles (CCW from +X) to SVG path
-        const sa = ((startAngle + rot) * Math.PI) / 180;
-        const ea = ((endAngle   + rot) * Math.PI) / 180;
-        const cxSvg = sx(cp.x, sc);
-        const cySvg = sy(cp.y, sc);
-        // Note: SVG Y is flipped, so arc direction reverses
-        const x1a = cxSvg + r * Math.cos(sa);
-        const y1a = cySvg - r * Math.sin(sa); // Y flipped
-        const x2a = cxSvg + r * Math.cos(ea);
-        const y2a = cySvg - r * Math.sin(ea);
-        let diff = endAngle - startAngle;
-        if (diff < 0) diff += 360;
-        const largeArc = diff > 180 ? 1 : 0;
-        // In SVG (Y-down), CCW DXF = clockwise sweep, so sweep-flag=0
-        parts.push(`<path d="M${x1a},${y1a} A${r},${r} 0 ${largeArc},0 ${x2a},${y2a}" fill="none" stroke="${subCol}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
-      }
-    }
-    if (parts.length > 0) return parts.join('\n');
-  }
-
-  // Fallback: small cross marker at position (block has no renderable geometry)
-  const px = sx(insX, sc), py = sy(insY, sc);
-  const r = 4;
-  return [
-    `<line x1="${px - r}" y1="${py}" x2="${px + r}" y2="${py}" stroke="${col}" stroke-width="1" opacity="0.6" vector-effect="non-scaling-stroke"/>`,
-    `<line x1="${px}" y1="${py - r}" x2="${px}" y2="${py + r}" stroke="${col}" stroke-width="1" opacity="0.6" vector-effect="non-scaling-stroke"/>`,
-  ].join('\n');
+function stripMtext(raw: string): string {
+  return raw
+    .replace(/\\P/g, ' ').replace(/\\~/g, ' ')
+    .replace(/\\[A-Za-z][^;\\{}]*;/g, '').replace(/\\S[^;]+;/g, '')
+    .replace(/\\U\+[0-9A-Fa-f]{4}/g, '').replace(/[{}]/g, '').replace(/\\./g, '').trim();
 }
 
-// ── Main render function ──────────────────────────────────────────────────────
+interface VB { svgW: number; svgH: number; ext: DxfParseResult['extents'] }
+
+function toSvgX(wx: number, vb: VB): number {
+  return (wx - vb.ext.minX) / vb.ext.width * vb.svgW;
+}
+function toSvgY(wy: number, vb: VB): number {
+  return (vb.ext.maxY - wy) / vb.ext.height * vb.svgH;
+}
+function scaleW(len: number, vb: VB): number {
+  return len / vb.ext.width * vb.svgW;
+}
+function scaleH(len: number, vb: VB): number {
+  return len / vb.ext.height * vb.svgH;
+}
+
+}
+function scaleH(len: number, vb: VB): number {
+  return len / vb.ext.height * vb.svgH;
+}
+function r(n: number): number { return Math.round(n * 10) / 10; }
+
+// ── World-space block transform ───────────────────────────────────────────────
 
 /**
- * Render a DXF buffer to an SVG string.
+ * Transform a block-local point to world space.
+ *
+/**
+ * Transform a block-local point to world space.
+ *
+ * Formula:
+ *   local = pt - block.base           (subtract block base point)
+ *   scaled = { x: local.x * sx, y: local.y * sy }
+ *   rotated = rotate(scaled, rotRad)  (CCW rotation in world space)
+ *   world = INSERT.position + rotated
  *
  * The returned SVG uses a width matching the true DXF aspect ratio (target ~2400px wide).
  * For very large DXF files (>20 000 entities) lines are sampled to keep the SVG DOM size manageable.
@@ -248,6 +187,227 @@ function buildInsert(
  * Styling: dark background (#1a1a1a) with layer-category colors — matches
  * AutoCAD Model Space default appearance.
  */
+function blockPtToWorld(
+  pt: DxfPoint,
+
+ */
+function blockPtToWorld(
+  pt: DxfPoint,
+  base: DxfPoint,
+  ins: { position: DxfPoint; xScale: number; yScale: number; rotation: number },
+): DxfPoint {
+  const sx  = isFinite(ins.xScale)   && ins.xScale   ? ins.xScale   : 1;
+  const sy  = isFinite(ins.yScale)   && ins.yScale   ? ins.yScale   : 1;
+  const rot = isFinite(ins.rotation) && ins.rotation ? ins.rotation : 0;
+  const rad = (rot * Math.PI) / 180;
+
+  const lx = (pt.x - base.x) * sx;
+  const ly = (pt.y - base.y) * sy;
+
+  const cosR = Math.cos(rad);
+  const sinR = Math.sin(rad);
+
+  return {
+    x: ins.position.x + lx * cosR - ly * sinR,
+    y: ins.position.y + lx * sinR + ly * cosR,
+  };
+}
+
+/** Transform all points of a DxfEntity from block-local to world space. */
+function transformEntityToWorld(
+  e: DxfEntity,
+  base: DxfPoint,
+  ins: { position: DxfPoint; xScale: number; yScale: number; rotation: number },
+): DxfEntity {
+  const t = (p: DxfPoint) => blockPtToWorld(p, base, ins);
+
+  switch (e.kind) {
+    case 'LINE':
+      return { ...e, start: t(e.start), end: t(e.end) };
+    case 'LWPOLYLINE':
+      return { ...e, vertices: e.vertices.map(t) };
+    case 'ARC':
+    case 'CIRCLE':
+      return { ...e, center: t(e.center) };
+    case 'ELLIPSE':
+      return { ...e, center: t(e.center) };
+    case 'SPLINE':
+      return { ...e, controlPoints: e.controlPoints.map(t) };
+    case 'SOLID':
+      return { ...e, points: e.points.map(t) };
+    case 'TEXT':
+    case 'MTEXT':
+      return { ...e, position: t(e.position) };
+    default:
+      return e;
+  }
+}
+
+// ── SVG Arc path ──────────────────────────────────────────────────────────────
+
+function arcPath(cx: number, cy: number, rx: number, ry: number, startDeg: number, endDeg: number): string {
+  const sa = ((startDeg % 360) + 360) % 360;
+  const ea = ((endDeg   % 360) + 360) % 360;
+
+  let angleDiff = ea - sa;
+  if (angleDiff <= 0) angleDiff += 360;
+
+  // Full circle
+  if (Math.abs(angleDiff - 360) < 0.5) {
+    return `M ${r(cx - rx)} ${r(cy)} a ${r(rx)} ${r(ry)} 0 1 0 ${r(rx * 2)} 0 a ${r(rx)} ${r(ry)} 0 1 0 ${r(-rx * 2)} 0`;
+  }
+
+  // After Y-flip: negate angles
+  const sRad = ((-sa) * Math.PI) / 180;
+  const eRad = ((-ea) * Math.PI) / 180;
+
+  const x1 = cx + rx * Math.cos(sRad);
+  const y1 = cy + ry * Math.sin(sRad);
+  const x2 = cx + rx * Math.cos(eRad);
+  const y2 = cy + ry * Math.sin(eRad);
+
+  const largeArc = angleDiff > 180 ? 1 : 0;
+  // sweep=0 = CCW in SVG screen space = CW in DXF world (after Y-flip)
+  return `M ${r(x1)} ${r(y1)} A ${r(rx)} ${r(ry)} 0 ${largeArc} 0 ${r(x2)} ${r(y2)}`;
+}
+
+// ── SVG element builders (world-space coords via toSvgX/toSvgY) ──────────────
+
+function renderLine(e: Extract<DxfEntity, { kind: 'LINE' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  const col = resolveColor(e.color, e.layer, lm);
+  return `<line x1="${r(toSvgX(e.start.x,vb))}" y1="${r(toSvgY(e.start.y,vb))}" x2="${r(toSvgX(e.end.x,vb))}" y2="${r(toSvgY(e.end.y,vb))}" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderPolyline(e: Extract<DxfEntity, { kind: 'LWPOLYLINE' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  if (e.vertices.length < 2) return '';
+  const pts = e.vertices.map(v => `${r(toSvgX(v.x,vb))},${r(toSvgY(v.y,vb))}`).join(' ');
+  const col = resolveColor(e.color, e.layer, lm);
+  return `<${e.closed ? 'polygon' : 'polyline'} points="${pts}" fill="none" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderArc(e: Extract<DxfEntity, { kind: 'ARC' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  const cx = r(toSvgX(e.center.x, vb));
+  const cy = r(toSvgY(e.center.y, vb));
+  const rx = r(scaleW(e.radius, vb));
+  const ry = r(scaleH(e.radius, vb));
+  if (rx < 0.3 || ry < 0.3) return '';
+  const col = resolveColor(e.color, e.layer, lm);
+  return `<path d="${arcPath(cx,cy,rx,ry,e.startAngle,e.endAngle)}" fill="none" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderCircle(e: Extract<DxfEntity, { kind: 'CIRCLE' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  const cx = r(toSvgX(e.center.x, vb));
+  const cy = r(toSvgY(e.center.y, vb));
+  const rx = r(scaleW(e.radius, vb));
+  const ry = r(scaleH(e.radius, vb));
+  if (rx < 0.3 || ry < 0.3) return '';
+  const col = resolveColor(e.color, e.layer, lm);
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderEllipse(e: Extract<DxfEntity, { kind: 'ELLIPSE' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  const cx = r(toSvgX(e.center.x, vb));
+  const cy = r(toSvgY(e.center.y, vb));
+  const majorLen = Math.hypot(e.majorAxis.x, e.majorAxis.y);
+  const minorLen = majorLen * e.axisRatio;
+  const rx = r(scaleW(majorLen, vb));
+  const ry = r(scaleH(minorLen, vb));
+  if (rx < 0.3 || ry < 0.3) return '';
+  const rotDeg = r(-(Math.atan2(e.majorAxis.y, e.majorAxis.x) * 180) / Math.PI);
+  const col = resolveColor(e.color, e.layer, lm);
+  const isFullEllipse = Math.abs(e.endAngle - e.startAngle) >= Math.PI * 2 - 0.01 || (e.startAngle === 0 && e.endAngle === 0);
+  if (isFullEllipse) {
+    return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="${col}" stroke-width="${sw}" transform="rotate(${rotDeg},${cx},${cy})" vector-effect="non-scaling-stroke"/>`;
+  }
+  // Partial: sample as polyline
+  const steps = 24;
+  const cosR = Math.cos(rotDeg * Math.PI/180), sinR = Math.sin(rotDeg * Math.PI/180);
+  const pts: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = e.startAngle + (e.endAngle - e.startAngle) * (i / steps);
+    const lx = Math.cos(t) * rx, ly = -Math.sin(t) * ry;
+    pts.push(`${r(cx + lx*cosR - ly*sinR)},${r(cy + lx*sinR + ly*cosR)}`);
+  }
+  return `<polyline points="${pts.join(' ')}" fill="none" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderSpline(e: Extract<DxfEntity, { kind: 'SPLINE' }>, vb: VB, lm: Record<string,string>, sw: number): string {
+  if (e.controlPoints.length < 2) return '';
+  const col = resolveColor(e.color, e.layer, lm);
+  const pts = e.controlPoints.map(p => ({ x: toSvgX(p.x,vb), y: toSvgY(p.y,vb) }));
+  if (pts.length === 2) {
+    return `<line x1="${r(pts[0].x)}" y1="${r(pts[0].y)}" x2="${r(pts[1].x)}" y2="${r(pts[1].y)}" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+  }
+  let d = `M ${r(pts[0].x)} ${r(pts[0].y)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[Math.min(pts.length-1,i+1)], p3 = pts[Math.min(pts.length-1,i+2)];
+    const c1x = p1.x+(p2.x-p0.x)/6, c1y = p1.y+(p2.y-p0.y)/6;
+    const c2x = p2.x-(p3.x-p1.x)/6, c2y = p2.y-(p3.y-p1.y)/6;
+    d += ` C ${r(c1x)} ${r(c1y)} ${r(c2x)} ${r(c2y)} ${r(p2.x)} ${r(p2.y)}`;
+  }
+  return `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderSolid(e: Extract<DxfEntity, { kind: 'SOLID' }>, vb: VB, lm: Record<string,string>): string {
+  if (e.points.length < 3) return '';
+  const col = resolveColor(e.color, e.layer, lm);
+  const ordered = [...e.points];
+  if (ordered.length === 4) [ordered[2], ordered[3]] = [ordered[3], ordered[2]];
+  const pts = ordered.map(p => `${r(toSvgX(p.x,vb))},${r(toSvgY(p.y,vb))}`).join(' ');
+  return `<polygon points="${pts}" fill="${col}" fill-opacity="0.5" stroke="${col}" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderText(e: Extract<DxfEntity, { kind: 'TEXT'|'MTEXT' }>, vb: VB, lm: Record<string,string>): string {
+  const x = r(toSvgX(e.position.x, vb));
+  const y = r(toSvgY(e.position.y, vb));
+  const col = resolveColor(e.color, e.layer, lm);
+  const txt = (e.kind === 'MTEXT' ? stripMtext(e.text) : e.text).slice(0,80).trim();
+  if (!txt) return '';
+  let fs = 10;
+  if (e.height > 0 && vb.ext.height > 0) fs = Math.max(7, Math.min(22, Math.round(e.height / vb.ext.height * vb.svgH)));
+  return `<text x="${x}" y="${y}" font-family="Arial,monospace" font-size="${fs}" fill="${col}" dominant-baseline="text-after-edge">${esc(txt)}</text>`;
+}
+
+/** Render one entity (already in world space) to SVG string. */
+function renderEntity(e: DxfEntity, vb: VB, lm: Record<string,string>, sw: number): string {
+  switch (e.kind) {
+    case 'LINE':       return renderLine(e, vb, lm, sw);
+    case 'LWPOLYLINE': return renderPolyline(e, vb, lm, sw);
+    case 'ARC':        return renderArc(e, vb, lm, sw);
+    case 'CIRCLE':     return renderCircle(e, vb, lm, sw);
+    case 'ELLIPSE':    return renderEllipse(e, vb, lm, sw);
+    case 'SPLINE':     return renderSpline(e, vb, lm, sw);
+    case 'SOLID':      return renderSolid(e, vb, lm);
+    case 'TEXT':
+    case 'MTEXT':      return renderText(e, vb, lm);
+    default:           return '';
+  }
+}
+
+// ── INSERT dot marker (fallback when block has no geometry) ───────────────────
+
+function renderInsertMarker(
+  ins: Extract<DxfEntity, { kind: 'INSERT' }>,
+  vb: VB, lm: Record<string,string>,
+): string {
+  const px = r(toSvgX(ins.position.x, vb));
+  const py = r(toSvgY(ins.position.y, vb));
+  const col = resolveColor(0, ins.layer, lm);
+  const label = esc((ins.blockName || 'BLK').replace(/^[*_]/, '').slice(0,20));
+  const parts = [
+    `<circle cx="${px}" cy="${py}" r="5" fill="${col}" fill-opacity="0.2" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`,
+    `<circle cx="${px}" cy="${py}" r="2" fill="${col}"/>`,
+    `<text x="${px+8}" y="${py+4}" font-family="Arial,monospace" font-size="9" fill="${col}" opacity="0.85">${label}</text>`,
+  ];
+  if (ins.attributes.length > 0) {
+    const tag = esc(ins.attributes.map(a => a.value.trim()).filter(Boolean).slice(0,2).join(' ').slice(0,24));
+    if (tag) parts.push(`<text x="${px+8}" y="${py+15}" font-family="Arial,monospace" font-size="11" fill="${col}" font-weight="bold">${tag}</text>`);
+  }
+  return parts.join('');
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+
 export function renderDxfToSvg(buffer: Buffer): {
   svg: string;
   extents: DxfParseResult['extents'];
@@ -271,6 +431,11 @@ export function renderDxfToSvg(buffer: Buffer): {
 
   const sc = buildScale(paddedExtents);
   const { svgWidth, svgHeight } = sc;
+
+  const aspect = extents.height > 0 ? extents.width / extents.height : 1;
+  const svgW = SVG_TARGET_WIDTH;
+  const svgH = Math.max(200, Math.round(svgW / aspect));
+  const vb: VB = { svgW, svgH, ext: extents };
 
   const MAX_LINES   = 15_000;
   const MAX_TEXTS   = 4_000;
@@ -307,7 +472,42 @@ export function renderDxfToSvg(buffer: Buffer): {
     }
   }
 
-  // Build layer legend (small key, bottom-left corner)
+      insertCount++;
+
+      const block = blocks[e.blockName];
+      if (block && block.entities.length > 0) {
+        // Transform block entities to world space, then render normally
+        const group: string[] = [];
+        for (const be of block.entities) {
+          if (be.kind === 'INSERT') continue; // skip nested for now
+          const worldEntity = transformEntityToWorld(be, block.base, {
+            position: e.position,
+            xScale:   e.xScale,
+            yScale:   e.yScale,
+            rotation: e.rotation,
+          });
+          const s = renderEntity(worldEntity, vb, layerMap, sw);
+          if (s) group.push(s);
+        }
+        if (group.length > 0) {
+          insertParts.push(group.join(''));
+        } else {
+          insertParts.push(renderInsertMarker(e, vb, layerMap));
+        }
+      } else {
+        insertParts.push(renderInsertMarker(e, vb, layerMap));
+      }
+      continue;
+    }
+
+    // Lines, arcs, circles, etc.
+    if (lineCount < MAX_LINES) {
+      const s = renderEntity(e, vb, layerMap, sw);
+      if (s) lineParts.push(s);
+      lineCount++;
+    }
+  }
+
   const usedCategories = new Set<string>(Object.values(layerMap));
   const legendItems: string[] = [];
   let ly = svgHeight - 20;
@@ -318,18 +518,19 @@ export function renderDxfToSvg(buffer: Buffer): {
       `<rect x="10" y="${ly - 8}" width="16" height="8" fill="${col}" opacity="0.8"/>`,
       `<text x="30" y="${ly}" font-family="monospace,sans-serif" font-size="11" fill="#e0e0e0" opacity="0.7">${escXml(cat)}</text>`,
     );
-    ly -= 16;
+    ly -= 14;
   }
+
+    );
+    ly -= 14;
+  }
+
+  const unitLabel = parsed.units === 4 ? 'mm' : parsed.units === 6 ? 'm' : parsed.units === 1 ? 'in' : 'u';
 
   const svg = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg"`,
-    `     viewBox="0 0 ${svgWidth} ${svgHeight}"`,
-    `     width="${svgWidth}" height="${svgHeight}"`,
-    `     style="background:${BG_COLOR};">`,
-    `  <!-- DXF render: ${entities.length} entities, ${parsed.layers.length} layers -->`,
-    `  <!-- Extents: ${Math.round(extents.width)}x${Math.round(extents.height)} ${parsed.units === 4 ? 'mm' : parsed.units === 6 ? 'm' : 'units'} -->`,
-    `  <!-- Lines:${lineCount} Inserts:${insertCount} Texts:${textCount} -->`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" style="background:${BG_COLOR}">`,
+    `  <!-- DXF v3: ${entities.length} entities, ${parsed.blockNames.length} blocks, ${Math.round(extents.width)}x${Math.round(extents.height)} ${unitLabel} -->`,
     `  <rect width="${svgWidth}" height="${svgHeight}" fill="${BG_COLOR}"/>`,
     `  <g id="dxf-lines">`,
     ...lineParts.map((p) => `    ${p}`),
@@ -343,6 +544,9 @@ export function renderDxfToSvg(buffer: Buffer): {
     `  <g id="dxf-legend" opacity="0.85">`,
     ...legendItems.map((p) => `    ${p}`),
     `  </g>`,
+    `</svg>`,
+  ].join('\n');
+
     `</svg>`,
   ].join('\n');
 

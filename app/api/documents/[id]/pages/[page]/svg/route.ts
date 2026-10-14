@@ -55,8 +55,10 @@ export async function GET(
       );
     }
 
-    // Disk cache: render once, serve from cache on subsequent requests
-    const cacheName = `dxf-svg-${id}-p${pageNumber}.svg`;
+    // Disk cache: render once, serve from cache on subsequent requests.
+    // Version suffix ensures old v1 renders are not served after renderer upgrade.
+    const RENDERER_VERSION = 'v3';
+    const cacheName = `dxf-svg-${id}-p${pageNumber}-${RENDERER_VERSION}.svg`;
     try {
       if (await fileExists(cacheName)) {
         const cached = (await getFile(cacheName)) as unknown as Buffer;
