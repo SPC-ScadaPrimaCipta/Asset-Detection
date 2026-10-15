@@ -143,24 +143,137 @@ export const worker = new Worker(
       const pageCount: number = doc.page_count ?? 1;
 
       // ── DXF fast path ────────────────────────────────────────────────────
-      // DXF documents skip PDF render + Gemini Vision entirely.
-      // Entities were pre-parsed at upload time (stored in dxf_entities),
-      // but we re-parse from the raw file here for accuracy.
+      // DXF documents skip PDF render + Gemini Vision for primary detection.
+      // Re-parse from raw file (not cached entities) for accuracy.
+      // Optional Gemini fallback runs post-sync for unmatched blocks only.
       if (doc.file_type === 'dxf') {
         log("dxf pipeline start", { documentId: doc.id });
         const tuningForDxf = await getTuning();
 
-        // Build legend symbol refs for DXF block matching
-        const dxfLegendSymbols: LegendSymbolRef[] = effectiveLegendIds.length > 0
+        // Build legend symbol refs for DXF block matching.
+        // Only include symbols that are ACTIVE AND not quality-rejected.
+        // quality_status NULL (unassessed) is allowed — only 'rejected' is excluded.
+        const dxfLegendSymbols: Array<LegendSymbolRef & { legend_id: string }> = effectiveLegendIds.length > 0
           ? ((await db.query(
-              "SELECT id, asset_type, symbol_name, tag_pattern, aliases FROM legend_symbols WHERE legend_id = ANY($1::uuid[]) AND status='ACTIVE'",
+              `SELECT id, legend_id, asset_type, symbol_name, tag_pattern, aliases
+               FROM legend_symbols
+               WHERE legend_id = ANY($1::uuid[])
+                 AND status = 'ACTIVE'
+                 AND (quality_status IS NULL OR quality_status != 'rejected')`,
               [`{${effectiveLegendIds.join(",")}}`],
-            )).rows as LegendSymbolRef[])
+            )).rows as Array<LegendSymbolRef & { legend_id: string }>)
           : [];
 
-        let dxfResult: Awaited<ReturnType<typeof runDxfDetection>>;
+        await db.query(
+          "UPDATE detection_jobs SET progress_pct=5 WHERE id=$1",
+          [jobId]
+        );
+
+        // ── AI pre-pass: layer auto-classification (#4) ───────────────────
+        // Load any stored layer profiles for this project, then run AI
+        // classification for layers not yet profiled. Non-fatal.
+        const { collectLayerSamples, classifyLayersWithAI } = await import('@/lib/dxf-detection');
+        type LayerProfileRow = { layer_name: string; short_name: string; category: string; tag_priority: number };
+        type LayerProfile = import('@/lib/dxf-detection').LayerProfile;
+
+        let layerProfiles: LayerProfile[] = [];
         try {
-          dxfResult = runDxfDetection(buf, dxfLegendSymbols);
+          const profileRows = (await db.query(
+            "SELECT layer_name, short_name, category, tag_priority FROM dxf_layer_profiles WHERE project_id=$1",
+            [jrow.project_id],
+          )).rows as LayerProfileRow[];
+          layerProfiles = profileRows.map(r => ({
+            layer_name: r.layer_name,
+            short_name: r.short_name,
+            category: r.category as LayerProfile['category'],
+            tag_priority: r.tag_priority,
+          }));
+        } catch { /* table may not exist yet — proceed with empty */ }
+
+        // Check if this document already has AI layer analysis
+        let hasLayerAnalysis = false;
+        try {
+          const laRow = (await db.query(
+            "SELECT COUNT(*) AS cnt FROM dxf_layer_analysis WHERE document_id=$1",
+            [doc.id],
+          )).rows[0] as { cnt: string };
+          hasLayerAnalysis = parseInt(laRow.cnt) > 0;
+        } catch { /* ignore */ }
+
+        if (!hasLayerAnalysis) {
+          try {
+            const samples = collectLayerSamples(buf);
+            // Filter to layers not already profiled
+            const profiled = new Set(layerProfiles.map(p => p.short_name.toLowerCase()));
+            const unprofiledSamples = samples.filter(s => !profiled.has(s.shortName.toLowerCase()));
+            if (unprofiledSamples.length > 0) {
+              const aiResults = await classifyLayersWithAI(unprofiledSamples);
+              // Persist to dxf_layer_analysis
+              for (const r of aiResults) {
+                try {
+                  await db.query(
+                    `INSERT INTO dxf_layer_analysis
+                       (document_id, layer_name, short_name, sample_texts, ai_category, ai_confidence, ai_reasoning, final_category)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$5)
+                     ON CONFLICT (document_id, layer_name) DO UPDATE
+                       SET ai_category=$5, ai_confidence=$6, ai_reasoning=$7, final_category=$5`,
+                    [doc.id, r.layerName, r.shortName, JSON.stringify(
+                      samples.find(s => s.shortName === r.shortName)?.sampleTexts ?? []
+                    ), r.category, r.confidence, r.reasoning],
+                  );
+                } catch { /* non-fatal */ }
+              }
+              // Merge high-confidence AI results into layerProfiles for this run
+              for (const r of aiResults) {
+                if (r.confidence >= 0.75 && r.category !== 'unknown') {
+                  layerProfiles.push({
+                    layer_name: r.layerName,
+                    short_name: r.shortName,
+                    category: r.category,
+                    tag_priority: r.category === 'tag' ? 3 : 99,
+                  });
+                }
+              }
+              log("ai layer pre-pass done", { classified: aiResults.length });
+            }
+          } catch (prePassErr) {
+            log("ai layer pre-pass skipped", {
+              reason: prePassErr instanceof Error ? prePassErr.message.slice(0, 100) : String(prePassErr),
+            });
+          }
+        } else if (layerProfiles.length === 0) {
+          // Load from dxf_layer_analysis final_category instead
+          try {
+            const laRows = (await db.query(
+              "SELECT layer_name, short_name, final_category FROM dxf_layer_analysis WHERE document_id=$1 AND final_category IS NOT NULL",
+              [doc.id],
+            )).rows as Array<{ layer_name: string; short_name: string; final_category: string }>;
+            for (const r of laRows) {
+              layerProfiles.push({
+                layer_name: r.layer_name,
+                short_name: r.short_name,
+                category: r.final_category as LayerProfile['category'],
+                tag_priority: r.final_category === 'tag' ? 3 : 99,
+              });
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        await db.query(
+          "UPDATE detection_jobs SET progress_pct=15 WHERE id=$1",
+          [jobId]
+        );
+
+        let dxfResult: Awaited<ReturnType<typeof runDxfDetection>>;
+        // Keep parsed result for rawEntities (Gemini fallback)
+        let parsedDxf: import('@/lib/dxf-parser').DxfParseResult | null = null;
+        try {
+          const { parseDxf } = await import('@/lib/dxf-parser');
+          parsedDxf = parseDxf(buf);
+          dxfResult = runDxfDetection(buf, dxfLegendSymbols, {
+            layerProfiles,
+            adaptiveSpatial: true,
+          });
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           await db.query(
@@ -174,15 +287,207 @@ export const worker = new Worker(
         log("dxf parse done", {
           entities: dxfResult.parseStats.totalEntities,
           inserts: dxfResult.parseStats.insertCount,
+          circles: dxfResult.parseStats.circleCount,
           detections: dxfResult.detections.length,
+          geminiCandidates: dxfResult.parseStats.geminiCandidates,
         });
 
-        // Get document_page_id for page 1
-        const pageRow = (await db.query(
-          "SELECT id FROM document_pages WHERE document_id=$1 AND page_number=1",
-          [doc.id]
-        )).rows[0] as { id: string } | undefined;
-        const documentPageId = pageRow?.id ?? null;
+        await db.query(
+          "UPDATE detection_jobs SET progress_pct=45 WHERE id=$1",
+          [jobId]
+        );
+
+        // ── Gemini text-prompt fallback for unmatched blocks (#7) ─────────
+        // Uses text prompt (block name + nearby texts) — no SVG crop needed.
+        // Non-fatal: failures leave detections at their current confidence.
+        if (dxfResult.parseStats.geminiCandidates > 0 && dxfLegendSymbols.length > 0) {
+          try {
+            const { applyGeminiFallback } = await import('@/lib/dxf-detection');
+            // Pass empty buffer for svgBuffer (text-prompt path doesn't use it)
+            await applyGeminiFallback(
+              dxfResult.detections,
+              Buffer.alloc(0),
+              dxfLegendSymbols,
+              parsedDxf!.extents,
+              parsedDxf!.entities,
+            );
+            log("gemini text-prompt fallback done", {
+              candidates: dxfResult.parseStats.geminiCandidates,
+            });
+          } catch (gErr) {
+            log("gemini fallback skipped", {
+              reason: gErr instanceof Error ? gErr.message.slice(0, 120) : String(gErr),
+            });
+          }
+        }
+
+        // Legend symbols in rule-validator shape (shared by enrichment + vision Lap-2).
+        const dxfRuleLegendSymbols = dxfLegendSymbols.map((s) => ({
+          id: s.id,
+          legend_id: s.legend_id ?? effectiveLegendId ?? '',
+          asset_type: s.asset_type,
+          symbol_name: s.symbol_name,
+          tag_pattern: s.tag_pattern,
+          description: null as string | null,
+          aliases: s.aliases ?? [],
+          standard_code: null as string | null,
+          isa_function_code: null as string | null,
+          iso_category: null as string | null,
+        }));
+
+        // ── Rule-validator enrichment: UNKNOWN-typed tagged detections ──
+        // Lap 1 vektor tidak lagi menebak tipe dari prefix; rantai
+        // Legend > KB > ISA > ISO yang memutuskan. Non-fatal, cap 150/job.
+        if (dxfResult.detections.length > 0 && dxfLegendSymbols.length > 0) {
+          try {
+            const { validateDetection, extractTagPrefix } = await import('@/lib/rule-validator');
+            const legendSymbols = dxfRuleLegendSymbols;
+            let enriched = 0;
+            for (const det of dxfResult.detections) {
+              if (enriched >= 150) break;
+              if (det.assetType !== 'UNKNOWN' || !det.assetTag) continue;
+              try {
+                const vr = await validateDetection({
+                  tagPrefix: extractTagPrefix(det.assetTag),
+                  detectedAssetType: null,
+                  detectedAssetTag: det.assetTag,
+                  aiConfidence: det.confidence,
+                  legendId: effectiveLegendId,
+                  legendSymbols,
+                  projectId: jrow.project_id ?? null,
+                  ocrText: det.assetTag,
+                  drawingType,
+                });
+                if (vr.source !== 'UNKNOWN' && vr.resolvedAssetType && vr.resolvedAssetType !== 'UNKNOWN') {
+                  det.assetType = vr.resolvedAssetType;
+                  det.evidence.push(`Rule-validator [${vr.source}]: ${vr.ruleApplied} (${Math.round(vr.confidence * 100)}%)`);
+                  if (vr.confidence >= 0.6) det.needsGeminiClassification = false;
+                  enriched++;
+                }
+              } catch { /* per-detection non-fatal */ }
+            }
+            log("dxf rule-validator enrichment done", { enriched });
+          } catch (vErr) {
+            log("dxf rule-validator enrichment skipped", {
+              reason: vErr instanceof Error ? vErr.message.slice(0, 120) : String(vErr),
+            });
+          }
+        }
+
+        // ── Vision Lap-2 per sheet region (Blok 3.2) ──────────────────────
+        // Render region (tema terang) → hybrid vision (YOLO+OCR+rule+Gemini)
+        // → IoU-merge ke Lap-1 vektor. Vektor menang untuk tag+tipe bila sudah
+        // resolved; vision menambah simbol tak-bertag + koreksi box estimasi.
+        // Sepenuhnya non-fatal: gagal = Lap-1 vektor tetap persist utuh.
+        // Matikan via DXF_VISION_ENABLED=false bila biaya/latensi keberatan.
+        if (process.env.DXF_VISION_ENABLED !== 'false' && parsedDxf && dxfLegendSymbols.length > 0) {
+          try {
+            const { renderDxfRegionToPng } = await import('@/lib/dxf-svg-renderer');
+            const { runHybridPipeline } = await import('@/lib/detection/hybrid-pipeline');
+            const { splitDxfRegions } = await import('@/lib/dxf-parser');
+            const { mergeVisionDetections } = await import('@/lib/dxf-vision');
+            const visionRegions = splitDxfRegions(parsedDxf);
+            let vMerged = 0, vNew = 0, vUp = 0;
+            for (const vr of visionRegions) {
+              try {
+                const { png, width, height, view } = await renderDxfRegionToPng(parsedDxf, vr, { theme: 'light' });
+                const hybrid = await runHybridPipeline(
+                  {
+                    pngBuffer: png,
+                    pageImageBase64: png.toString('base64'),
+                    pageWidth: width,
+                    pageHeight: height,
+                    page: vr.index + 1,
+                    legendId: effectiveLegendId ?? '',
+                    legendSymbols: dxfRuleLegendSymbols as Parameters<typeof runHybridPipeline>[0]['legendSymbols'],
+                    projectId: jrow.project_id ?? null,
+                    drawingType,
+                  },
+                  (msg, extra) => log(`dxf-vision r${vr.index + 1} ${msg}`, extra),
+                );
+                const st = mergeVisionDetections(
+                  dxfResult.detections,
+                  hybrid.detections,
+                  view,
+                  parsedDxf.extents,
+                  vr.index + 1,
+                  vr.index,
+                );
+                vMerged += st.mergedIntoVector;
+                vNew += st.visionOnlyNew;
+                vUp += st.typeUpgraded + st.boxUpgraded;
+                log('dxf vision region done', {
+                  region: vr.index + 1,
+                  yolo: hybrid.stats.yoloDetections,
+                  fallback: hybrid.stats.geminiFallbackDetections,
+                  merged: st.mergedIntoVector,
+                  new: st.visionOnlyNew,
+                });
+              } catch (regionErr) {
+                log('dxf vision region skipped', {
+                  region: vr.index + 1,
+                  reason: regionErr instanceof Error ? regionErr.message.slice(0, 120) : String(regionErr),
+                });
+              }
+            }
+            log('dxf vision lap-2 done', {
+              merged: vMerged,
+              visionOnlyNew: vNew,
+              upgraded: vUp,
+              agreementPct: vMerged + vNew > 0 ? Math.round((vMerged / (vMerged + vNew)) * 100) : null,
+            });
+          } catch (vErr) {
+            log('dxf vision lap-2 skipped', {
+              reason: vErr instanceof Error ? vErr.message.slice(0, 120) : String(vErr),
+            });
+          }
+        }
+
+        await db.query(
+          "UPDATE detection_jobs SET progress_pct=70 WHERE id=$1",
+          [jobId]
+        );
+
+        // Ensure document_pages rows exist — satu per sheet region DXF
+        // (pid_page = region index + 1). Fallback 1 row bila regions kosong.
+        const regionPages = dxfResult.regions.length > 0
+          ? dxfResult.regions.map((r) => r.pidPage)
+          : [1];
+        const pageIdByNumber = new Map<number, string>();
+        try {
+          for (const pageNum of regionPages) {
+            const pageRow = (await db.query(
+              "SELECT id FROM document_pages WHERE document_id=$1 AND page_number=$2",
+              [doc.id, pageNum],
+            )).rows[0] as { id: string } | undefined;
+            if (pageRow) {
+              pageIdByNumber.set(pageNum, pageRow.id);
+              continue;
+            }
+            const inserted = (await db.query(
+              `INSERT INTO document_pages (document_id, page_number, width, height)
+               VALUES ($1, $2, 1000, 1000)
+               ON CONFLICT (document_id, page_number) DO NOTHING
+               RETURNING id`,
+              [doc.id, pageNum],
+            )).rows[0] as { id: string } | undefined;
+            if (inserted) {
+              pageIdByNumber.set(pageNum, inserted.id);
+            } else {
+              const refetch = (await db.query(
+                "SELECT id FROM document_pages WHERE document_id=$1 AND page_number=$2",
+                [doc.id, pageNum],
+              )).rows[0] as { id: string } | undefined;
+              if (refetch) pageIdByNumber.set(pageNum, refetch.id);
+            }
+          }
+          log("document_pages rows ensured for DXF regions", { pages: regionPages });
+        } catch (pgErr) {
+          log("document_pages insert failed (non-fatal)", {
+            reason: pgErr instanceof Error ? pgErr.message.slice(0, 120) : String(pgErr),
+          });
+        }
+        const documentPageId: string | null = pageIdByNumber.get(1) ?? null;
 
         // Delete previous detections for this job (re-run safety)
         await db.query("DELETE FROM detections WHERE job_id=$1", [jobId]);
@@ -195,7 +500,7 @@ export const worker = new Worker(
             uuidv4(),
             jobId,
             doc.id,
-            documentPageId,
+            pageIdByNumber.get(det.pidPage) ?? documentPageId,
             det.confidence >= NULL_THR ? (det.assetTag ?? null) : null,
             det.assetType,
             det.confidence,
@@ -207,7 +512,7 @@ export const worker = new Worker(
             'DETECTED',
             'PENDING',
             'DXF',
-            1, // pid_page = 1 for DXF
+            det.pidPage, // sheet region index + 1
             effectiveLegendId ?? null,
           ]);
         }
@@ -309,25 +614,21 @@ export const worker = new Worker(
       );
       const tagPatternSources = sourcedPatterns.map((p) => p.legendName);
 
-      // Load reference crop images for top-N legend symbols (quality_status = 'validated' first,
-      // then any symbol with a crop). Sent to Gemini so the model can visually match symbols.
+      // Load reference crop images for top-N legend symbols.
+      // Only symbols with quality_status='validated' AND a reference_image_url are sent.
+      // Unvalidated crops are noise — they may be wrong crops or low-quality extractions
+      // that would mislead Gemini rather than help it match symbols correctly.
       // Non-fatal: crop load failures are silently skipped — detection proceeds without them.
       const MAX_REFERENCE_CROPS = tuning.detection.maxReferenceCrops ?? 10;
       const referenceCrops = new Map<string, string>();
       if (!yoloActive && MAX_REFERENCE_CROPS > 0) {
-        // Prefer validated symbols, then any with a crop url, up to the limit.
+        // Only validated symbols with a crop are eligible as reference images.
         const withCrop = cappedSymbols
-          .filter((s) => typeof (s as any).reference_image_url === 'string' && (s as any).reference_image_url)
-          .sort((a, b) => {
-            // validated first (quality_status from DB row, not on MergedLegendSymbol type)
-            const aq = ((a as any).quality_status === 'validated') ? 0 : 1;
-            const bq = ((b as any).quality_status === 'validated') ? 0 : 1;
-            return aq - bq;
-          })
+          .filter((s) => s.quality_status === 'validated' && typeof s.reference_image_url === 'string' && s.reference_image_url)
           .slice(0, MAX_REFERENCE_CROPS);
 
         await Promise.all(withCrop.map(async (s) => {
-          const url = (s as any).reference_image_url as string;
+          const url = s.reference_image_url as string;
           try {
             const cropBuf = (await getFile(url)) as unknown as Buffer;
             referenceCrops.set(s.id, cropBuf.toString('base64'));
@@ -337,7 +638,9 @@ export const worker = new Worker(
         }));
 
         if (referenceCrops.size > 0) {
-          log(`loaded ${referenceCrops.size} reference crop(s) for legend symbols`);
+          log(`loaded ${referenceCrops.size} validated reference crop(s) for legend symbols`);
+        } else {
+          log('no validated reference crops available — proceeding with text-only legend');
         }
       }
 

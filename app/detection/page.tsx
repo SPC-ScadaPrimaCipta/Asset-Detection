@@ -900,6 +900,24 @@ function PidViewer({
   const isDxf = fileType === 'dxf';
   const dxfRawUrl = documentId && isDxf ? `/api/documents/${documentId}/raw` : null;
 
+  // Sheet regions for DXF navigation (world-unit extents per sheet).
+  const [dxfRegions, setDxfRegions] = useState<Array<{
+    pidPage: number;
+    entityCount: number;
+    extents: { minX: number; minY: number; maxX: number; maxY: number };
+  }>>([]);
+  useEffect(() => {
+    if (!isDxf || !documentId) { setDxfRegions([]); return; }
+    let cancelled = false;
+    fetch(`/api/documents/${documentId}/dxf-regions`)
+      .then((r) => r.json())
+      .then((d: { regions?: typeof dxfRegions }) => {
+        if (!cancelled && Array.isArray(d.regions)) setDxfRegions(d.regions);
+      })
+      .catch(() => { /* non-fatal: viewer falls back to whole-file fit */ });
+    return () => { cancelled = true; };
+  }, [isDxf, documentId]);
+
   // For PDF: direct image URL. For DXF: handled by WebGL DxfViewer component.
   const imgSrc = documentId && !isDxf
     ? `/api/documents/${documentId}/pages/${page}/image`
@@ -1357,9 +1375,12 @@ function PidViewer({
           selectedId={selectedId}
           onSelectAsset={onSelect}
           showAll={showAll}
+          regions={dxfRegions}
+          activeSheet={page}
           style={{
-            minHeight: fullscreen ? "calc(100vh - 80px)" : 600,
             flex: 1,
+            minHeight: fullscreen ? "calc(100vh - 80px)" : "560px",
+            height: fullscreen ? "calc(100vh - 80px)" : undefined,
           }}
         />
       ) : (
@@ -1809,7 +1830,8 @@ function PidViewer({
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        minHeight: 480,
+        height: "640px",
+        minHeight: "480px",
       }}
     >
       {viewerContent}
@@ -2289,7 +2311,9 @@ function DetectionsTable({
   });
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const slice = sorted.slice((page - 1) * pageSize, page * pageSize);
+  // Clamp: halaman tabel basi (filter menyusut / data reload) → slice kosong misterius.
+  const safeTablePage = Math.min(Math.max(1, page), totalPages);
+  const slice = sorted.slice((safeTablePage - 1) * pageSize, safeTablePage * pageSize);
 
   const toggleSort = (col: "tag" | "type" | "page" | "conf" | "status") => {
     if (sortBy === col) setSortAsc(!sortAsc);
@@ -2824,7 +2848,7 @@ function DetectionsTable({
           <CaretLeft size={14} weight="bold" />
         </button>
         <span>
-          Page {page} / {totalPages}
+          Page {safeTablePage} / {totalPages}
         </span>
         <button
           onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -2930,6 +2954,18 @@ function DetectionWorkspace() {
     else localStorage.removeItem('det_currentPage');
   }, [currentPage, mounted]);
 
+  // Reset halaman saat ganti dokumen — halaman basi dari dokumen lain
+  // (via localStorage) membuat viewer kosong: filter pid_page tak cocok.
+  const prevDocRef = useRef<string>("");
+  useEffect(() => {
+    if (!mounted) return;
+    if (prevDocRef.current && prevDocRef.current !== documentId) {
+      setCurrentPage(1);
+      setSelectedDetection(null);
+    }
+    prevDocRef.current = documentId;
+  }, [documentId, mounted]);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [legends, setLegends] = useState<Legend[]>([]);
@@ -2955,9 +2991,15 @@ function DetectionWorkspace() {
   // Derive selected document object for file_type check
   const selectedDocument = documents.find((d) => d.id === documentId) ?? null;
 
+  // Clamp pengaman: halaman basi (melebihi maxPage) paksa ke 1.
+  // Terjadi saat localStorage menyimpan halaman dokumen lain.
+  const safePage = currentPage && currentPage >= 1 && currentPage <= maxPage
+    ? currentPage
+    : 1;
+
   // Detections filtered to current page (null means all pages)
   const pageDetections = currentPage
-    ? detections.filter((d) => d.pid_page === currentPage)
+    ? detections.filter((d) => d.pid_page === safePage)
     : detections;
 
   // Stats (over all detections, not just current page)
@@ -3608,17 +3650,19 @@ function DetectionWorkspace() {
                 </span>
               </div>
             )}
-            <div style={{ flex: 1, minHeight: 640 }}>
+            <div style={{ flex: 1, minHeight: 640, height: 640 }}>
               <PidViewer
                 documentId={documentId}
                 fileType={selectedDocument?.file_type}
-                detections={pageDetections}
+                // DXF me-render SELURUH file CAD → beri semua deteksi (semua sheet).
+                // PDF me-render 1 halaman → tetap filter per halaman.
+                detections={selectedDocument?.file_type === 'dxf' ? detections : pageDetections}
                 selectedId={selectedId}
                 onSelect={(id) => {
                   const d = detections.find((x) => x.id === id);
                   if (d) setSelectedDetection(d);
                 }}
-                page={currentPage || 1}
+                page={safePage}
                 totalPages={maxPage}
                 onPageChange={setCurrentPage}
                 onBboxChange={handleBboxChange}
@@ -3664,7 +3708,7 @@ function DetectionWorkspace() {
                 onSelect={(d) => {
                   setSelectedDetection(d);
                   // Jump viewer to the selected symbol's page so its bbox becomes visible
-                  if (d.pid_page !== null && d.pid_page !== currentPage)
+                  if (d.pid_page !== null && d.pid_page !== safePage)
                     setCurrentPage(d.pid_page);
                 }}
               />

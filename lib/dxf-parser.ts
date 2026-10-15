@@ -1,26 +1,14 @@
 /**
- * DXF Entity Extractor — v2
+ * DXF Entity Extractor
  *
  * Parses .dxf files using dxf-parser and returns structured entities:
- *   - INSERT       : block references with position, scale, rotation
- *   - TEXT / MTEXT : text labels
- *   - LINE         : pipe segments
- *   - LWPOLYLINE   : polylines (pipes, outlines)
- *   - ARC          : arc geometry (common in P&ID symbols)
- *   - CIRCLE       : circle geometry (instrument bubbles, vessels)
- *   - ELLIPSE      : ellipse geometry
- *   - SPLINE       : spline curves (control points)
- *   - SOLID        : filled triangle/quad
- *   - HATCH        : hatch fill (rendered as lightweight boundary)
- *
- * Block Definitions:
- *   dxf.blocks contains named block definitions. Each block holds its own
- *   entity list. When an INSERT is rendered, its block definition is looked
- *   up and the geometry is transformed (translate + scale + rotate) to the
- *   INSERT position. This is what makes AutoCAD rendering look correct.
+ *   - INSERT: block references (symbols) with position + block name
+ *   - TEXT / MTEXT: text labels with position
+ *   - LINE / LWPOLYLINE: pipe segments with start/end coords
  *
  * Coordinate system: DXF uses real-world units (mm or inches).
- * Bbox is in DXF world units — caller normalises to 0-1000 space.
+ * Bbox is expressed in DXF world units — caller normalises to 0-1000 space
+ * using the page extents computed here.
  */
 
 import DxfParserModule from 'dxf-parser';
@@ -32,7 +20,6 @@ const DxfParser: any =
   typeof DxfParserModule === 'function'
     ? DxfParserModule
     : (DxfParserModule as any)?.default ?? (DxfParserModule as any)?.DxfParser ?? DxfParserModule;
-
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,7 +46,6 @@ export interface DxfTextEntity {
   position: DxfPoint;
   layer: string;
   height: number; // text height in DXF units
-  color: number;  // ACI color index (0 = BYLAYER, 256 = BYBLOCK)
 }
 
 export interface DxfLineEntity {
@@ -67,7 +53,6 @@ export interface DxfLineEntity {
   start: DxfPoint;
   end: DxfPoint;
   layer: string;
-  color: number;
 }
 
 export interface DxfPolylineEntity {
@@ -75,7 +60,13 @@ export interface DxfPolylineEntity {
   vertices: DxfPoint[];
   layer: string;
   closed: boolean;
-  color: number;
+}
+
+export interface DxfCircleEntity {
+  kind: 'CIRCLE';
+  center: DxfPoint;
+  radius: number;
+  layer: string;
 }
 
 export interface DxfArcEntity {
@@ -85,44 +76,35 @@ export interface DxfArcEntity {
   startAngle: number; // degrees
   endAngle: number;   // degrees
   layer: string;
-  color: number;
 }
 
-export interface DxfCircleEntity {
-  kind: 'CIRCLE';
-  center: DxfPoint;
-  radius: number;
+export interface DxfSplineEntity {
+  kind: 'SPLINE';
+  /** Control points or fit points — approximation of the spline envelope */
+  controlPoints: DxfPoint[];
   layer: string;
-  color: number;
 }
 
 export interface DxfEllipseEntity {
   kind: 'ELLIPSE';
   center: DxfPoint;
-  /** Major axis endpoint (relative to center) */
-  majorAxis: DxfPoint;
-  /** Ratio of minor to major axis */
-  axisRatio: number;
-  startAngle: number; // radians
-  endAngle: number;   // radians
+  /** Semi-major axis length (half the major diameter) */
+  majorAxisLength: number;
+  /** Ratio of minor to major axis (0–1) */
+  minorAxisRatio: number;
   layer: string;
-  color: number;
 }
 
-export interface DxfSplineEntity {
-  kind: 'SPLINE';
-  /** Control points */
-  controlPoints: DxfPoint[];
+export interface DxfAttDefEntity {
+  kind: 'ATTDEF';
+  /** Attribute tag name (key), e.g. "TAG", "DESCRIPTION" */
+  tag: string;
+  /** Default value specified in the block definition */
+  defaultValue: string;
+  /** Prompt string shown during block insertion */
+  prompt: string;
+  position: DxfPoint;
   layer: string;
-  color: number;
-}
-
-export interface DxfSolidEntity {
-  kind: 'SOLID';
-  /** Corners (3 or 4) */
-  points: DxfPoint[];
-  layer: string;
-  color: number;
 }
 
 export type DxfEntity =
@@ -130,19 +112,11 @@ export type DxfEntity =
   | DxfTextEntity
   | DxfLineEntity
   | DxfPolylineEntity
-  | DxfArcEntity
   | DxfCircleEntity
-  | DxfEllipseEntity
+  | DxfArcEntity
   | DxfSplineEntity
-  | DxfSolidEntity;
-
-/** A named block definition containing its own entities */
-export interface DxfBlockDef {
-  name: string;
-  /** Base point of the block (insertion origin) */
-  base: DxfPoint;
-  entities: DxfEntity[];
-}
+  | DxfEllipseEntity
+  | DxfAttDefEntity;
 
 export interface DxfPageExtents {
   minX: number;
@@ -155,35 +129,32 @@ export interface DxfPageExtents {
 
 export interface DxfParseResult {
   entities: DxfEntity[];
-  /** Named block definitions (INSERT geometry) */
-  blocks: Record<string, DxfBlockDef>;
   /** All unique layer names found */
   layers: string[];
   /** Layer → category heuristic (pipe/instrument/text/other) */
   layerMap: Record<string, string>;
   /** Bounding box of all entities in DXF world units */
   extents: DxfPageExtents;
-  /** Block definition names */
+  /** Block definitions (name → list of sub-entities) */
   blockNames: string[];
   /** Raw block definitions for geometry expansion in renderer */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   blocks: Record<string, any>;
   /** Raw DXF header variables useful for units conversion */
   units: number; // $INSUNITS DXF code: 0=unitless, 4=mm, 6=m, etc.
-
 }
 
 // ── Layer category heuristic ─────────────────────────────────────────────────
 
-const PIPE_LAYER_PATTERNS  = [/pipe/i, /piping/i, /process/i, /fluid/i, /flow/i, /line/i];
+const PIPE_LAYER_PATTERNS = [/pipe/i, /piping/i, /process/i, /fluid/i, /flow/i, /line/i];
 const INSTR_LAYER_PATTERNS = [/instr/i, /instrument/i, /tag/i, /signal/i, /control/i];
-const TEXT_LAYER_PATTERNS  = [/text/i, /annot/i, /label/i, /note/i, /dim/i];
-const EQUIP_LAYER_PATTERNS = [/equip/i, /vessel/i, /pump/i, /valve/i, /symbol/i, /mech/i];
+const TEXT_LAYER_PATTERNS = [/text/i, /annot/i, /label/i, /note/i, /dim/i];
+const EQUIP_LAYER_PATTERNS = [/equip/i, /vessel/i, /pump/i, /valve/i, /symbol/i, /equip/i, /mech/i];
 
 function categoriseLayer(name: string): string {
-  if (PIPE_LAYER_PATTERNS.some((r) => r.test(name)))  return 'pipe';
+  if (PIPE_LAYER_PATTERNS.some((r) => r.test(name))) return 'pipe';
   if (INSTR_LAYER_PATTERNS.some((r) => r.test(name))) return 'instrument';
-  if (TEXT_LAYER_PATTERNS.some((r) => r.test(name)))  return 'text';
+  if (TEXT_LAYER_PATTERNS.some((r) => r.test(name))) return 'text';
   if (EQUIP_LAYER_PATTERNS.some((r) => r.test(name))) return 'equipment';
   return 'other';
 }
@@ -199,215 +170,126 @@ function expandExtents(
   x: number,
   y: number,
 ) {
-  if (!isFinite(x) || !isFinite(y)) return;
   if (x < ext.minX) ext.minX = x;
   if (y < ext.minY) ext.minY = y;
   if (x > ext.maxX) ext.maxX = x;
   if (y > ext.maxY) ext.maxY = y;
 }
 
-// ── Entity parser helper ──────────────────────────────────────────────────────
+// ── MTEXT / TEXT formatting stripper ─────────────────────────────────────────
 
 /**
- * Parse a single raw entity object into a typed DxfEntity.
- * Returns null for unsupported types.
+ * Strip AutoCAD MTEXT inline formatting codes from a raw text string.
+ *
+ * AutoCAD MTEXT supports a rich set of inline codes inside curly-brace groups:
+ *   \Fname|c0;   — font name
+ *   \C256;       — colour index
+ *   \W0.8;       — width factor
+ *   \H3.5;       — text height
+ *   \P            — paragraph break → replace with space
+ *   \pxi,l,r;    — paragraph indent
+ *   \A0;         — alignment
+ *   \S a^b;      — stacked fraction
+ *   \~           — non-breaking space
+ *   \U+XXXX      — Unicode char
+ *   %%d / %%p / %%c — degree / plus-minus / diameter symbols
+ *   {{...}}      — nested groups
+ *
+ * The outer `{...}` wrapper is also removed.
  */
-function parseEntity(
-  e: Record<string, unknown>,
-  ext: { minX: number; minY: number; maxX: number; maxY: number },
-): DxfEntity | null {
-  const type  = String(e.type  ?? '').toUpperCase();
-  const layer = String(e.layer ?? '0');
-  // ACI color: 0 = BYLAYER (inherit), 256 = BYBLOCK
-  const color = Number(e.colorIndex ?? e.color ?? 0);
+export function stripMtext(raw: string): string {
+  let s = raw;
 
-  if (type === 'INSERT') {
-    const pos = pt(e.position as { x?: number; y?: number });
-    expandExtents(ext, pos.x, pos.y);
+  // ── Normalize double-escaped backslashes ──────────────────────────────────
+  // The dxf-parser npm library returns MTEXT strings with double-escaped
+  // backslashes (\\F, \\W, \\C) because it reads the raw DXF text verbatim
+  // where backslash is an escape character. Normalize to single backslash
+  // so all subsequent regex patterns work consistently.
+  // Only normalize \\ sequences that are followed by a letter or special char
+  // that AutoCAD MTEXT uses — avoids corrupting legitimate double-backslash content.
+  s = s.replace(/\\\\([A-Za-z~Ppn])/g, '\\$1');
 
-    const attrs: DxfInsertEntity['attributes'] = [];
-    const attribs = e.attribs as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(attribs)) {
-      for (const a of attribs) {
-        attrs.push({
-          tag:   String(a.tag   ?? ''),
-          value: String(a.value ?? a.text ?? ''),
-        });
-      }
+  // Remove outer braces wrapping the whole string
+  // Handle both single-level {content} and nested {{content}}
+  while (s.startsWith('{') && s.endsWith('}')) {
+    const inner = s.slice(1, -1);
+    // Only unwrap if it's the sole outer wrapper (balanced)
+    let depth = 0, balanced = true;
+    for (const ch of inner) {
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth < 0) { balanced = false; break; } }
     }
-
-    return {
-      kind:       'INSERT',
-      blockName:  String(e.name ?? e.block ?? ''),
-      position:   pos,
-      layer,
-      xScale:     Number(e.xScale   ?? 1),
-      yScale:     Number(e.yScale   ?? 1),
-      rotation:   Number(e.rotation ?? 0),
-      attributes: attrs,
-    };
+    if (balanced && depth === 0) { s = inner; } else break;
   }
 
-  if (type === 'TEXT' || type === 'MTEXT') {
-    const pos    = pt((e.position ?? e.insertionPoint) as { x?: number; y?: number });
-    const rawText = String(e.text ?? e.string ?? '').trim();
-    if (!rawText) return null;
-    expandExtents(ext, pos.x, pos.y);
-    return {
-      kind:     type as 'TEXT' | 'MTEXT',
-      text:     rawText,
-      position: pos,
-      layer,
-      height:   Number(e.textHeight ?? e.height ?? 0),
-      color,
-    };
-  }
+  // Replace \P (paragraph break) and \n with a space before stripping
+  s = s.replace(/\\P/gi, ' ').replace(/\\n/gi, ' ');
 
-  if (type === 'LINE') {
-    const start = pt(e.start as { x?: number; y?: number });
-    const end   = pt(e.end   as { x?: number; y?: number });
-    expandExtents(ext, start.x, start.y);
-    expandExtents(ext, end.x,   end.y);
-    return { kind: 'LINE', start, end, layer, color };
-  }
+  // Replace %%d/%%p/%%c with readable chars
+  s = s.replace(/%%d/gi, '°').replace(/%%p/gi, '±').replace(/%%c/gi, 'Ø');
 
-  if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
-    const verts = (e.vertices as Array<{ x?: number; y?: number }> | undefined) ?? [];
-    const pts: DxfPoint[] = verts.map(pt);
-    pts.forEach((p) => expandExtents(ext, p.x, p.y));
-    if (pts.length < 2) return null;
-    return {
-      kind:     'LWPOLYLINE',
-      vertices: pts,
-      layer,
-      closed:   Boolean(e.closed ?? false),
-      color,
-    };
-  }
+  // Replace \U+XXXX unicode escapes
+  s = s.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, hex) =>
+    String.fromCodePoint(parseInt(hex, 16)),
+  );
 
-  if (type === 'ARC') {
-    const center = pt(e.center as { x?: number; y?: number });
-    const r      = Number(e.radius ?? 0);
-    expandExtents(ext, center.x - r, center.y - r);
-    expandExtents(ext, center.x + r, center.y + r);
-    return {
-      kind:       'ARC',
-      center,
-      radius:     r,
-      startAngle: Number(e.startAngle ?? 0),
-      endAngle:   Number(e.endAngle   ?? 360),
-      layer,
-      color,
-    };
-  }
+  // Strip format codes: \X...; where X is any letter, followed by optional content up to ;
+  // Covers: \F, \C, \W, \H, \A, \f, \c, \w, \h, \a, \pxi,l,r; etc.
+  // Handles both \Fname|c0; and \C256; styles
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/\\[A-Za-z][^;\\{}]*;?/g, '');
 
-  if (type === 'CIRCLE') {
-    const center = pt(e.center as { x?: number; y?: number });
-    const r      = Number(e.radius ?? 0);
-    expandExtents(ext, center.x - r, center.y - r);
-    expandExtents(ext, center.x + r, center.y + r);
-    return { kind: 'CIRCLE', center, radius: r, layer, color };
-  }
+  // Strip \~ (non-breaking space) → space
+  s = s.replace(/\\~/g, ' ');
 
-  if (type === 'ELLIPSE') {
-    const center    = pt(e.center    as { x?: number; y?: number });
-    const majorAxis = pt(e.majorAxis as { x?: number; y?: number });
-    const majorLen  = Math.hypot(majorAxis.x, majorAxis.y);
-    expandExtents(ext, center.x - majorLen, center.y - majorLen);
-    expandExtents(ext, center.x + majorLen, center.y + majorLen);
-    return {
-      kind:       'ELLIPSE',
-      center,
-      majorAxis,
-      axisRatio:  Number(e.axisRatio  ?? 1),
-      startAngle: Number(e.startAngle ?? 0),
-      endAngle:   Number(e.endAngle   ?? Math.PI * 2),
-      layer,
-      color,
-    };
-  }
+  // Remove remaining backslash-escape sequences
+  s = s.replace(/\\./g, '');
 
-  if (type === 'SPLINE') {
-    const cps = (e.controlPoints as Array<{ x?: number; y?: number }> | undefined) ?? [];
-    const ctrlPts: DxfPoint[] = cps.map(pt);
-    ctrlPts.forEach((p) => expandExtents(ext, p.x, p.y));
-    if (ctrlPts.length < 2) return null;
-    return { kind: 'SPLINE', controlPoints: ctrlPts, layer, color };
-  }
+  // Remove remaining curly braces (group delimiters)
+  s = s.replace(/[{}]/g, '');
 
-  if (type === 'SOLID' || type === '3DFACE') {
-    const corners: DxfPoint[] = [];
-    const keys = ['corner1', 'corner2', 'corner3', 'corner4'];
-    for (const k of keys) {
-      if (e[k]) {
-        const p = pt(e[k] as { x?: number; y?: number });
-        corners.push(p);
-        expandExtents(ext, p.x, p.y);
-      }
-    }
-    if (corners.length < 3) return null;
-    return { kind: 'SOLID', points: corners, layer, color };
-  }
-
-  return null;
-}
-
-// ── Block definition extractor ────────────────────────────────────────────────
-
-function extractBlocks(
-  rawBlocks: Record<string, unknown>,
-): Record<string, DxfBlockDef> {
-  const result: Record<string, DxfBlockDef> = {};
-  const dummyExt = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-
-  for (const [name, rawBlock] of Object.entries(rawBlocks)) {
-    // Skip AutoCAD internal blocks (paper space, model space)
-    if (name.startsWith('*')) continue;
-
-    const b = rawBlock as Record<string, unknown>;
-    const base = pt(b.position as { x?: number; y?: number });
-
-    const rawEntities = (b.entities ?? []) as Array<Record<string, unknown>>;
-    const entities: DxfEntity[] = [];
-
-    for (const raw of rawEntities) {
-      const parsed = parseEntity(raw, dummyExt);
-      if (parsed) entities.push(parsed);
-    }
-
-    result[name] = { name, base, entities };
-  }
-
-  return result;
+  // Collapse multiple spaces / trim
+  return s.replace(/\s{2,}/g, ' ').trim();
 }
 
 // ── Main parser ───────────────────────────────────────────────────────────────
 
 /**
- * Parse a DXF file buffer and return structured entities + block definitions.
+ * Parse a DXF file buffer and return structured entities.
+ * Uses dxf-parser (npm) which handles ASCII DXF R12 through R2018.
  *
- * Supports: LINE, LWPOLYLINE/POLYLINE, ARC, CIRCLE, ELLIPSE, SPLINE, SOLID,
- *           3DFACE, INSERT (with ATTRIB), TEXT, MTEXT.
+ * NOTE: Binary DXF (AutoCAD 2013+ option) is NOT supported.
+ * When saving from AutoCAD, use "Save As" → DXF → select ASCII format.
  *
- * NOTE: Binary DXF (AutoCAD 2013+ option) is NOT supported — save as ASCII DXF.
+ * Encoding: DXF files from AutoCAD can be UTF-8 or Windows-1252/Latin-1.
+ * Try UTF-8 first; if the parser throws, fall back to Latin-1.
  */
 export function parseDxf(buffer: Buffer): DxfParseResult {
-  // Binary DXF guard
+  // Binary DXF starts with "AutoCAD Binary DXF\r\n"
   const BINARY_MAGIC = 'AutoCAD Binary DXF';
   if (buffer.length > 20 && buffer.slice(0, 18).toString('ascii') === BINARY_MAGIC) {
     throw new Error(
-      'Binary DXF format is not supported. Re-save as ASCII: ' +
-      'AutoCAD → Save As → AutoCAD DXF (*.dxf) → Tools → DXF Options → ASCII.',
+      'Binary DXF format is not supported. Please re-save your DXF file in ASCII format: ' +
+      'AutoCAD → Save As → Files of type: AutoCAD DXF (*.dxf) → Tools → Options → DXF Options → ASCII.'
     );
   }
-  const probe     = buffer.slice(0, 128);
-  let nullCount   = 0;
-  for (let i = 0; i < probe.length; i++) if (probe[i] === 0) nullCount++;
+
+  // Also check for other binary indicators (null bytes in first 128 bytes)
+  const probe = buffer.slice(0, 128);
+  let nullCount = 0;
+  for (let i = 0; i < probe.length; i++) {
+    if (probe[i] === 0) nullCount++;
+  }
   if (nullCount > 4) {
-    throw new Error('File appears to be binary. Please export/save as ASCII DXF format.');
+    throw new Error(
+      'File appears to be binary (not ASCII DXF). Please export/save as ASCII DXF format.'
+    );
   }
 
   const parser = new DxfParser();
+
+  // Try UTF-8 first, then Latin-1 fallback (common for AutoCAD files with
+  // non-ASCII layer names or title-block text).
   let dxf: ReturnType<typeof parser.parseSync> | null = null;
   const encodings: BufferEncoding[] = ['utf-8', 'latin1'];
 
@@ -418,18 +300,19 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
         text = text.replace(/^\uFEFF/, '');
       }
       dxf = parser.parseSync(text);
-
       break;
     } catch (e) {
       if (enc === encodings[encodings.length - 1]) {
         throw new Error(
-          `DXF parse failed (tried ${encodings.join(', ')}): ${e instanceof Error ? e.message : String(e)}`,
+          `DXF parse failed (tried ${encodings.join(', ')}): ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }
   }
 
-  if (!dxf) throw new Error('DXF parse returned empty result');
+  if (!dxf) {
+    throw new Error('DXF parse returned empty result');
+  }
 
   const entities: DxfEntity[] = [];
   const layerSet = new Set<string>();
@@ -472,20 +355,32 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
         attributes: attrs,
       });
     } else if (type === 'TEXT' || type === 'MTEXT') {
-      const pos = pt((e.position ?? e.insertionPoint) as { x?: number; y?: number });
+      // dxf-parser uses different field names per entity type:
+      //   MTEXT  → .position
+      //   TEXT   → .startPoint  (primary) or .insertionPoint (fallback)
+      const pos = pt(
+        (e.position ?? e.startPoint ?? e.insertionPoint) as { x?: number; y?: number }
+      );
       const rawText = String(e.text ?? e.string ?? '').trim();
-      if (rawText) {
+      const cleanText = stripMtext(rawText);
+      if (cleanText) {
         entities.push({
           kind: type as 'TEXT' | 'MTEXT',
-          text: rawText,
+          text: cleanText,
           position: pos,
           layer,
           height: Number(e.textHeight ?? e.height ?? 0),
         });
       }
     } else if (type === 'LINE') {
-      const start = pt(e.start as { x?: number; y?: number });
-      const end = pt(e.end as { x?: number; y?: number });
+      // dxf-parser v1.x mengembalikan LINE sebagai { vertices: [start, end] },
+      // bukan { start, end } — dukung keduanya agar LINE tidak terbuang diam-diam.
+      const verts = (e.vertices as Array<{ x?: number; y?: number }> | undefined) ?? [];
+      const startRaw = (e.start as { x?: number; y?: number } | undefined) ?? verts[0];
+      const endRaw = (e.end as { x?: number; y?: number } | undefined) ?? verts[verts.length - 1];
+      if (!startRaw || !endRaw) continue;
+      const start = pt(startRaw);
+      const end = pt(endRaw);
       // Skip degenerate zero-length lines
       if (Math.hypot(start.x - end.x, start.y - end.y) < 0.0001) continue;
       entities.push({ kind: 'LINE', start, end, layer });
@@ -500,9 +395,54 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
           closed: Boolean(e.closed ?? false),
         });
       }
+    } else if (type === 'CIRCLE') {
+      const center = pt(e.center as { x?: number; y?: number });
+      const radius = Number(e.radius ?? 0);
+      if (radius > 0) {
+        entities.push({ kind: 'CIRCLE', center, radius, layer });
+      }
+    } else if (type === 'ARC') {
+      const center = pt(e.center as { x?: number; y?: number });
+      const radius = Number(e.radius ?? 0);
+      if (radius > 0) {
+        entities.push({
+          kind: 'ARC',
+          center,
+          radius,
+          startAngle: Number(e.startAngle ?? 0),
+          endAngle: Number(e.endAngle ?? 360),
+          layer,
+        });
+      }
+    } else if (type === 'SPLINE') {
+      // Use control points if available, fall back to fit points
+      const rawCp = (e.controlPoints ?? e.fitPoints ?? []) as Array<{ x?: number; y?: number }>;
+      const controlPoints: DxfPoint[] = rawCp.map(pt);
+      if (controlPoints.length >= 2) {
+        entities.push({ kind: 'SPLINE', controlPoints, layer });
+      }
+    } else if (type === 'ELLIPSE') {
+      const center = pt(e.center as { x?: number; y?: number });
+      // majorAxis vector → length
+      const majVec = e.majorAxis as { x?: number; y?: number } | undefined;
+      const majorAxisLength = majVec
+        ? Math.hypot(majVec.x ?? 0, majVec.y ?? 0)
+        : Number(e.majorAxisLength ?? 0);
+      const minorAxisRatio = Number(e.axisRatio ?? e.minorAxisRatio ?? 0.5);
+      if (majorAxisLength > 0) {
+        entities.push({ kind: 'ELLIPSE', center, majorAxisLength, minorAxisRatio, layer });
+      }
+    } else if (type === 'ATTDEF') {
+      const pos = pt(
+        (e.startPoint ?? e.position ?? e.insertionPoint) as { x?: number; y?: number }
+      );
+      const tagName = String(e.tag ?? '').trim().toUpperCase();
+      const defaultValue = stripMtext(String(e.defaultValue ?? e.text ?? '').trim());
+      const prompt = String(e.prompt ?? '').trim();
+      if (tagName) {
+        entities.push({ kind: 'ATTDEF', tag: tagName, defaultValue, prompt, position: pos, layer });
+      }
     }
-  }
-
   }
 
   // ── Compute extents (origin-artifact-resistant) ──────────────────────────────
@@ -517,6 +457,34 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
     } else if (entity.kind === 'LWPOLYLINE') {
       allPts.push(...entity.vertices);
     } else if (entity.kind === 'INSERT' || entity.kind === 'TEXT' || entity.kind === 'MTEXT') {
+      allPts.push(entity.position);
+    } else if (entity.kind === 'CIRCLE') {
+      // Use AABB of the circle
+      allPts.push(
+        { x: entity.center.x - entity.radius, y: entity.center.y },
+        { x: entity.center.x + entity.radius, y: entity.center.y },
+        { x: entity.center.x, y: entity.center.y - entity.radius },
+        { x: entity.center.x, y: entity.center.y + entity.radius },
+      );
+    } else if (entity.kind === 'ARC') {
+      // Conservative: use center ± radius (covers full arc extent)
+      allPts.push(
+        { x: entity.center.x - entity.radius, y: entity.center.y },
+        { x: entity.center.x + entity.radius, y: entity.center.y },
+        { x: entity.center.x, y: entity.center.y - entity.radius },
+        { x: entity.center.x, y: entity.center.y + entity.radius },
+      );
+    } else if (entity.kind === 'SPLINE') {
+      allPts.push(...entity.controlPoints);
+    } else if (entity.kind === 'ELLIPSE') {
+      const r = entity.majorAxisLength;
+      allPts.push(
+        { x: entity.center.x - r, y: entity.center.y },
+        { x: entity.center.x + r, y: entity.center.y },
+        { x: entity.center.x, y: entity.center.y - r * entity.minorAxisRatio },
+        { x: entity.center.x, y: entity.center.y + r * entity.minorAxisRatio },
+      );
+    } else if (entity.kind === 'ATTDEF') {
       allPts.push(entity.position);
     }
   }
@@ -556,7 +524,7 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
     minY: ext.minY,
     maxX: ext.maxX,
     maxY: ext.maxY,
-    width:  ext.maxX - ext.minX,
+    width: ext.maxX - ext.minX,
     height: ext.maxY - ext.minY,
   };
 
@@ -570,25 +538,192 @@ export function parseDxf(buffer: Buffer): DxfParseResult {
   const units = Number(dxf?.header?.$INSUNITS ?? 0);
 
   return { entities, layers, layerMap, extents, blockNames, blocks, units };
+}
 
+// ── Sheet / region splitting ─────────────────────────────────────────────────
+// Satu file DXF bisa berisi N gambar P&ID (multi-sheet): tiap sheet digambar di
+// area koordinat sendiri, dipisah gap kosong / frame title-block. Tanpa split,
+// semua sheet dipaksa 1 page → dedup salah, pid_page salah, skala bbox global.
+//
+// Algoritma: proyeksi semua entity ke sumbu dominan (span terbesar), urutkan,
+// potong di gap terbesar yang melebihi ambang. Rekursif tidak perlu — 1 pass
+// dengan semua gap signifikan sudah cukup untuk layout grid/strip.
+
+export interface DxfRegion {
+  /** 0-based index; pid_page = index + 1 */
+  index: number;
+  /** Extents region ini saja (untuk statistik, bukan normalisasi bbox). */
+  extents: DxfPageExtents;
+  /** Subset entities milik region (berbagi referensi, tanpa copy geometri). */
+  entities: DxfEntity[];
+}
+
+/** Titik representatif satu entity untuk clustering region. */
+export function entityRepPoint(e: DxfEntity): DxfPoint {
+  switch (e.kind) {
+    case 'LINE': return { x: (e.start.x + e.end.x) / 2, y: (e.start.y + e.end.y) / 2 };
+    case 'LWPOLYLINE': {
+      const n = e.vertices.length || 1;
+      return {
+        x: e.vertices.reduce((a, v) => a + v.x, 0) / n,
+        y: e.vertices.reduce((a, v) => a + v.y, 0) / n,
+      };
+    }
+    case 'INSERT': return e.position;
+    case 'TEXT':
+    case 'MTEXT': return e.position;
+    case 'CIRCLE':
+    case 'ARC': return e.center;
+    case 'SPLINE': {
+      const n = e.controlPoints.length || 1;
+      return {
+        x: e.controlPoints.reduce((a, p) => a + p.x, 0) / n,
+        y: e.controlPoints.reduce((a, p) => a + p.y, 0) / n,
+      };
+    }
+    case 'ELLIPSE': return e.center;
+    case 'ATTDEF': return e.position;
+  }
+}
+
+function regionExtentsOf(points: DxfPoint[]): DxfPageExtents {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1000; maxY = 1000; }
+  // Guard lebar/nol — region garis tunggal tetap valid
+  if (maxX - minX < 1) maxX = minX + 1;
+  if (maxY - minY < 1) maxY = minY + 1;
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+const MAX_REGIONS = 12;
+const MIN_REGION_ENTITIES = 5; // region lebih kecil dari ini digabung ke tetangga terbesar
+
+/**
+ * Pecah hasil parse menjadi region-region sheet.
+ * Selalu kembalikan ≥1 region (fallback = seluruh drawing).
+ * Deterministik: tidak ada randomness, tidak ada I/O.
+ */
+export function splitDxfRegions(parsed: DxfParseResult): DxfRegion[] {
+  const { entities, extents } = parsed;
+  if (entities.length === 0) {
+    return [{ index: 0, extents, entities: [] }];
+  }
+
+  const spanX = extents.width, spanY = extents.height;
+  const horizontal = spanX >= spanY; // sumbu dominan
+  const span = horizontal ? spanX : spanY;
+  if (span <= 0) return [{ index: 0, extents, entities }];
+
+  const order = entities
+    .map((e, i) => ({ i, v: horizontal ? entityRepPoint(e).x : entityRepPoint(e).y }))
+    .sort((a, b) => a.v - b.v);
+
+  // Gap CLUSTERING (bukan ambang fraksi tetap): celah antar-sheet berorde
+  // jauh lebih besar dari spasi normal dalam-sheet. Syarat ganda:
+  //   (a) > 4× gap persentil-90 (adaptif ke densitas gambar), DAN
+  //   (b) > 1% span dominan (floor absolut lawan noise/micro-gap).
+  // Median tidak dipakai — runtuh saat banyak gap nol (titik berhimpit).
+  const gapSizes = order.slice(1).map((o, k) => ({ rank: k + 1, size: o.v - order[k].v }));
+  const sortedSizes = gapSizes.map((g) => g.size).sort((a, b) => a - b);
+  const p90Gap = sortedSizes.length > 0 ? sortedSizes[Math.min(sortedSizes.length - 1, Math.floor(sortedSizes.length * 0.9))] : 0;
+  const sepThreshold = Math.max(p90Gap * 4, span * 0.01, 1e-9);
+  let cuts: number[] = gapSizes.filter((g) => g.size > sepThreshold).map((g) => g.rank);
+  if (cuts.length === 0) return [{ index: 0, extents, entities }];
+  if (cuts.length >= MAX_REGIONS) {
+    // Terlalu banyak gap (noise) — ambil MAX_REGIONS-1 gap terbesar saja
+    const gaps = cuts.map((c) => ({ c, size: order[c].v - order[c - 1].v }));
+    gaps.sort((a, b) => b.size - a.size);
+    const top = new Set(gaps.slice(0, MAX_REGIONS - 1).map((g) => g.c));
+    cuts.splice(0, cuts.length, ...[...top].sort((a, b) => a - b));
+  }
+
+  // Bentuk grup
+  const groups: number[][] = [];
+  let start = 0;
+  for (const c of cuts) { groups.push(order.slice(start, c).map((o) => o.i)); start = c; }
+  groups.push(order.slice(start).map((o) => o.i));
+
+  // Region mungil (artefak) digabung ke tetangga dengan entity terbanyak
+  const regions: DxfRegion[] = [];
+  const pending: number[] = [];
+  const flush = (idxs: number[]) => {
+    const pts = idxs.map((i) => entityRepPoint(entities[i]));
+    regions.push({ index: regions.length, entities: idxs.map((i) => entities[i]), extents: regionExtentsOf(pts) });
+  };
+  for (const g of groups) {
+    if (g.length < MIN_REGION_ENTITIES) { pending.push(...g); continue; }
+    if (pending.length > 0) { g.unshift(...pending); pending.length = 0; }
+    flush(g);
+  }
+  if (pending.length > 0) {
+    if (regions.length > 0) {
+      // Tempel ke region terakhir
+      const last = regions[regions.length - 1];
+      const extra = pending.map((i) => entities[i]);
+      const pts = [...last.entities, ...extra].map(entityRepPoint);
+      last.entities.push(...extra);
+      last.extents = regionExtentsOf(pts);
+    } else {
+      flush(pending);
+    }
+  }
+  if (regions.length === 0) return [{ index: 0, extents, entities }];
+
+  // Urutan stabil: kiri→kanan (atau bawah→atas bila sumbu dominan vertikal)
+  regions.sort((a, b) => horizontal ? a.extents.minX - b.extents.minX : a.extents.minY - b.extents.minY);
+
+  // Strip kurus (markup/revision di sela sheet) digabung ke tetangga:
+  // sheet P&ID asli memakai frame berukuran sama — region yang sempit
+  // (<35% median lebar) DAN miskin entity (<200) bukan sheet.
+  if (regions.length > 1) {
+    const widths = regions.map((r) => r.extents.width).sort((x, y) => x - y);
+    const medW = widths[Math.floor(widths.length / 2)] || 1;
+    for (let i = regions.length - 1; i >= 0 && regions.length > 1; i--) {
+      const r = regions[i];
+      if (r.extents.width < medW * 0.35 && r.entities.length < 200) {
+        // Tetangga kiri/kanan yang lebih padat menang
+        const left = i > 0 ? regions[i - 1] : null;
+        const right = i < regions.length - 1 ? regions[i + 1] : null;
+        const target = left && right
+          ? (left.entities.length >= right.entities.length ? left : right)
+          : (left ?? right);
+        if (target) {
+          const pts = [...target.entities, ...r.entities].map(entityRepPoint);
+          target.entities.push(...r.entities);
+          target.extents = regionExtentsOf(pts);
+          regions.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  regions.forEach((r, i) => { r.index = i; });
+  return regions;
 }
 
 // ── Coordinate normalisation to 0-1000 space ─────────────────────────────────
 
 /**
- * Convert a DXF world-unit point to 0-1000 normalised space.
- * DXF Y-axis is inverted relative to screen space (origin bottom-left).
+ * Convert a DXF world-unit point to 0-1000 normalised space
+ * (same space used by PDF detection bbox).
+ * DXF Y-axis is inverted relative to screen space.
  */
 export function dxfToNorm(
   p: DxfPoint,
   extents: DxfPageExtents,
 ): DxfPoint {
-  const x = extents.width  > 0
-    ? Math.round(((p.x - extents.minX) / extents.width)  * 1000) : 0;
+  const x = extents.width > 0
+    ? Math.round(((p.x - extents.minX) / extents.width) * 1000)
+    : 0;
+  // Invert Y: DXF origin bottom-left, screen origin top-left
   const y = extents.height > 0
-    ? Math.round(((extents.maxY - p.y) / extents.height) * 1000) : 0;
-  return {
-    x: Math.max(0, Math.min(1000, x)),
-    y: Math.max(0, Math.min(1000, y)),
-  };
+    ? Math.round(((extents.maxY - p.y) / extents.height) * 1000)
+    : 0;
+  return { x: Math.max(0, Math.min(1000, x)), y: Math.max(0, Math.min(1000, y)) };
 }

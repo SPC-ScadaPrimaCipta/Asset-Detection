@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "worker": "tsx --env-file=.env.local workers/detection-worker.ts",
+    "cv-service": "python -m uvicorn services.cv.app:app --host 127.0.0.1 --port 8765",
     "worker:legacy": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register workers/detection-worker.ts",
     "migrate": "node scripts/migrate.cjs",
     "migrate:standards": "tsx --env-file=.env.local scripts/migrate-standards.ts",
