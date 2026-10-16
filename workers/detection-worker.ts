@@ -23,6 +23,10 @@ import {
 import { runHybridPipeline } from "@/lib/detection/hybrid-pipeline";
 import { runDxfDetection } from "@/lib/dxf-detection";
 import type { LegendSymbolRef } from "@/lib/dxf-detection";
+import {
+  loadProjectExistingTags,
+  applyProjectAutoTagging,
+} from "@/lib/tag-generator";
 
 /**
  * Detection worker — 100% Gemini Vision, per page.
@@ -125,6 +129,11 @@ export const worker = new Worker(
 
       const doc = (await db.query("SELECT * FROM documents WHERE id=$1", [jrow.document_id])).rows[0];
       if (!doc) throw new Error("Document not found");
+
+      // Load all allocated asset tags for this project to ensure project-level uniqueness
+      const effectiveProjectId = jrow.project_id ?? doc.project_id ?? null;
+      const existingProjectTags = await loadProjectExistingTags(db, effectiveProjectId);
+      log(`project tag registry: loaded ${existingProjectTags.size} existing tag(s) for project ${effectiveProjectId ?? 'none'}`);
 
       // Use legendIds from the queue payload if present, else the job row
       // (legend_ids authoritative, legend_id legacy fallback). Order = priority.
@@ -551,6 +560,11 @@ export const worker = new Worker(
         let droppedTag = 0, fixedType = 0;
 
         // Persist DXF detections
+        applyProjectAutoTagging(dxfResult.detections, {
+          existingProjectTags,
+          legendSymbols: dxfLegendSymbols,
+        });
+
         const NULL_THR = tuningForDxf.detection.nullFieldConfidenceThreshold;
         const dxfInserts: Array<unknown[]> = [];
         for (const det of dxfResult.detections) {
@@ -847,6 +861,19 @@ export const worker = new Worker(
               after: deduped.length,
             });
           }
+        }
+
+        // Automatic Fallback Tag Generator:
+        // Allocates unique project-level incremental tags for symbols lacking an OCR tag.
+        const { generatedCount: autoTaggedCount } = applyProjectAutoTagging(deduped, {
+          existingProjectTags,
+          legendSymbols: cappedSymbols,
+        });
+        if (autoTaggedCount > 0) {
+          log(`page ${page} auto-tagged ${autoTaggedCount} detection(s) without OCR tags`, {
+            page,
+            autoTagged: autoTaggedCount,
+          });
         }
 
         // Page persistence is idempotent: drop whatever this job wrote for this

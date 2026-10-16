@@ -123,6 +123,103 @@ export async function cropBBoxFromBuffer(
     .toBuffer();
 }
 
+export interface AdaptiveCropOptions {
+  expandX?: number;
+  expandY?: number;
+}
+
+/**
+ * Calculates adaptive bounding box for tag search around a symbol.
+ * Ensures the box is strictly clamped to [0, pageWidth] and [0, pageHeight].
+ */
+export function calculateAdaptiveTagBBox(
+  bbox: { x: number; y: number; width: number; height: number },
+  pageWidth: number,
+  pageHeight: number,
+  options: AdaptiveCropOptions = {},
+): { x: number; y: number; width: number; height: number } {
+  const expandX = options.expandX ?? 60;
+  const expandY = options.expandY ?? 80;
+
+  const left = Math.max(0, Math.floor(bbox.x - expandX));
+  const top = Math.max(0, Math.floor(bbox.y - expandY));
+  const right = Math.min(pageWidth, Math.ceil(bbox.x + bbox.width + expandX));
+  const bottom = Math.min(pageHeight, Math.ceil(bbox.y + bbox.height + expandY));
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+/**
+ * Crops an adaptively expanded context region around a symbol for tag OCR.
+ */
+export async function cropAdaptiveTagRegionFromBuffer(
+  pageBuffer: Buffer,
+  bbox: { x: number; y: number; width: number; height: number },
+  options: AdaptiveCropOptions = {},
+): Promise<{ buffer: Buffer; bbox: { x: number; y: number; width: number; height: number } }> {
+  const meta = await sharp(pageBuffer).metadata();
+  const imgW = meta.width ?? 1000;
+  const imgH = meta.height ?? 1000;
+
+  const tagBbox = calculateAdaptiveTagBBox(bbox, imgW, imgH, options);
+
+  const buffer = await sharp(pageBuffer)
+    .extract({
+      left: tagBbox.x,
+      top: tagBbox.y,
+      width: tagBbox.width,
+      height: tagBbox.height,
+    })
+    .toBuffer();
+
+  return { buffer, bbox: tagBbox };
+}
+
+// ── Tag extraction helper ──────────────────────────────────────────────────
+/**
+ * Extract the best matching asset tag from multiline or noisy OCR text.
+ */
+export function extractBestTagFromText(ocrText: string): string | null {
+  if (!ocrText || typeof ocrText !== 'string') return null;
+
+  // Split into lines/tokens
+  const lines = ocrText.split(/[\r\n]+/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const normalized = normalizeTagText(trimmed);
+    if (TAG_PATTERN.test(normalized)) {
+      return normalized;
+    }
+  }
+
+  // Token regex across whole string
+  const tokenRegex = /\b([A-Z]{1,6}-(?:[A-Z]{1,6}-\d{1,5}[A-Z]{0,2}|\d{1,5}[A-Z]{0,2}))\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(ocrText)) !== null) {
+    const candidate = normalizeTagText(match[1]);
+    if (TAG_PATTERN.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback: look for simple relaxed pattern (e.g. XV-103)
+  const relaxedRegex = /\b([A-Z]{1,5}[-]?\d{1,5}[A-Z]?)\b/gi;
+  while ((match = relaxedRegex.exec(ocrText)) !== null) {
+    const candidate = normalizeTagText(match[1]);
+    if (TAG_PATTERN.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 // ── OCR execution ──────────────────────────────────────────────────────────
 async function runTesseractPsm(
   imageBuffer: Buffer,

@@ -21,8 +21,12 @@ import sharp from 'sharp';
 import { createHash } from 'crypto';
 import { env } from '@/lib/env';
 import { runYoloGeo2Page } from '@/lib/detection/yolo/yolo-geo2-runner';
-import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
-import { cropBBoxFromBuffer, runTagOcr } from '@/lib/ocr-engine';
+import {
+  cropBBoxFromBuffer,
+  cropAdaptiveTagRegionFromBuffer,
+  extractBestTagFromText,
+  runTagOcr,
+} from '@/lib/ocr-engine';
 import {
   validateDetection,
   extractTagPrefix,
@@ -32,7 +36,12 @@ import { fuseConfidence, getFusionWeights } from '@/lib/confidence-fusion';
 import { getNegativePenalty } from '@/lib/learning/negative-learning';
 import { computeIoU } from '@/lib/detection/yolo/yolo-geo2-runner';
 import { hashImage } from '@/lib/symbol-cache';
-import { CV_SERVICE_AVAILABLE, cvBBoxRefine, cvOcr } from '@/lib/cv-client';
+import {
+  CV_SERVICE_AVAILABLE,
+  cvBBoxRefine,
+  cvOcr,
+  cvTemplateMatch,
+} from '@/lib/cv-client';
 import { runDetectionAgent } from '@/lib/ai-agent';
 import type { DetectionJobInput } from '@/lib/ai-agent';
 import { applyNMS } from '@/lib/spatial';
@@ -114,7 +123,7 @@ async function runYoloWithOcr(
     await Promise.all(batch.map(async (det) => {
       const symbolBboxPx = det.symbolBboxPx ?? normToPx(det.bbox, pageWidth, pageHeight);
 
-      // Crop for OCR + hash
+      // 1. Tight crop for hash and visual identity
       let cropBuffer: Buffer | null = null;
       let cropB64: string | null = null;
       let imageHash: string | null = null;
@@ -123,25 +132,47 @@ async function runYoloWithOcr(
       let isTag = false;
 
       try {
-        cropBuffer = await cropBBoxFromBuffer(pngBuffer, symbolBboxPx, 15);
+        cropBuffer = await cropBBoxFromBuffer(pngBuffer, symbolBboxPx, 8);
         cropB64 = cropBuffer.toString('base64');
         imageHash = hashImage(cropB64); // hashImage expects base64 string
       } catch (e) {
-        log(`crop failed for ${det.assetType}: ${e instanceof Error ? e.message : String(e)}`);
+        log(`tight crop failed for ${det.assetType}: ${e instanceof Error ? e.message : String(e)}`);
       }
 
-      if (ocrEnabled && cropBuffer) {
+      // 2. Adaptive expanded crop for OCR reading of tags in surrounding context
+      if (ocrEnabled) {
         try {
+          const { buffer: tagCropBuffer } = await cropAdaptiveTagRegionFromBuffer(
+            pngBuffer,
+            symbolBboxPx,
+            { expandX: 70, expandY: 90 },
+          );
+
           if (env.OCR_ENGINE === 'cv-service' && CV_SERVICE_AVAILABLE()) {
-            const r = await cvOcr(cropB64!, 'auto', 'eng');
-            ocrText = r.text;
-            ocrConf = r.confidence;
+            const r = await cvOcr(tagCropBuffer.toString('base64'), 'auto', 'eng');
+            const extracted = extractBestTagFromText(r.text);
+            if (extracted) {
+              ocrText = extracted;
+              ocrConf = r.confidence;
+              isTag = true;
+            } else {
+              ocrText = r.text ? r.text.trim() : null;
+              ocrConf = r.confidence;
+              isTag = false;
+            }
           } else {
             // Node tesseract.js
-            const r = await runTagOcr(cropBuffer);
-            ocrText = r.normalizedText || null;
-            ocrConf = r.confidence;
-            isTag = r.isTag;
+            const r = await runTagOcr(tagCropBuffer);
+            const extracted = extractBestTagFromText(r.rawText || r.normalizedText || '');
+            if (extracted) {
+              ocrText = extracted;
+              ocrConf = r.confidence;
+              isTag = true;
+            } else {
+              ocrText = r.normalizedText || null;
+              ocrConf = r.confidence;
+              isTag = r.isTag;
+            }
           }
         } catch (e) {
           log(`OCR failed for ${det.assetType}: ${e instanceof Error ? e.message : String(e)}`);
@@ -468,8 +499,77 @@ export async function runHybridPipeline(
   const pageLog = (msg: string) => log(`page ${input.page} [hybrid] ${msg}`);
 
   // ── Stage 1+2: YOLO + OCR ──
+<<<<<<< Updated upstream
   if (input.skipOcr) pageLog('OCR skipped (caller-provided tags)');
   const yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
+=======
+  let yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog);
+
+  // ── Stage 1.5: Template Matching Fallback (if YOLO found 0 candidates and enabled) ──
+  if (
+    yoloOcrDets.length === 0 &&
+    env.TEMPLATE_MATCH_ENABLED === 'true' &&
+    CV_SERVICE_AVAILABLE() &&
+    input.legendSymbols &&
+    input.legendSymbols.length > 0
+  ) {
+    try {
+      const templateThreshold = env.TEMPLATE_MATCH_THRESHOLD ?? 0.70;
+      pageLog(`running Template Matching fallback (YOLO found 0 candidates)...`);
+
+      const withCrop = input.legendSymbols.filter(
+        (s) => s.reference_image_url && typeof s.reference_image_url === 'string'
+      );
+
+      for (const sym of withCrop.slice(0, 10)) {
+        try {
+          const { getFile } = await import('@/lib/storage');
+          const cropBuf = (await getFile(sym.reference_image_url!)) as unknown as Buffer;
+          if (!cropBuf) continue;
+
+          const tmRes = await cvTemplateMatch(
+            input.pageImageBase64,
+            cropBuf.toString('base64'),
+            templateThreshold,
+            10,
+          );
+
+          for (const m of tmRes.matches) {
+            const bboxNorm = pxToNorm(m.bbox, input.pageWidth, input.pageHeight);
+            let cropB64: string | null = null;
+            let imageHash: string | null = null;
+            try {
+              const tight = await cropBBoxFromBuffer(input.pngBuffer, m.bbox, 8);
+              cropB64 = tight.toString('base64');
+              imageHash = hashImage(cropB64);
+            } catch { /* non-fatal */ }
+
+            yoloOcrDets.push({
+              classId: 0,
+              rawLabel: sym.symbol_name ?? sym.asset_type,
+              yoloScore: m.score,
+              bboxPx: m.bbox,
+              bboxNorm,
+              ocrText: null,
+              ocrConfidence: 0,
+              isTag: false,
+              cropB64,
+              imageHash,
+            });
+          }
+        } catch (tmErr) {
+          pageLog(`template match for ${sym.asset_type} skipped: ${tmErr instanceof Error ? tmErr.message : String(tmErr)}`);
+        }
+      }
+      if (yoloOcrDets.length > 0) {
+        pageLog(`Template Matching fallback generated ${yoloOcrDets.length} candidate(s)`);
+      }
+    } catch (e) {
+      pageLog(`Template Matching fallback failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+>>>>>>> Stashed changes
   const yoloWithTags = yoloOcrDets.filter(d => d.isTag || d.ocrText).length;
 
   // ── Stage 3+4+5+7+8: Rule Validator + optional Gemini Verifier per detection ──
