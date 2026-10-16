@@ -36,6 +36,7 @@ import { CV_SERVICE_AVAILABLE, cvBBoxRefine, cvOcr } from '@/lib/cv-client';
 import { runDetectionAgent } from '@/lib/ai-agent';
 import type { DetectionJobInput } from '@/lib/ai-agent';
 import { applyNMS } from '@/lib/spatial';
+import { humanizeYoloLabel } from '@/lib/validation';
 
 // ── Verifier (lazy import — only used when GEMINI_VERIFIER_ENABLED) ────────
 async function getVerifier() {
@@ -95,13 +96,14 @@ async function runYoloWithOcr(
   pageWidth: number,
   pageHeight: number,
   log: (msg: string) => void,
+  skipOcr = false,
 ): Promise<YoloOcrDetection[]> {
   // ── 1. YOLO ──
   const yoloResult = await runYoloGeo2Page(pngBuffer, pageWidth, pageHeight);
   log(`YOLO: ${yoloResult.detections.length} detections (${yoloResult.totalTiles} tiles, ${yoloResult.durationMs}ms)`);
 
   const results: YoloOcrDetection[] = [];
-  const ocrEnabled = env.OCR_ENGINE !== 'none';
+  const ocrEnabled = !skipOcr && env.OCR_ENGINE !== 'none';
   const batchSize = env.OCR_BATCH_SIZE ?? 5;
   const dets = yoloResult.detections;
 
@@ -179,11 +181,16 @@ async function runRuleValidation(
   ruleConfidence: number;
   negativePenalty: number;
 }> {
-  const tagPrefix = det.ocrText ? extractTagPrefix(det.ocrText) : extractTagPrefix(det.rawLabel.split('.').pop() ?? '');
+  // YOLO labels are hierarchical (<category>.<type>.<standard>).
+  // NEVER use the last segment ("iso"/"pip"/"niso") as a type — humanize
+  // first (valve.ball.iso → "Ball Valve"), unresolvable → UNKNOWN.
+  // (Forensics: bare suffixes persisted as asset_type in DXF vision jobs.)
+  const yoloType = humanizeYoloLabel(det.rawLabel);
+  const tagPrefix = det.ocrText ? extractTagPrefix(det.ocrText) : null;
 
   const ruleResult = await validateDetection({
     tagPrefix,
-    detectedAssetType: det.rawLabel.split('.').pop() ?? det.rawLabel,
+    detectedAssetType: yoloType,
     detectedAssetTag: det.ocrText,
     aiConfidence: det.yoloScore,
     legendId,
@@ -436,6 +443,12 @@ export interface HybridPipelineInput {
   legendSymbols: LegendSymbol[];
   projectId: string | null;
   drawingType: string | null;
+  /**
+   * Skip per-bbox OCR (Blok 9). For DXF vision: tags come from exact vector
+   * TEXT, so OCR only burns tesseract time for untagged symbols. When true,
+   * ocrText stays null and YOLO/legend/Gemini decide.
+   */
+  skipOcr?: boolean;
 }
 
 export interface HybridPipelineStats {
@@ -455,7 +468,8 @@ export async function runHybridPipeline(
   const pageLog = (msg: string) => log(`page ${input.page} [hybrid] ${msg}`);
 
   // ── Stage 1+2: YOLO + OCR ──
-  const yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog);
+  if (input.skipOcr) pageLog('OCR skipped (caller-provided tags)');
+  const yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
   const yoloWithTags = yoloOcrDets.filter(d => d.isTag || d.ocrText).length;
 
   // ── Stage 3+4+5+7+8: Rule Validator + optional Gemini Verifier per detection ──

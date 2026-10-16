@@ -88,10 +88,40 @@ export interface DxfRegionInfo {
   textTagsFound: number;
 }
 
+/** $INSUNITS meaning for evidence/diagnostics. */
+export function dxfUnitsLabel(units: number): string {
+  const map: Record<number, string> = {
+    0: 'unitless', 1: 'in', 2: 'ft', 3: 'mi', 4: 'mm', 5: 'cm',
+    6: 'm', 7: 'km', 8: 'µin', 9: 'mil', 10: 'yd', 11: 'Å', 12: 'nm',
+    13: 'µm', 14: 'dm', 15: 'dam', 16: 'hm', 17: 'Gm', 18: 'AU', 19: 'ly', 20: 'pc',
+  };
+  return map[units] ?? `unit-${units}`;
+}
+
+/**
+ * Human world-size evidence, anchored to label height (the drawing's own
+ * "mm"): `224×224u (~4.5× label)`. Lets reviewers audit physical plausibility.
+ */
+export function worldDimsEvidence(
+  wUnits: number,
+  hUnits: number,
+  medianTextHeight: number | undefined,
+  unitsLabel: string,
+): string {
+  const w = Math.round(wUnits), h = Math.round(hUnits);
+  if (medianTextHeight && medianTextHeight > 0) {
+    const f = (n: number) => (Math.round((n / medianTextHeight) * 10) / 10).toString();
+    return `size ${w}×${h}${unitsLabel === 'unitless' ? 'u' : unitsLabel} (~${f(Math.max(wUnits, hUnits))}× label)`;
+  }
+  return `size ${w}×${h}${unitsLabel === 'unitless' ? 'u' : unitsLabel}`;
+}
+
 export interface DxfDetectionResult {
   detections: DxfDetection[];
   page: 1;
   regions: DxfRegionInfo[];
+  /** $INSUNITS of the file (0 = unitless). */
+  units: number;
   parseStats: {
     totalEntities: number;
     insertCount: number;
@@ -283,10 +313,14 @@ function buildTagRegex(pattern: string): RegExp {
   return new RegExp(`^${esc}$`, 'i');
 }
 
+const UNCLASSIFIED_TYPES = new Set(['', 'other', 'unknown', 'n/a', '-', 'misc']);
+
 function matchTagToLegend(tag: string, legend: LegendSymbolRef[]): LegendSymbolRef | null {
-  // Exact pattern match first
+  // Exact pattern match first — skipping unclassified scan output ("other")
+  // so it can never shadow real standard matches.
   for (const sym of legend) {
     if (!sym.tag_pattern) continue;
+    if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
     try { if (buildTagRegex(sym.tag_pattern).test(tag)) return sym; } catch { /* skip */ }
   }
   // TANPA fallback prefix: tidak ada pola cocok → null (UNKNOWN).
@@ -659,15 +693,15 @@ function dist(a: DxfPoint, b: DxfPoint): number {
 
 // ── Deduplication ─────────────────────────────────────────────────────────────
 
-// Merge threshold in normalized 0-1000 space.
+// Default merge threshold in normalized 0-1000 space.
 // Two detections of the same tag within this distance are considered the same equipment.
-// 40 = 4% of drawing — tolerant enough to merge text labels that are slightly offset
-// but conservative enough not to merge separate instances of the same tag.
-const MERGE_DIST_NORM = 40;
+// Caller may pass a text-height-anchored value (mm-anchored precision, Blok 8).
+const DEFAULT_MERGE_DIST_NORM = 40;
 
 function deduplicate(
   detections: DxfDetection[],
   lookup: Map<string, LayerProfile>,
+  mergeDistNorm: number = DEFAULT_MERGE_DIST_NORM,
 ): DxfDetection[] {
   const sorted = [...detections].sort((a, b) => {
     if (a.source !== b.source) {
@@ -687,7 +721,7 @@ function deduplicate(
     const dup = kept.find(k => {
       if (det.assetTag && k.assetTag && det.assetTag === k.assetTag) {
         const kx = k.bbox.x + k.bbox.width / 2, ky = k.bbox.y + k.bbox.height / 2;
-        return Math.hypot(cx - kx, cy - ky) <= MERGE_DIST_NORM;
+        return Math.hypot(cx - kx, cy - ky) <= mergeDistNorm;
       }
       if (!det.assetTag && !k.assetTag && det.blockName && det.blockName === k.blockName) {
         const kx = k.bbox.x + k.bbox.width / 2, ky = k.bbox.y + k.bbox.height / 2;
@@ -823,19 +857,23 @@ export function runDxfDetection(
     maxAssocDistFraction?: number;
     layerProfiles?: LayerProfile[];
     adaptiveSpatial?: boolean;
+    /** Pre-parsed DXF (Blok 9: hindari parse ganda file besar). */
+    parsed?: DxfParseResult;
   } = {},
 ): DxfDetectionResult {
   const {
     maxAssocDistFraction = 0.05,
     layerProfiles = [],
     adaptiveSpatial = true,
+    parsed: parsedOpt,
   } = options;
 
-  const parsed = parseDxf(buffer);
+  const parsed = parsedOpt ?? parseDxf(buffer);
   const { blocks } = parsed;
   // Normalisasi bbox SELALU memakai extents global (seluruh file) agar mapping
   // 0-1000 → world di DxfViewer (GetBounds) tetap valid untuk semua region.
   const globalExtents = parsed.extents;
+  const unitsLabel = dxfUnitsLabel(parsed.units);
   const regions = splitDxfRegions(parsed);
 
   // Build layer lookup (DB profiles + heuristic fallback)
@@ -1019,6 +1057,9 @@ export function runDxfDetection(
         );
         bboxFromGeometry = true;
         bboxEvid.push(`Bbox from symbol stroke cluster (${tagCluster.members} strokes)`);
+        bboxEvid.push(worldDimsEvidence(
+          tagCluster.maxX - tagCluster.minX, tagCluster.maxY - tagCluster.minY, medTextH, unitsLabel,
+        ));
       }
       const proxyFromTag = !tagCluster
         ? proxyBboxFromNearbyEntities(pos, entities, extents, 0.05, lookup, globalExtents, medTextH)
@@ -1033,6 +1074,7 @@ export function runDxfDetection(
           bbox = rawBboxToNorm(raw, globalExtents);
           bboxFromGeometry = true;
           bboxEvid.push(`Bbox from INSERT geometry: ${stripXrefPrefix(nearestIns.blockName)}`);
+          bboxEvid.push(worldDimsEvidence(raw.maxX - raw.minX, raw.maxY - raw.minY, medTextH, unitsLabel));
         } else {
           const proxy = proxyBboxFromNearbyEntities(nearestIns.position, entities, extents, 0.04, lookup, globalExtents, medTextH);
           if (proxy) {
@@ -1059,6 +1101,7 @@ export function runDxfDetection(
           bbox = rawBboxToNorm(raw, globalExtents);
           bboxFromGeometry = true;
           bboxEvid.push(`Bbox from CIRCLE/ARC entity (r=${Math.round(r)})`);
+          bboxEvid.push(worldDimsEvidence(raw.maxX - raw.minX, raw.maxY - raw.minY, medTextH, unitsLabel));
         } else {
           bbox = estimateBbox(pos, globalExtents);
           bboxEvid.push('Bbox estimated from tag position — vision required');
@@ -1203,6 +1246,7 @@ export function runDxfDetection(
         bbox = rawBboxToNorm(raw, globalExtents);
         bboxFromGeometry = true;
         bboxEvid.push('Bbox from block geometry');
+        bboxEvid.push(worldDimsEvidence(raw.maxX - raw.minX, raw.maxY - raw.minY, medTextH, unitsLabel));
       } else {
         // XREF proxy (#6)
         const proxy = proxyBboxFromNearbyEntities(ins.position, entities, extents, 0.04, lookup, globalExtents, medTextH);
@@ -1254,7 +1298,12 @@ export function runDxfDetection(
       });
     }
 
-    const regionDets = markRegionConflicts(deduplicate(detections, lookup), regionIndex);
+    // Merge distance anchored to label height (mm-anchored, Blok 8):
+    // same-tag boxes within ~3 label-heights merge; clamped to sane bounds.
+    const scopeSpan = Math.max(extents.width, extents.height);
+    const medHNorm = medTextH && scopeSpan > 0 ? (medTextH / scopeSpan) * 1000 : DEFAULT_MERGE_DIST_NORM / 3;
+    const mergeDist = Math.min(80, Math.max(20, medHNorm * 3));
+    const regionDets = markRegionConflicts(deduplicate(detections, lookup, mergeDist), regionIndex);
     for (const d of regionDets) { d.regionIndex = regionIndex; d.pidPage = pidPage; }
     allDetections.push(...regionDets);
     regionsInfo.push({ index: regionIndex, pidPage, entityCount: entities.length, extents: region.extents, textTagsFound: dedupedTags.length });
@@ -1307,8 +1356,10 @@ export function runDxfDetection(
       // XREF proxy fallback (#6)
       let bboxFromGeometry = !!raw;
       let bbox: DxfDetection['bbox'];
+      const bboxDimsEvid: string[] = [];
       if (raw) {
         bbox = rawBboxToNorm(raw, globalExtents);
+        bboxDimsEvid.push(worldDimsEvidence(raw.maxX - raw.minX, raw.maxY - raw.minY, medTextH, unitsLabel));
       } else {
         const proxy = proxyBboxFromNearbyEntities(ins.position, entities, extents, 0.04, lookup, globalExtents, medTextH);
         if (proxy) {
@@ -1357,6 +1408,7 @@ export function runDxfDetection(
           `DXF INSERT block: ${suffix}`,
           tag ? (te?.fromAttrib ? `ATTRIB tag: ${tag}` : `Spatial text: ${tag}`) : 'No tag',
           lm ? `Legend: ${lm.symbol_name ?? lm.asset_type}` : 'No legend match — type UNKNOWN, needs rule validation',
+          ...bboxDimsEvid,
         ],
         blockName: suffix,
         layer: ins.layer,
@@ -1368,7 +1420,10 @@ export function runDxfDetection(
       });
     }
 
-    const regionDets2 = markRegionConflicts(deduplicate(detections, lookup), regionIndex);
+    const scopeSpan2 = Math.max(extents.width, extents.height);
+    const medHNorm2 = medTextH && scopeSpan2 > 0 ? (medTextH / scopeSpan2) * 1000 : DEFAULT_MERGE_DIST_NORM / 3;
+    const mergeDist2 = Math.min(80, Math.max(20, medHNorm2 * 3));
+    const regionDets2 = markRegionConflicts(deduplicate(detections, lookup, mergeDist2), regionIndex);
     for (const d of regionDets2) { d.regionIndex = regionIndex; d.pidPage = pidPage; }
     allDetections.push(...regionDets2);
     regionsInfo.push({ index: regionIndex, pidPage, entityCount: entities.length, extents: region.extents, textTagsFound: insertTagMap.size });
@@ -1380,6 +1435,7 @@ export function runDxfDetection(
     detections: allDetections,
     page: 1,
     regions: regionsInfo,
+    units: parsed.units,
     parseStats: {
       totalEntities: globalEntities.length,
       insertCount: globalInserts.length,
@@ -1526,7 +1582,11 @@ export async function applyGeminiFallback(
   /** Raw DXF entities for context — used to find nearby text */
   rawEntities?: DxfParseResult['entities'],
 ): Promise<void> {
-  const candidates = detections.filter(d => d.needsGeminiClassification && d.blockName);
+  // Only UNKNOWN-typed candidates: resolved detections don't need re-classification
+  // (previously any estimated-box detection burned a Gemini call).
+  const candidates = detections.filter(
+    d => d.needsGeminiClassification && d.blockName && d.assetType === UNKNOWN_ASSET_TYPE,
+  );
   if (!candidates.length || !legend.length) return;
 
   const { getGeminiClient } = await import('@/lib/gemini');

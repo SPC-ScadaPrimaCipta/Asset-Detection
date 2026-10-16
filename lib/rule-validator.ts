@@ -116,12 +116,21 @@ function matchesTagPattern(tag: string, pattern: string): boolean {
   return new RegExp(`^${esc}$`, 'i').test(tag);
 }
 
+/** Asset types that mean "unclassified scan output" — never authoritative. */
+const UNCLASSIFIED_TYPES = new Set(['', 'other', 'unknown', 'n/a', '-', 'misc']);
+
+/** Drop unclassified symbols so they can't shadow real standards matches. */
+function classified(symbols: LegendSymbol[]): LegendSymbol[] {
+  return symbols.filter((s) => !UNCLASSIFIED_TYPES.has((s.asset_type ?? '').trim().toLowerCase()));
+}
+
 function findInLegend(
   symbols: LegendSymbol[],
   tagPrefix: string | null,
   assetType: string | null,
   fullTag?: string | null
 ): LegendSymbol | null {
+  symbols = classified(symbols);
   if (!symbols.length) return null;
 
   if (fullTag) {

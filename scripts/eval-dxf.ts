@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { parseDxf, splitDxfRegions } from '@/lib/dxf-parser';
 import { runDxfDetection } from '@/lib/dxf-detection';
+import { isValidAssetTag, sanitizeAssetType } from '@/lib/validation';
 
 function iou(
   a: { x: number; y: number; width: number; height: number },
@@ -82,12 +83,18 @@ async function main() {
   const perRegion = new Map<number, number>();
   for (const d of dets) perRegion.set(d.pidPage, (perRegion.get(d.pidPage) ?? 0) + 1);
 
+  // Blok 6 validity: tags/types that the gates would reject at persist.
+  const invalidTags = tagged.filter((d) => !isValidAssetTag(d.assetTag)).map((d) => d.assetTag);
+  const junkTypes = dets.filter((d) => sanitizeAssetType(d.assetType) !== d.assetType).length;
   const metrics = {
     durationMs: ms,
     detections: dets.length,
     taggedPct: dets.length ? +(tagged.length / dets.length * 100).toFixed(1) : 0,
     unknownPct: dets.length ? +(unknown.length / dets.length * 100).toFixed(1) : 0,
     conflictCount: conflict.length,
+    invalidTagCount: invalidTags.length,
+    invalidTagSamples: [...new Set(invalidTags)].slice(0, 10),
+    junkTypeCount: junkTypes,
     bboxSource: src,
     sliverCount: slivers,
     perRegion: Object.fromEntries(perRegion),

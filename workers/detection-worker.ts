@@ -273,6 +273,7 @@ export const worker = new Worker(
           dxfResult = runDxfDetection(buf, dxfLegendSymbols, {
             layerProfiles,
             adaptiveSpatial: true,
+            parsed: parsedDxf, // Blok 9: jangan parse 6MB dua kali
           });
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -342,31 +343,43 @@ export const worker = new Worker(
           try {
             const { validateDetection, extractTagPrefix } = await import('@/lib/rule-validator');
             const legendSymbols = dxfRuleLegendSymbols;
+            const { isValidAssetTag: isTagOk } = await import('@/lib/validation');
+            // Blok 9: kandidat enrichment paralel (pool 8) — isinya query DB I/O-bound.
+            const enrichCands = dxfResult.detections.filter(
+              (det) => det.assetType !== 'UNKNOWN' || !det.assetTag ? false : isTagOk(det.assetTag),
+            ).slice(0, 150);
             let enriched = 0;
-            for (const det of dxfResult.detections) {
-              if (enriched >= 150) break;
-              if (det.assetType !== 'UNKNOWN' || !det.assetTag) continue;
-              try {
-                const vr = await validateDetection({
-                  tagPrefix: extractTagPrefix(det.assetTag),
-                  detectedAssetType: null,
-                  detectedAssetTag: det.assetTag,
-                  aiConfidence: det.confidence,
+            const ENRICH_POOL = 8;
+            for (let w = 0; w < enrichCands.length; w += ENRICH_POOL) {
+              const batch = enrichCands.slice(w, w + ENRICH_POOL);
+              const results = await Promise.all(batch.map(async (det) => {
+                try {
+                  const vr = await validateDetection({
+                    tagPrefix: extractTagPrefix(det.assetTag),
+                    detectedAssetType: null,
+                    detectedAssetTag: det.assetTag,
+                    aiConfidence: det.confidence,
                   legendId: effectiveLegendId,
                   legendSymbols,
                   projectId: jrow.project_id ?? null,
-                  ocrText: det.assetTag,
+                  ocrText: det.assetTag ?? undefined,
                   drawingType,
                 });
-                if (vr.source !== 'UNKNOWN' && vr.resolvedAssetType && vr.resolvedAssetType !== 'UNKNOWN') {
+                return { det, vr };
+                } catch {
+                  return { det, vr: null };
+                }
+              }));
+              for (const { det, vr } of results) {
+                if (vr && vr.source !== 'UNKNOWN' && vr.resolvedAssetType && vr.resolvedAssetType !== 'UNKNOWN') {
                   det.assetType = vr.resolvedAssetType;
                   det.evidence.push(`Rule-validator [${vr.source}]: ${vr.ruleApplied} (${Math.round(vr.confidence * 100)}%)`);
                   if (vr.confidence >= 0.6) det.needsGeminiClassification = false;
                   enriched++;
                 }
-              } catch { /* per-detection non-fatal */ }
+              }
             }
-            log("dxf rule-validator enrichment done", { enriched });
+            log("dxf rule-validator enrichment done", { enriched, candidates: enrichCands.length });
           } catch (vErr) {
             log("dxf rule-validator enrichment skipped", {
               reason: vErr instanceof Error ? vErr.message.slice(0, 120) : String(vErr),
@@ -387,8 +400,14 @@ export const worker = new Worker(
             const { splitDxfRegions } = await import('@/lib/dxf-parser');
             const { mergeVisionDetections } = await import('@/lib/dxf-vision');
             const visionRegions = splitDxfRegions(parsedDxf);
-            let vMerged = 0, vNew = 0, vUp = 0;
-            for (const vr of visionRegions) {
+            const { isValidAssetTag, buildTagRegexes } = await import('@/lib/validation');
+            const tagRegexes = buildTagRegexes(dxfLegendSymbols.map((s) => s.tag_pattern));
+            const isTagValid = (t: string | null) => isValidAssetTag(t, tagRegexes);
+            let vMerged = 0, vNew = 0, vUp = 0, vDropTag = 0, vDropQ = 0;
+            // Blok 9: region paralel — render + YOLO jalan bareng.
+            // Panggilan Gemini di dalamnya tetap antri via request-gate (kuota aman).
+            // Merge ke Lap-1 dilakukan SEQUENSIAL setelahnya (hindari race push).
+            const regionOutputs = await Promise.all(visionRegions.map(async (vr) => {
               try {
                 const { png, width, height, view } = await renderDxfRegionToPng(parsedDxf, vr, { theme: 'light' });
                 const hybrid = await runHybridPipeline(
@@ -402,38 +421,58 @@ export const worker = new Worker(
                     legendSymbols: dxfRuleLegendSymbols as Parameters<typeof runHybridPipeline>[0]['legendSymbols'],
                     projectId: jrow.project_id ?? null,
                     drawingType,
+                    // Tag DXF dari vektor eksak — OCR hanya bakar waktu tesseract.
+                    skipOcr: true,
                   },
                   (msg, extra) => log(`dxf-vision r${vr.index + 1} ${msg}`, extra),
                 );
-                const st = mergeVisionDetections(
-                  dxfResult.detections,
-                  hybrid.detections,
-                  view,
-                  parsedDxf.extents,
-                  vr.index + 1,
-                  vr.index,
-                );
-                vMerged += st.mergedIntoVector;
-                vNew += st.visionOnlyNew;
-                vUp += st.typeUpgraded + st.boxUpgraded;
-                log('dxf vision region done', {
-                  region: vr.index + 1,
-                  yolo: hybrid.stats.yoloDetections,
-                  fallback: hybrid.stats.geminiFallbackDetections,
-                  merged: st.mergedIntoVector,
-                  new: st.visionOnlyNew,
-                });
+                return { vr, view, hybrid, error: null as string | null };
               } catch (regionErr) {
-                log('dxf vision region skipped', {
-                  region: vr.index + 1,
-                  reason: regionErr instanceof Error ? regionErr.message.slice(0, 120) : String(regionErr),
-                });
+                return {
+                  vr, view: null, hybrid: null,
+                  error: regionErr instanceof Error ? regionErr.message.slice(0, 120) : String(regionErr),
+                };
               }
+            }));
+            for (const out of regionOutputs) {
+              if (out.error || !out.hybrid || !out.view) {
+                log('dxf vision region skipped', { region: out.vr.index + 1, reason: out.error });
+                continue;
+              }
+              const st = mergeVisionDetections(
+                dxfResult.detections,
+                out.hybrid.detections,
+                out.view,
+                parsedDxf.extents,
+                out.vr.index + 1,
+                out.vr.index,
+                isTagValid,
+              );
+              vMerged += st.mergedIntoVector;
+              vNew += st.visionOnlyNew;
+              vUp += st.typeUpgraded + st.boxUpgraded;
+              vDropTag += st.droppedInvalidTag;
+              vDropQ += st.droppedLowQuality;
+              log('dxf vision region done', {
+                region: out.vr.index + 1,
+                yolo: out.hybrid.stats.yoloDetections,
+                fallback: out.hybrid.stats.geminiFallbackDetections,
+                merged: st.mergedIntoVector,
+                new: st.visionOnlyNew,
+              });
+              // Progress per region — UI tidak macet di 45% selama vision berjalan.
+              const doneCount = regionOutputs.indexOf(out) + 1;
+              await db.query('UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2', [
+                45 + Math.round((doneCount / regionOutputs.length) * 20),
+                jobId,
+              ]);
             }
             log('dxf vision lap-2 done', {
               merged: vMerged,
               visionOnlyNew: vNew,
               upgraded: vUp,
+              droppedInvalidTag: vDropTag,
+              droppedLowQuality: vDropQ,
               agreementPct: vMerged + vNew > 0 ? Math.round((vMerged / (vMerged + vNew)) * 100) : null,
             });
           } catch (vErr) {
@@ -492,17 +531,47 @@ export const worker = new Worker(
         // Delete previous detections for this job (re-run safety)
         await db.query("DELETE FROM detections WHERE job_id=$1", [jobId]);
 
+        // Final safety net (Blok 6): type vocabulary + tag validity.
+        // Even if a pipeline stage slips junk through ("iso", "9"), it dies here.
+        const { isValidAssetTag: isTagOk2, sanitizeAssetType: sanitizeType } =
+          await import('@/lib/validation');
+        const vocabRows = (await db.query(
+          `SELECT DISTINCT LOWER(ls.asset_type) AS t FROM legend_symbols ls
+           LEFT JOIN legends l ON l.id = ls.legend_id
+           WHERE ls.status='ACTIVE' AND ls.asset_type IS NOT NULL AND (
+             ($1::text <> '' AND ls.legend_id = ANY($1::uuid[]))
+             OR COALESCE(l.is_builtin, FALSE) = TRUE
+           )`,
+          [effectiveLegendIds.length > 0 ? `{${effectiveLegendIds.join(',')}}` : ''],
+        )).rows as Array<{ t: string }>;
+        const typeVocab = new Set(vocabRows.map((r) => r.t).filter(Boolean));
+        const tagRegexesFinal = (await import('@/lib/validation')).buildTagRegexes(
+          dxfLegendSymbols.map((s) => s.tag_pattern),
+        );
+        let droppedTag = 0, fixedType = 0;
+
         // Persist DXF detections
         const NULL_THR = tuningForDxf.detection.nullFieldConfidenceThreshold;
         const dxfInserts: Array<unknown[]> = [];
         for (const det of dxfResult.detections) {
+          let tag = det.confidence >= NULL_THR ? (det.assetTag ?? null) : null;
+          if (tag && !isTagOk2(tag, tagRegexesFinal)) {
+            tag = null;
+            det.evidence.push(`Tag "${det.assetTag}" rejected by validator — not persisted`);
+            droppedTag++;
+          }
+          let atype = sanitizeType(det.assetType, typeVocab.size > 0 ? typeVocab : undefined);
+          if (atype !== det.assetType) {
+            det.evidence.push(`Type "${det.assetType}" not in standards vocabulary → UNKNOWN`);
+            fixedType++;
+          }
           dxfInserts.push([
             uuidv4(),
             jobId,
             doc.id,
             pageIdByNumber.get(det.pidPage) ?? documentPageId,
-            det.confidence >= NULL_THR ? (det.assetTag ?? null) : null,
-            det.assetType,
+            tag,
+            atype,
             det.confidence,
             det.bbox.x,
             det.bbox.y,
@@ -539,7 +608,7 @@ export const worker = new Worker(
           [jobId]
         );
 
-        log("dxf pipeline done", { detections: dxfInserts.length });
+        log("dxf pipeline done", { detections: dxfInserts.length, droppedTag, fixedType });
         return { jobId, status: "COMPLETED", dxf: true, detections: dxfInserts.length };
       }
       // ── End DXF fast path ────────────────────────────────────────────────
@@ -817,7 +886,12 @@ export const worker = new Worker(
       // Pages are processed in batches. The configured size always wins; when it
       // is null it is derived from the render scale, because a high scale means
       // a large PNG per page and the batch is what bounds peak memory.
-      const defaultBatch = yoloActive ? 1 : (renderScale >= 5 ? 2 : 3);
+      // Gemini path: default batch=1 to avoid bursting the shared 15 RPM gate.
+      // Running 3 pages concurrently issues 21 Gemini calls at once; the gate
+      // then throttles the entire batch, making total time longer not shorter.
+      // Sequential pages with a steady 800ms inter-region delay stay well under
+      // the rate limit without bursting.
+      const defaultBatch = yoloActive ? 1 : (renderScale >= 5 ? 1 : 1);
       const PAGE_BATCH_SIZE = tuning.detection.pageBatchSize ?? defaultBatch;
 
       // Cancellation is checked between batches (not mid-batch).

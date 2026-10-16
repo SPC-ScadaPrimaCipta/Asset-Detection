@@ -128,6 +128,37 @@ describe('mergeVisionDetections', () => {
     expect(added.needsGeminiClassification).toBe(true);
   });
 
+  it('drops hallucinated vision tags ("9") via gate', () => {
+    const vec = [vectorDet()];
+    const stats = mergeVisionDetections(
+      vec,
+      [{
+        assetTag: '9', assetType: 'INSTRUMENT - (FRONT) PANEL MOUNTED', confidence: 0.7,
+        bboxNorm: { x: 490, y: 490, width: 12, height: 12 },
+        evidence: ['Source: Gemini fallback (YOLO missed)'],
+      }],
+      VIEW, GLOBAL, 2, 1,
+      (t) => t !== '9',
+    );
+    expect(stats.droppedInvalidTag).toBe(1);
+    expect(vec.length).toBe(1); // unchanged
+  });
+
+  it('drops untagged low-confidence vision noise', () => {
+    const vec = [vectorDet()];
+    const stats = mergeVisionDetections(
+      vec,
+      [{
+        assetTag: null, assetType: 'UNKNOWN', confidence: 0.51,
+        bboxNorm: { x: 100, y: 100, width: 20, height: 20 },
+        evidence: ['YOLO GEO-2: valve.general_nc.iso (score=0.53)'],
+      }],
+      VIEW, GLOBAL, 2, 1,
+    );
+    expect(stats.droppedLowQuality).toBe(1);
+    expect(vec.length).toBe(1);
+  });
+
   it('does not merge same tag far apart (different instances)', () => {
     const vec = [vectorDet()];
     const stats = mergeVisionDetections(

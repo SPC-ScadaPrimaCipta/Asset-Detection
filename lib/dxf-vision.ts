@@ -16,6 +16,7 @@
 
 import { dxfToNorm, type DxfPageExtents, type DxfPoint } from '@/lib/dxf-parser';
 import { UNKNOWN_ASSET_TYPE, type DxfDetection } from '@/lib/dxf-detection';
+import { sanitizeAssetType } from '@/lib/validation';
 import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
 
 export interface VisionDetectionInput {
@@ -82,6 +83,9 @@ export interface VisionMergeStats {
   visionOnlyNew: number;
   typeUpgraded: number;
   boxUpgraded: number;
+  /** Rejected by validation gates (invalid tag / low-quality untagged). */
+  droppedInvalidTag: number;
+  droppedLowQuality: number;
 }
 
 /** Merge threshold in GLOBAL 0-1000 space. */
@@ -99,6 +103,10 @@ export function mergeVisionDetections(
   globalExtents: DxfPageExtents,
   pidPage: number,
   regionIndex: number,
+  /** Tag gate — reject hallucinated tags ("9", "X", "4"). Defaults to accept. */
+  isTagValid?: (tag: string | null) => boolean,
+  /** Min confidence for untagged vision-only candidates (default 0.6). */
+  minUntaggedConfidence = 0.6,
 ): VisionMergeStats {
   const stats: VisionMergeStats = {
     visionTotal: vision.length,
@@ -106,6 +114,8 @@ export function mergeVisionDetections(
     visionOnlyNew: 0,
     typeUpgraded: 0,
     boxUpgraded: 0,
+    droppedInvalidTag: 0,
+    droppedLowQuality: 0,
   };
 
   for (const raw of vision) {
@@ -123,6 +133,11 @@ export function mergeVisionDetections(
             : [],
           detectionSource: String((raw as PersistableDetection).detection_source ?? ''),
         };
+    // Gate 1: hallucinated tags never enter the merge ("9", "X", "4"...).
+    if (v.assetTag && isTagValid && !isTagValid(v.assetTag)) {
+      stats.droppedInvalidTag++;
+      continue;
+    }
     const vTag = normTag(v.assetTag);
     const vBox = regionNormToGlobalNorm(v.bboxNorm, viewExtents, globalExtents);
     const vCenter = bboxCenter(vBox);
@@ -141,8 +156,8 @@ export function mergeVisionDetections(
 
     if (match) {
       stats.mergedIntoVector++;
-      const vType = (v.assetType ?? '').trim();
-      if ((match.assetType === UNKNOWN_ASSET_TYPE || !match.assetType) && vType && vType !== UNKNOWN_ASSET_TYPE) {
+      const vType = sanitizeAssetType(v.assetType);
+      if ((match.assetType === UNKNOWN_ASSET_TYPE || !match.assetType) && vType !== UNKNOWN_ASSET_TYPE) {
         match.assetType = vType;
         stats.typeUpgraded++;
       }
@@ -160,8 +175,13 @@ export function mergeVisionDetections(
         match.needsGeminiClassification = false;
       }
     } else {
+      // Gate 2: untagged low-confidence vision is review-queue flooding, not signal.
+      if (!vTag && v.confidence < minUntaggedConfidence) {
+        stats.droppedLowQuality++;
+        continue;
+      }
       stats.visionOnlyNew++;
-      const vType = (v.assetType ?? '').trim() || UNKNOWN_ASSET_TYPE;
+      const vType = sanitizeAssetType(v.assetType);
       const untagged = !vTag;
       const vEvidence = [...(v.evidence ?? []).slice(0, 4)];
       const vDesc = v.description ?? null;
