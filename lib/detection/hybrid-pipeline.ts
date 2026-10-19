@@ -209,6 +209,7 @@ async function runRuleValidation(
 ): Promise<{
   resolvedAssetType: string;
   resolvedAssetName: string;
+  legendSymbolId: string | null;
   source: string;
   ruleConfidence: number;
   negativePenalty: number;
@@ -251,6 +252,7 @@ async function runRuleValidation(
   return {
     resolvedAssetType: ruleResult.resolvedAssetType,
     resolvedAssetName: ruleResult.resolvedAssetName,
+    legendSymbolId: ruleResult.legendSymbol?.id ?? null,
     source: ruleResult.source,
     ruleConfidence: ruleResult.confidence,
     negativePenalty,
@@ -642,6 +644,11 @@ export async function runHybridPipeline(
 
     processedBboxesNorm.push(finalBboxNorm);
 
+    const matchedLegendSymbolName =
+      (rule.source === 'LEGEND' || rule.source === 'ISA' || rule.source === 'ISO')
+        ? (rule.resolvedAssetName ?? rule.resolvedAssetType)
+        : (rule.resolvedAssetName ?? det.rawLabel);
+
     persistable.push({
       assetTag: finalTag,
       assetType: finalAssetType,
@@ -651,7 +658,8 @@ export async function runHybridPipeline(
       bbox: finalBboxNorm,
       symbolBboxPx: refinedBboxPx,
       pageDims: { pageWidth: input.pageWidth, pageHeight: input.pageHeight },
-      legendSymbol: det.rawLabel,
+      legendSymbol: matchedLegendSymbolName,
+      legendSymbolId: rule.legendSymbolId,
       detection_source: 'YOLO_GEO2',
       evidence,
       image_hash: det.imageHash,
