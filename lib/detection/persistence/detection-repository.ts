@@ -224,12 +224,25 @@ export interface PersistResult {
   ids: string[];
 }
 
+let sizeColumnEnsured = false;
+export async function ensureSizeColumn(db: DbLike): Promise<void> {
+  if (sizeColumnEnsured) return;
+  try {
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
+    await db.query('ALTER TABLE assets ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
+    sizeColumnEnsured = true;
+  } catch {
+    // Non-fatal (e.g. read-only replica or already running)
+  }
+}
+
 export async function persistDetections(
   db: DbLike,
   items: PersistableDetection[],
   ctx: PersistContext,
   page: number
 ): Promise<PersistResult> {
+  await ensureSizeColumn(db);
   const ids: string[] = [];
   for (const d of items) {
     const matchedSymbol = resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);

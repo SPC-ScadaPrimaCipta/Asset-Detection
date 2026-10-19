@@ -243,13 +243,14 @@ export default function DxfViewer({
       // We record the pointerdown position; if pointerup is within 5px, treat as click.
       let pdX = 0, pdY = 0;
 
-      viewer.Subscribe('pointerdown', (e: { canvasCoord: { x: number; y: number } }) => {
+      viewer.Subscribe('pointerdown', (e?: { canvasCoord?: { x: number; y: number } }) => {
+        if (!e?.canvasCoord) return;
         pdX = e.canvasCoord.x;
         pdY = e.canvasCoord.y;
       });
 
-      viewer.Subscribe('pointerup', (e: { canvasCoord: { x: number; y: number } }) => {
-        if (!onSelectAsset) return;
+      viewer.Subscribe('pointerup', (e?: { canvasCoord?: { x: number; y: number } }) => {
+        if (!onSelectAsset || !e?.canvasCoord) return;
         // Only treat as click if pointer barely moved (not a pan drag)
         const dx = Math.abs(e.canvasCoord.x - pdX);
         const dy = Math.abs(e.canvasCoord.y - pdY);

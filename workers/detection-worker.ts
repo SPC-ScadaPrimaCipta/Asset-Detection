@@ -11,6 +11,7 @@ import { getTuning } from "@/lib/tuning";
 import {
   deleteDetectionsForPage,
   persistDetections,
+  ensureSizeColumn,
   type PersistableDetection,
 } from "@/lib/detection/persistence/detection-repository";
 import { isTerminalJobStatus } from "@/lib/detection/job-status";
@@ -602,6 +603,7 @@ export const worker = new Worker(
         }
 
         if (dxfInserts.length > 0) {
+          await ensureSizeColumn(db as unknown as { query: (text: string, params: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> });
           for (const row of dxfInserts) {
             await db.query(
               `INSERT INTO detections

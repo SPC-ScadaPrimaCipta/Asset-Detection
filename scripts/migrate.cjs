@@ -264,6 +264,18 @@ async function migrate() {
       console.warn('  V2-Phase2 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 011: valve size column support on detections and assets tables.
+    // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
+    try {
+      const sizesql = join(__dirname, '..', 'sql', 'migrate-011-valve-size.sql');
+      if (existsSync(sizesql)) {
+        await p.query(readFileSync(sizesql, 'utf-8'));
+        console.log('  011: detections.size + assets.size OK');
+      }
+    } catch (e) {
+      console.warn('  011 migration warning (non-fatal):', e.message);
+    }
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');
