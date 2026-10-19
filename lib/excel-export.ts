@@ -64,80 +64,137 @@ export async function buildAssetRegisterWorkbook(
     return true;
   });
 
-  const colWidths = [6, 20, 25, 25, 16, 25, 28, 12, 18, 15, 12, 8, 18, 15, 15, 10, 15, 18, 14, 25];
+  const colWidths = [
+    6,   // 1. #
+    15,  // 2. Equipment
+    20,  // 3. Tag No Proposed
+    16,  // 4. Equipment Type
+    22,  // 5. For Description
+    12,  // 6. Size
+    14,  // 7. From
+    14,  // 8. To
+    12,  // 9. Of
+    12,  // 10. At
+    18,  // 11. Tag Number
+    22,  // 12. Alternative Description by ACN (OLD)
+    22,  // 13. Alternative Description by ACN
+    24,  // 14. Description Proposed
+    25,  // 15. Description
+    8,   // 16. Len
+    14,  // 17. Class
+    14,  // 18. Object Type
+    14,  // 19. Type
+    12,  // 20. Weight
+    8,   // 21. UOM
+    16,  // 22. Inventory No.
+    16,  // 23. Size/Dimension
+    14,  // 24. Start-up Date
+    16,  // 25. Acquisition Value
+    10,  // 26. Currency
+    16,  // 27. Acquisition Date
+    16,  // 28. Location
+    25,  // 29. Manufacture Drawing No.
+  ];
   colWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   // Row 1: SAP codes mapped logically to their respective headers
   const row1 = ws.addRow([
-    "", "", "", "", "", "", "", "",
-    "KLASSE", "EQART", "BRGEW", "GEWEI", "INVNR", "INBDT", "ANSWT", "WAERS", "ANSDT", "GROES", "STORT", "HZEIN"
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "KLASSE", "OBJECT_TYPE", "TYPE", "BRGEW", "GEWEI", "INVNR", "GROES", "INBDT", "ANSWT", "WAERS", "ANSDT", "STORT", "HZEIN"
   ]);
 
-  // Row 2: Lengths mapped logically to their respective SAP codes (KLASSE=18, EQART=10, BRGEW=17, GEWEI=3)
+  // Row 2: Lengths mapped logically to their respective SAP codes
   const row2 = ws.addRow([
-    "", "", "", "", "", "", "", "",
-    "18", "10", "17", "3", "", "", "", "", "", "", "", ""
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "18", "10", "10", "17", "3", "25", "18", "8", "17", "4", "17", "10", "45"
   ]);
 
-  // Row 3: Descriptive headers
+  // Row 3: Descriptive headers (29 columns)
   const row3 = ws.addRow([
-    "No",
-    "Equipment Tag No Proposed",
-    "Equipment Type For Description",
-    "Size / From / To / Of / At",
+    "#",
+    "Equipment",
+    "Tag No Proposed",
+    "Equipment Type",
+    "For Description",
+    "Size",
+    "From",
+    "To",
+    "Of",
+    "At",
     "Tag Number",
-    "Alternative Description OLD / by ACN",
+    "Alternative Description by ACN (OLD)",
+    "Alternative Description by ACN",
     "Description Proposed",
-    "Description Len",
+    "Description",
+    "Len",
     "Class",
     "Object Type",
+    "Type",
     "Weight",
     "UOM",
     "Inventory No.",
+    "Size/Dimension",
     "Start-up Date",
     "Acquisition Value",
     "Currency",
     "Acquisition Date",
-    "Size/Dimension",
     "Location",
     "Manufacture Drawing No."
   ]);
 
-  row1.font = { bold: true };
-  row2.font = { bold: true };
+  row1.font = { bold: true, size: 9, color: { argb: "FF595959" } };
+  row1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+  row1.alignment = { vertical: "middle", horizontal: "center" };
 
-  row3.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  row3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
-  row3.alignment = { vertical: "middle", horizontal: "center" };
-  row3.height = 22;
+  row2.font = { bold: true, size: 9, color: { argb: "FF595959" } };
+  row2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+  row2.alignment = { vertical: "middle", horizontal: "center" };
+
+  row3.height = 26;
+  const redHeaderCols = new Set([3, 4, 5, 6, 7, 8, 9, 10, 11, 17, 18, 19]);
+  row3.eachCell((cell, colNum) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF70AD47" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.font = {
+      bold: true,
+      color: { argb: redHeaderCols.has(colNum) ? "FFC00000" : "FF000000" }
+    };
+  });
 
   ws.views = [{ state: "frozen", ySplit: 3 }];
-  ws.autoFilter = { from: "A3", to: "T3" };
+  ws.autoFilter = { from: "A3", to: "AC3" };
 
   filtered.forEach((a, i) => {
-    const sizeFromToOfAt = [a.size, a.fromRef, a.toRef, a.ofOrAtRef].filter(Boolean).join(" / ");
-
     ws.addRow([
-      i + 1,
-      a.tagNoProposed ?? "",
-      a.assetType ?? "",
-      sizeFromToOfAt,
-      a.assetTag ?? "",
-      "", // Alternative Description OLD / by ACN
-      a.descriptionProposed ?? "",
-      a.description ? a.description.length : 0,
-      a.equipmentClass ?? "",
-      "", // Object Type
-      "", // Weight
-      "", // UOM
-      "", // Inventory No.
-      "", // Start-up Date
-      "", // Acquisition Value
-      "", // Currency
-      "", // Acquisition Date
-      a.size ?? "",
-      a.location ?? "",
-      a.pidNumber ?? ""
+      i + 1,                                                 // 1. #
+      a.mainEquipment ?? `EQ-${String(i + 1).padStart(6, '0')}`, // 2. Equipment
+      a.tagNoProposed ?? a.assetTag ?? "",                   // 3. Tag No Proposed
+      a.assetType ?? "",                                     // 4. Equipment Type
+      a.descriptionProposed ?? a.description ?? "",          // 5. For Description
+      a.size ?? "",                                          // 6. Size
+      a.fromRef ?? "",                                       // 7. From
+      a.toRef ?? "",                                         // 8. To
+      a.ofOrAtRef ?? "",                                     // 9. Of
+      "",                                                    // 10. At
+      a.assetTag ?? "",                                      // 11. Tag Number
+      "",                                                    // 12. Alternative Description by ACN (OLD)
+      "",                                                    // 13. Alternative Description by ACN
+      a.descriptionProposed ?? "",                           // 14. Description Proposed
+      a.description ?? "",                                   // 15. Description
+      a.description ? a.description.length : 0,              // 16. Len
+      a.equipmentClass ?? "",                                // 17. Class
+      "",                                                    // 18. Object Type
+      "",                                                    // 19. Type
+      "",                                                    // 20. Weight
+      "",                                                    // 21. UOM
+      "",                                                    // 22. Inventory No.
+      a.size ?? "",                                          // 23. Size/Dimension
+      "",                                                    // 24. Start-up Date
+      "",                                                    // 25. Acquisition Value
+      "",                                                    // 26. Currency
+      "",                                                    // 27. Acquisition Date
+      a.location ?? "",                                      // 28. Location
+      a.pidNumber ?? ""                                      // 29. Manufacture Drawing No.
     ]);
   });
 
