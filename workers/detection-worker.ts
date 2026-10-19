@@ -597,6 +597,7 @@ export const worker = new Worker(
             'DXF',
             det.pidPage, // sheet region index + 1
             effectiveLegendId ?? null,
+            det.size ?? null,
           ]);
         }
 
@@ -608,8 +609,8 @@ export const worker = new Worker(
                   asset_tag, asset_type, confidence,
                   bbox_x, bbox_y, bbox_w, bbox_h,
                   evidence, detection_status, review_status,
-                  detection_source, pid_page, legend_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+                  detection_source, pid_page, legend_id, size)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
               row
             );
           }

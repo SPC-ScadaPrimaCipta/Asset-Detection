@@ -40,6 +40,7 @@ import {
   clusterSymbolGeometry,
   nearestCluster,
 } from '@/lib/dxf-clusters';
+import { parseLineSpecText } from '@/lib/piping-parser';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export interface DxfDetection {
   regionIndex: number;
   /** 1-based halaman P&ID (= regionIndex + 1). */
   pidPage: number;
+  size?: string | null;
 }
 
 export interface DxfRegionInfo {
@@ -1431,6 +1433,14 @@ export function runDxfDetection(
   }
   } // end region loop
 
+  // Associate piping line sizes to valves across all detections
+  const pipeLines = extractPipingLinesFromEntities(
+    globalEntities,
+    globalTexts,
+    Math.max(globalExtents.width, globalExtents.height) * 0.05
+  );
+  associatePipingLinesToValves(allDetections, pipeLines);
+
   return {
     detections: allDetections,
     page: 1,
@@ -1676,3 +1686,104 @@ Reply ONLY with JSON array (same order):
     if (i + BATCH < candidates.length) await new Promise(r => setTimeout(r, 200));
   }
 }
+
+// ── Piping Line & Valve Size Association ─────────────────────────────────────
+
+export interface DxfPipeLineRef {
+  start: DxfPoint;
+  end: DxfPoint;
+  text?: string;
+  size: string;
+}
+
+/**
+ * Calculates perpendicular/closest distance from point P to line segment AB.
+ */
+export function distancePointToSegment(p: DxfPoint, a: DxfPoint, b: DxfPoint): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) {
+    const px = p.x - a.x;
+    const py = p.y - a.y;
+    return Math.sqrt(px * px + py * py);
+  }
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const projX = a.x + t * dx;
+  const projY = a.y + t * dy;
+  const diffX = p.x - projX;
+  const diffY = p.y - projY;
+  return Math.sqrt(diffX * diffX + diffY * diffY);
+}
+
+/**
+ * Extracts piping lines from entities and texts using parseLineSpecText.
+ */
+export function extractPipingLinesFromEntities(
+  entities: import('@/lib/dxf-parser').DxfEntity[],
+  texts: DxfTextEntity[],
+  maxTextToLineDist: number = 50
+): DxfPipeLineRef[] {
+  const lineEntities: DxfLineEntity[] = entities.filter((e): e is DxfLineEntity => e.kind === 'LINE');
+  const pipeLines: DxfPipeLineRef[] = [];
+
+  for (const t of texts) {
+    const parsed = parseLineSpecText(t.text);
+    if (!parsed) continue;
+
+    let closestLine: DxfLineEntity | null = null;
+    let minD = maxTextToLineDist;
+
+    for (const l of lineEntities) {
+      const d = distancePointToSegment(t.position, l.start, l.end);
+      if (d < minD) {
+        minD = d;
+        closestLine = l;
+      }
+    }
+
+    if (closestLine) {
+      pipeLines.push({
+        start: closestLine.start,
+        end: closestLine.end,
+        text: parsed.rawText,
+        size: parsed.pipeSize,
+      });
+    }
+  }
+
+  return pipeLines;
+}
+
+/**
+ * Associates valves with collinear/intersecting piping line segments and assigns nominal size.
+ */
+export function associatePipingLinesToValves<T extends DxfDetection>(
+  valves: T[],
+  lines: DxfPipeLineRef[],
+  maxDistance: number = 60
+): T[] {
+  for (const v of valves) {
+    if (v.size) continue;
+    const pos = v.rawPosition ?? { x: v.bbox.x + v.bbox.width / 2, y: v.bbox.y + v.bbox.height / 2 };
+
+    let bestLine: DxfPipeLineRef | null = null;
+    let minD = maxDistance;
+
+    for (const line of lines) {
+      const d = distancePointToSegment(pos, line.start, line.end);
+      if (d < minD) {
+        minD = d;
+        bestLine = line;
+      }
+    }
+
+    if (bestLine) {
+      v.size = bestLine.size;
+      v.evidence.push(`[Line-Size] Inferred ${bestLine.size} from collinear piping line ${bestLine.text ?? ''}`.trim());
+    }
+  }
+  return valves;
+}
+
