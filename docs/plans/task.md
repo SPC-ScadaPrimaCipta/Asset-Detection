@@ -1,11 +1,10 @@
-# Brainstorming: Automatic Fallback Tag Generator
+# Brainstorming: Deteksi Ukuran Valve dari Ukuran Piping (P&ID Line Size Inference)
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Create Smart Abbreviation & Project-Level Tag Allocator (`lib/tag-generator.ts`) | COMPLETED |
-| TASK-02 | Create Batch Symbol Tag Pattern Update API (`app/api/legends/[id]/symbols/batch/route.ts`) | COMPLETED |
-| TASK-03 | Implement Modal "Tag Pattern & Prefix Manager" in Legend UI (`app/legends/[id]/page.tsx`) | COMPLETED |
-| TASK-04 | Integrate Project-Level Unique Auto-Tagging in Detection Pipeline | COMPLETED |
-| TASK-05 | Add UI Review Badge in Detection Page (`app/detection/page.tsx`) | COMPLETED |
-| TASK-06 | Execute Full Verification & Generate Markdown Report | COMPLETED |
-
+| TASK-01 | Explore project context and domain mechanics (P&ID line notation & spatial association) | COMPLETED |
+| TASK-02 | Answer feasibility and ask clarifying questions on piping label convention and fallback rules | COMPLETED |
+| TASK-03 | Propose 2-3 technical approaches with trade-offs and recommendation (Option 1 Selected) | COMPLETED |
+| TASK-04 | Present detailed design sections and get user approval (Template validated with image) | COMPLETED |
+| TASK-05 | Write design document (`docs/plans/2026-10-19-valve-size-inference-design.md`) and commit | COMPLETED |
+| TASK-06 | Transition to implementation via writing-plans | IN_PROGRESS |
