@@ -269,8 +269,11 @@ export function dedupeRegionDetections(
         type !== "" && kType !== "" &&
         typesOverlap(type, kType);
       if (!sameTag && !sameUntaggedType) return false;
+      // Untagged: use 0.85× threshold (was 0.70×). Higher multiplier reduces
+      // false deduplication of genuinely distinct small symbols that share the
+      // same type and sit close together (e.g. two adjacent gate valves).
       const effectiveThreshold = sameUntaggedType && !sameTag
-        ? iouThreshold * 0.7
+        ? iouThreshold * 0.85
         : iouThreshold;
       return bboxIou1000(k.bbox, d.bbox) > effectiveThreshold;
     });
@@ -590,11 +593,18 @@ async function resolveDetections(
       };
     }
 
-    // Step 3: If UNKNOWN from rule chain but AI had high confidence, still flag as VISION
+    // Step 3: Resolve final asset type.
+    // When source=LEGEND, prefer resolvedAssetName (exact symbol_name from the
+    // legend row) over resolvedAssetType (which may be the generic category).
+    // This ensures the displayed component name always matches the legend exactly,
+    // e.g. "Pressure Differential Transmitter" instead of "Instrument".
+    // For all other sources keep resolvedAssetType as before.
     const finalAssetType =
       validation.source === "UNKNOWN"
         ? "UNKNOWN"
-        : validation.resolvedAssetType;
+        : validation.source === "LEGEND" && validation.resolvedAssetName
+          ? validation.resolvedAssetName
+          : validation.resolvedAssetType;
     const finalConfidence = validation.confidence;
 
     // Fix #7: Legend quality feedback.

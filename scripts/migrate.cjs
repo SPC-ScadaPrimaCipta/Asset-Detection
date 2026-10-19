@@ -264,6 +264,17 @@ async function migrate() {
       console.warn('  V2-Phase2 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 009-dxf-layer-profiles: configurable layer mapping for DXF detection.
+    try {
+      const dlsql = join(__dirname, '..', 'sql', 'migrate-009-dxf-layer-profiles.sql');
+      if (existsSync(dlsql)) {
+        await p.query(readFileSync(dlsql, 'utf-8'));
+        console.log('  009-dxf-layer-profiles: dxf_layer_profiles + dxf_layer_analysis OK');
+      }
+    } catch (e) {
+      console.warn('  009-dxf-layer-profiles migration warning (non-fatal):', e.message);
+    }
+
     // Migration 011: valve size column support on detections and assets tables.
     // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
     try {

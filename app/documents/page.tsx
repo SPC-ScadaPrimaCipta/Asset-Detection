@@ -310,7 +310,7 @@ export default function DocumentsPage() {
             disabled={!canUpload}
             style={{ ...primaryButtonStyle, opacity: !canUpload ? 0.4 : 1, cursor: !canUpload ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
           >
-            {uploading ? <><span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />Uploading…</> : <><UploadSimple size={15} weight="bold" />Upload PDF</>}
+            {uploading ? <><span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />Uploading…</> : <><UploadSimple size={15} weight="bold" />Upload Dokumen</>}
           </button>
           {uploadProgress === 100 && !uploading && (
             <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={14} weight="fill" /> Upload successful</span>

@@ -77,7 +77,8 @@ const envSchema = z.object({
   // cannot stall a job indefinitely.
   GEMINI_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(60_000),
   // Pause between per-region / per-chunk calls, to stay under per-minute limits.
-  DETECTION_REGION_DELAY_MS: z.coerce.number().int().min(0).default(1200),
+  // 800ms: safe for PAGE_BATCH_SIZE=1 (≤10 calls/min from a single job, under 15 RPM free tier).
+  DETECTION_REGION_DELAY_MS: z.coerce.number().int().min(0).default(800),
   LEGEND_REGION_DELAY_MS: z.coerce.number().int().min(0).default(300),
   LEGEND_ERROR_DELAY_MS: z.coerce.number().int().min(0).default(1000),
   // Delay between per-model attempts inside one detection request.
