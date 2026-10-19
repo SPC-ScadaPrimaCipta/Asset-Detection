@@ -877,6 +877,33 @@ export const worker = new Worker(
           });
         }
 
+        // Automatic Piping Line Size Inference for Valves
+        try {
+          const { extractPdfTextTokensFromBuffer, associateNearestPipingSize } = await import('@/lib/spatial-piping');
+          const pageTokens = await extractPdfTextTokensFromBuffer(buf, page);
+          if (pageTokens.length > 0) {
+            let sizeInferredCount = 0;
+            for (const d of deduped) {
+              if (!d.size) {
+                const match = associateNearestPipingSize(d.bbox, pageTokens);
+                if (match) {
+                  d.size = match.size;
+                  d.evidence.push(`[Line-Size] Inferred ${match.size} from line label "${match.lineText}"`);
+                  sizeInferredCount++;
+                }
+              }
+            }
+            if (sizeInferredCount > 0) {
+              log(`page ${page} inferred pipe size for ${sizeInferredCount} detection(s)`, { page, sizeInferredCount });
+            }
+          }
+        } catch (pipeErr) {
+          log(`page ${page} piping size association skipped (non-fatal)`, {
+            page,
+            error: pipeErr instanceof Error ? pipeErr.message : String(pipeErr),
+          });
+        }
+
         // Page persistence is idempotent: drop whatever this job wrote for this
         // page before re-inserting. Without this, any re-run (stalled lock,
         // manual re-trigger, resume after restart) appends a second copy of the
