@@ -7,4 +7,4 @@
 | TASK-03 | Propose 2-3 technical approaches with trade-offs and recommendation (Option 1 Selected) | COMPLETED |
 | TASK-04 | Present detailed design sections and get user approval (Template validated with image) | COMPLETED |
 | TASK-05 | Write design document (`docs/plans/2026-10-19-valve-size-inference-design.md`) and commit | COMPLETED |
-| TASK-06 | Transition to implementation via writing-plans | IN_PROGRESS |
+| TASK-06 | Transition to implementation via writing-plans (`docs/plans/2026-10-19-valve-size-inference.md`) | COMPLETED |
