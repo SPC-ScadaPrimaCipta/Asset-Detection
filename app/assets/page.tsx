@@ -15,6 +15,7 @@ interface Asset {
   id: string;
   asset_tag: string | null;
   asset_type: string;
+  size: string | null;
   equipment_class: string | null;
   description: string | null;
   pid_number: string | null;
@@ -180,6 +181,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
   const fields: [string, string][] = [
     ['Asset Tag', asset.asset_tag ?? '—'],
     ['Asset Type', asset.asset_type],
+    ['Size', asset.size ?? '—'],
     ['Equipment Class', asset.equipment_class ?? '—'],
     ['Description', asset.description ?? '—'],
     ['P&ID Number', asset.pid_number ?? '—'],
@@ -641,6 +643,7 @@ function AssetRegisterWorkspace() {
                 <th style={{ ...thStyle, width: 40 }}>No</th>
                 <th style={thStyle}>Asset Tag</th>
                 <th style={thStyle}>Asset Type</th>
+                <th style={thStyle}>Size</th>
                 <th style={thStyle}>Equipment Class</th>
                 <th style={thStyle}>Description</th>
                 <th style={thStyle}>P&amp;ID</th>
@@ -655,7 +658,7 @@ function AssetRegisterWorkspace() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={12} style={{ padding: '64px 0', textAlign: 'center' }}>
+                  <td colSpan={13} style={{ padding: '64px 0', textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--foreground-muted)' }}>
                       <Spinner size={24} />
                       <span>Loading assets…</span>
@@ -664,7 +667,7 @@ function AssetRegisterWorkspace() {
                 </tr>
               ) : assets.length === 0 ? (
                 <tr>
-                  <td colSpan={12} style={{ padding: '64px 0', textAlign: 'center' }}>
+                  <td colSpan={13} style={{ padding: '64px 0', textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--foreground-muted)' }}>
                       <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m8-4v8" />
@@ -694,6 +697,9 @@ function AssetRegisterWorkspace() {
                     </td>
                     <td style={{ ...tdBase, color: 'var(--foreground)', whiteSpace: 'nowrap' }}>
                       {asset.asset_type}
+                    </td>
+                    <td style={{ ...tdBase, color: asset.size ? 'var(--foreground)' : 'var(--foreground-subtle)', whiteSpace: 'nowrap', fontFamily: 'var(--font-geist-mono, ui-monospace, monospace)' }}>
+                      {asset.size ?? <span style={{ color: 'var(--foreground-subtle)' }}>—</span>}
                     </td>
                     <td style={{ ...tdBase, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
                       {asset.equipment_class ?? '—'}
@@ -836,6 +842,7 @@ function AssetRegisterWorkspace() {
                 [
                   { key: 'asset_tag', label: 'Asset Tag' },
                   { key: 'asset_type', label: 'Asset Type' },
+                  { key: 'size', label: 'Size' },
                   { key: 'equipment_class', label: 'Equipment Class' },
                   { key: 'description', label: 'Description' },
                   { key: 'service', label: 'Service' },

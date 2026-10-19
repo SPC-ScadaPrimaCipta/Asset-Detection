@@ -574,7 +574,7 @@ export const worker = new Worker(
             det.evidence.push(`Tag "${det.assetTag}" rejected by validator — not persisted`);
             droppedTag++;
           }
-          let atype = sanitizeType(det.assetType, typeVocab.size > 0 ? typeVocab : undefined);
+          const atype = sanitizeType(det.assetType, typeVocab.size > 0 ? typeVocab : undefined);
           if (atype !== det.assetType) {
             det.evidence.push(`Type "${det.assetType}" not in standards vocabulary → UNKNOWN`);
             fixedType++;

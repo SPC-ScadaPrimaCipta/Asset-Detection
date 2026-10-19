@@ -85,6 +85,7 @@ interface Detection {
   location: string | null;
   unit: string | null;
   area: string | null;
+  size?: string | null;
   legend_id: string | null;
   legend_symbol_id: string | null;
   detection_source: string | null;
@@ -1863,6 +1864,7 @@ function AssetDetail({
   const [editTag, setEditTag] = useState(detection.asset_tag ?? "");
   const [editType, setEditType] = useState(detection.asset_type);
   const [editDesc, setEditDesc] = useState(detection.description ?? "");
+  const [editSize, setEditSize] = useState(detection.size ?? "");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -1871,6 +1873,7 @@ function AssetDetail({
       asset_tag: editTag || null,
       asset_type: editType,
       description: editDesc || null,
+      size: editSize || null,
     } as Partial<Detection>);
     setSaving(false);
     setEditing(false);
@@ -2010,6 +2013,7 @@ function AssetDetail({
             {[
               ["Asset Tag", detection.asset_tag ?? "—"],
               ["Asset Type", detection.asset_type],
+              ["Size", detection.size ?? "—"],
               ["Equipment Class", detection.equipment_class ?? "—"],
               ["Description", detection.description ?? "—"],
               [
@@ -2131,6 +2135,15 @@ function AssetDetail({
                 style={{ ...selectStyle, marginTop: "4px" }}
                 value={editType}
                 onChange={(e) => setEditType(e.target.value)}
+              />
+            </label>
+            <label style={{ display: "block" }}>
+              <span style={fieldLabelStyle}>Size</span>
+              <input
+                style={{ ...selectStyle, marginTop: "4px" }}
+                value={editSize}
+                onChange={(e) => setEditSize(e.target.value)}
+                placeholder='e.g. 2", 4", DN100'
               />
             </label>
             <label style={{ display: "block" }}>
@@ -2256,7 +2269,7 @@ function DetectionsTable({
   const [syncPage, setSyncPage] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<
-    "tag" | "type" | "page" | "conf" | "status"
+    "tag" | "type" | "size" | "page" | "conf" | "status"
   >("tag");
   const [sortAsc, setSortAsc] = useState(true);
   // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
@@ -2295,10 +2308,12 @@ function DetectionsTable({
     return base.filter((d) => {
       const tag = d.asset_tag ?? "";
       const type = normalizeType(d.asset_type);
+      const sz = d.size ?? "";
       if (
         q &&
         !tag.toLowerCase().includes(q.toLowerCase()) &&
-        !type.toLowerCase().includes(q.toLowerCase())
+        !type.toLowerCase().includes(q.toLowerCase()) &&
+        !sz.toLowerCase().includes(q.toLowerCase())
       )
         return false;
       if (status) {
@@ -2331,6 +2346,8 @@ function DetectionsTable({
       cmp = (a.asset_tag ?? "").localeCompare(b.asset_tag ?? "");
     else if (sortBy === "type")
       cmp = (a.asset_type ?? "").localeCompare(b.asset_type ?? "");
+    else if (sortBy === "size")
+      cmp = (a.size ?? "").localeCompare(b.size ?? "");
     else if (sortBy === "page") cmp = (a.pid_page ?? 0) - (b.pid_page ?? 0);
     else if (sortBy === "conf") cmp = (a.confidence ?? 0) - (b.confidence ?? 0);
     else if (sortBy === "status")
@@ -2343,7 +2360,7 @@ function DetectionsTable({
   const safeTablePage = Math.min(Math.max(1, page), totalPages);
   const slice = sorted.slice((safeTablePage - 1) * pageSize, safeTablePage * pageSize);
 
-  const toggleSort = (col: "tag" | "type" | "page" | "conf" | "status") => {
+  const toggleSort = (col: "tag" | "type" | "size" | "page" | "conf" | "status") => {
     if (sortBy === col) setSortAsc(!sortAsc);
     else {
       setSortBy(col);
@@ -2356,7 +2373,7 @@ function DetectionsTable({
     col,
     label,
   }: {
-    col: "tag" | "type" | "page" | "conf" | "status";
+    col: "tag" | "type" | "size" | "page" | "conf" | "status";
     label: string;
   }) => (
     <th
@@ -2707,6 +2724,7 @@ function DetectionsTable({
               </th>
               <SortHeader col="tag" label="Asset Tag" />
               <SortHeader col="type" label="Asset Type" />
+              <SortHeader col="size" label="Size" />
               <SortHeader col="page" label="Page" />
               <SortHeader col="conf" label="Conf." />
               <SortHeader col="status" label="Status" />
@@ -2716,7 +2734,7 @@ function DetectionsTable({
             {slice.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onBulkAction ? 7 : 6}
+                  colSpan={onBulkAction ? 8 : 7}
                   style={{
                     padding: "48px 12px",
                     textAlign: "center",
@@ -2833,6 +2851,30 @@ function DetectionsTable({
                       <span>{normalizeType(d.asset_type)}</span>
                       {sourceBadge(d.detection_source)}
                     </div>
+                  </td>
+                  <td
+                    style={{
+                      ...cellBase,
+                      color: d.size ? "var(--foreground)" : "var(--foreground-subtle)",
+                      fontFamily: d.size ? "var(--font-geist-mono, monospace)" : "inherit",
+                    }}
+                  >
+                    {d.size ? (
+                      <span
+                        style={{
+                          background: "var(--surface-muted)",
+                          padding: "1px 6px",
+                          borderRadius: "4px",
+                          border: "1px solid var(--border)",
+                          fontSize: "11px",
+                          fontWeight: "500",
+                        }}
+                      >
+                        {d.size}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--foreground-subtle)" }}>—</span>
+                    )}
                   </td>
                   <td style={{ ...cellBase, color: "var(--foreground-muted)" }}>
                     {d.pid_page ?? "—"}

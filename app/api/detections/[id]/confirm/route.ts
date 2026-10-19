@@ -142,8 +142,9 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
           bbox_x=$14, bbox_y=$15, bbox_w=$16, bbox_h=$17,
           evidence=$18,
           main_equipment=$19, field_confidence=$20, field_provenance=$21,
+          size=$22,
           updated_at=NOW()
-         WHERE detection_id=$22`,
+         WHERE detection_id=$23`,
         [
           d.asset_tag, d.asset_type, d.equipment_class, d.description,
           d.service, d.location, d.unit, d.area,
@@ -154,6 +155,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
           d.main_equipment ?? null,
           d.field_confidence ? JSON.stringify(d.field_confidence) : null,
           d.field_provenance ? JSON.stringify(d.field_provenance) : null,
+          d.size ?? null,
           id,
         ]
       );
@@ -166,8 +168,8 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
           description, service, location, unit, area, pid_number, pid_page,
           legend_id, legend_symbol_id, confidence, detection_status, review_status,
           bbox_x, bbox_y, bbox_w, bbox_h, evidence,
-          main_equipment, field_confidence, field_provenance)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'CONFIRMED','APPROVED',$18,$19,$20,$21,$22,$23,$24,$25)`,
+          main_equipment, field_confidence, field_provenance, size)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'CONFIRMED','APPROVED',$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
         [
           uuidv4(), projectId, d.document_id, d.id,
           d.asset_tag, d.asset_type, d.equipment_class, d.description,
@@ -179,6 +181,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
           d.main_equipment ?? null,
           d.field_confidence ? JSON.stringify(d.field_confidence) : null,
           d.field_provenance ? JSON.stringify(d.field_provenance) : null,
+          d.size ?? null,
         ]
       );
     }

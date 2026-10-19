@@ -181,7 +181,6 @@ export interface AutoTaggableDetection {
   legendSymbol?: string | null;
   evidence: string[];
   detEvidence?: Record<string, unknown> | null;
-  [key: string]: unknown;
 }
 
 export interface LegendSymbolTagPatternRef {

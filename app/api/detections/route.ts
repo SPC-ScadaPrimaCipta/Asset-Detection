@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     if (status)       { conds.push(`d.detection_status=$${i++}`);  vals.push(status); }
     if (reviewStatus) { conds.push(`d.review_status=$${i++}`);     vals.push(reviewStatus); }
     if (q) {
-      conds.push(`(d.asset_tag ILIKE $${i} OR d.asset_type ILIKE $${i} OR d.description ILIKE $${i})`);
+      conds.push(`(d.asset_tag ILIKE $${i} OR d.asset_type ILIKE $${i} OR d.description ILIKE $${i} OR d.size ILIKE $${i})`);
       vals.push(`%${q}%`);
       i++;
     }

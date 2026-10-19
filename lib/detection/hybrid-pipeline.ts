@@ -20,6 +20,7 @@
 import sharp from 'sharp';
 import { createHash } from 'crypto';
 import { env } from '@/lib/env';
+import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
 import { runYoloGeo2Page } from '@/lib/detection/yolo/yolo-geo2-runner';
 import {
   cropBBoxFromBuffer,
@@ -499,11 +500,8 @@ export async function runHybridPipeline(
   const pageLog = (msg: string) => log(`page ${input.page} [hybrid] ${msg}`);
 
   // ── Stage 1+2: YOLO + OCR ──
-<<<<<<< Updated upstream
   if (input.skipOcr) pageLog('OCR skipped (caller-provided tags)');
-  const yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
-=======
-  let yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog);
+  let yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
 
   // ── Stage 1.5: Template Matching Fallback (if YOLO found 0 candidates and enabled) ──
   if (
@@ -568,8 +566,6 @@ export async function runHybridPipeline(
       pageLog(`Template Matching fallback failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-
->>>>>>> Stashed changes
   const yoloWithTags = yoloOcrDets.filter(d => d.isTag || d.ocrText).length;
 
   // ── Stage 3+4+5+7+8: Rule Validator + optional Gemini Verifier per detection ──

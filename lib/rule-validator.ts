@@ -51,6 +51,7 @@ export interface LegendSymbol {
   standard_code: string | null;
   isa_function_code: string | null;
   iso_category: string | null;
+  reference_image_url?: string | null;
 }
 
 export interface RuleValidationInput {

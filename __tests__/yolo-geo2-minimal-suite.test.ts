@@ -458,16 +458,20 @@ describe('YOLO GEO-2 Minimal Integration & Verification Suite', () => {
 
       // Row 4 is the first data row (Rows 1-3 are headers)
       const dataRow = ws!.getRow(4);
-      // Column 2: Equipment Tag No Proposed
-      expect(dataRow.getCell(2).value).toBe('');
-      // Column 3: Equipment Type
-      expect(dataRow.getCell(3).value).toBe('gate_valve');
-      // Column 5: Tag Number (must NOT be hallucinated)
-      expect(dataRow.getCell(5).value).toBe('');
-      // Column 7: Description Proposed (must NOT be hallucinated)
-      expect(dataRow.getCell(7).value).toBe('');
-      // Column 9: Class
-      expect(dataRow.getCell(9).value).toBe('valve');
+      // Column 2: Equipment (generated default SAP code if null)
+      expect(dataRow.getCell(2).value).toBe('EQ-000001');
+      // Column 3: Tag No Proposed (must NOT be hallucinated)
+      expect(dataRow.getCell(3).value).toBe('');
+      // Column 4: Equipment Type
+      expect(dataRow.getCell(4).value).toBe('gate_valve');
+      // Column 6: Size
+      expect(dataRow.getCell(6).value).toBe('');
+      // Column 11: Tag Number (must NOT be hallucinated)
+      expect(dataRow.getCell(11).value).toBe('');
+      // Column 14: Description Proposed (must NOT be hallucinated)
+      expect(dataRow.getCell(14).value).toBe('');
+      // Column 17: Class
+      expect(dataRow.getCell(17).value).toBe('valve');
 
       // Check Sheet 5 (Evidence)
       const ws5 = wb.getWorksheet('Detection Evidence');

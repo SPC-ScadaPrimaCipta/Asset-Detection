@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     if (reviewStatus){ conds.push(`a.review_status=$${i++}`); vals.push(reviewStatus); }
     if (assetType)   { conds.push(`a.asset_type ILIKE $${i++}`); vals.push(`%${assetType}%`); }
     if (q) {
-      conds.push(`(a.asset_tag ILIKE $${i} OR a.asset_type ILIKE $${i} OR a.description ILIKE $${i})`);
+      conds.push(`(a.asset_tag ILIKE $${i} OR a.asset_type ILIKE $${i} OR a.description ILIKE $${i} OR a.size ILIKE $${i})`);
       vals.push(`%${q}%`);
       i++;
     }
