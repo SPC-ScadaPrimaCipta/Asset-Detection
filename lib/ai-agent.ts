@@ -162,7 +162,7 @@ function envDetectionTuning(): DetectionTuning {
 export async function runDetectionAgent(
   input: DetectionJobInput,
 ): Promise<ResolvedPageDetection> {
-  const cfg = await assertGeminiUsable();
+  const cfg = await assertVisionModelUsable();
 
   // Step 1: Vision detection — one page, or a sweep of overlapping regions.
   const rawDetections = await collectRawDetections(input, cfg);
@@ -171,17 +171,27 @@ export async function runDetectionAgent(
   return { page: input.page, detections: await resolveDetections(input, rawDetections) };
 }
 
-/** Provider/key guard. DeepSeek is text-only, so images always need Gemini. */
-async function assertGeminiUsable() {
+/** Provider/key guard. DeepSeek is text-only, so images need a vision provider. */
+async function assertVisionModelUsable() {
   const cfg = await getAiConfig();
   if (cfg.provider === "deepseek") {
     throw new Error(
-      "DeepSeek cannot analyse images — switch provider to Gemini in Settings",
+      "DeepSeek cannot analyse images — switch provider to Gemini, OpenAI, or Anthropic in Settings",
     );
   }
-  if (!cfg.geminiKey) {
+  if (cfg.provider === "gemini" && !cfg.geminiKey) {
     throw new Error(
       "GEMINI_API_KEY not configured — set in Settings page or .env.local",
+    );
+  }
+  if (cfg.provider === "openai" && !cfg.openaiKey) {
+    throw new Error(
+      "OPENAI_API_KEY not configured — set in Settings page or .env.local",
+    );
+  }
+  if (cfg.provider === "anthropic" && !cfg.anthropicKey) {
+    throw new Error(
+      "ANTHROPIC_API_KEY not configured — set in Settings page or .env.local",
     );
   }
   return cfg;
@@ -317,7 +327,7 @@ async function collectRawDetections(
 
   if (regionsCfg.mode === "page") {
     const raw = await callWithRetry(
-      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      () => runWithVisionProvider(cfg, input, fullPagePrompt()),
       { label: `detection page ${input.page}` },
     );
     return raw.detections;
@@ -338,7 +348,7 @@ async function collectRawDetections(
       `[detection] page ${input.page} region crop produced 0 images — falling back to full page`,
     );
     const raw = await callWithRetry(
-      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      () => runWithVisionProvider(cfg, input, fullPagePrompt()),
       { label: `detection page ${input.page} (full-page fallback)` },
     );
     return raw.detections;
@@ -356,7 +366,7 @@ async function collectRawDetections(
     try {
       const raw = await callWithRetry(
         () =>
-          runWithGemini(input, prompt, cfg.geminiModel, {
+          runWithVisionProvider(cfg, input, prompt, {
             pngBase64: crop.pngBase64,
             regionLabel: crop.region.label,
           }),
@@ -388,7 +398,7 @@ async function collectRawDetections(
   if (regionsCfg.catchup) {
     try {
       const raw = await callWithRetry(
-        () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+        () => runWithVisionProvider(cfg, input, fullPagePrompt()),
         { label: `detection page ${input.page} catch-up` },
       );
       // Pre-filter: skip catch-up detections already covered by a region pass.
@@ -852,6 +862,69 @@ async function resolveDetections(
   return calibrated;
 }
 
+async function runWithVisionProvider(
+  cfg: Awaited<ReturnType<typeof getAiConfig>>,
+  input: DetectionJobInput,
+  prompt: string,
+  opts?: { pngBase64?: string; regionLabel?: string },
+) {
+  if (cfg.provider === 'gemini') {
+    return runWithGemini(input, prompt, cfg.geminiModel, opts);
+  }
+
+  const { getVisionProvider } = await import('@/lib/ai-providers');
+  const provider = await getVisionProvider(cfg);
+  const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+
+  const drawingTypeBlock = input.drawingType
+    ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
+    : "";
+  const contextText = opts?.regionLabel
+    ? `This image is a CROPPED REGION (${opts.regionLabel}) of page ${input.page} of a P&ID document.
+${drawingTypeBlock}
+BBOX INSTRUCTIONS: Return bounding boxes in 0-1000 normalized space relative to THIS CROP, (0,0)=top-left of the crop, (1000,1000)=bottom-right of the crop. DO NOT return pixel coordinates.
+Detect ALL equipment symbols visible in THIS REGION. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`
+    : (() => {
+        const dimInfo =
+          input.pngWidth && input.pngHeight
+            ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
+            : "Image rendered at high resolution.";
+        return `This is page ${input.page} of a P&ID document, rendered as a PNG image.
+${dimInfo}${drawingTypeBlock}
+BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) * 1000.
+Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+      })();
+
+  const fullPrompt = `${prompt}\n\n${contextText}`;
+  const imageBase64 = opts?.pngBase64 ?? input.pageImageBase64;
+
+  const result = await provider.generateVisionCompletion({
+    model,
+    prompt: fullPrompt,
+    imageBase64,
+    mimeType: 'image/png',
+    temperature: 0.1,
+    maxTokens: 4096,
+    responseFormat: 'json',
+  });
+
+  const raw = result.text;
+  const json = extractJson(raw) as Record<string, unknown>;
+  const sanitized = sanitizePageJson(
+    json.page !== undefined ? json : { ...json, page: input.page },
+    input.page,
+    raw,
+  );
+  const parsed = PageDetectionSchema.safeParse(sanitized);
+  if (!parsed.success) {
+    throw new Error(
+      `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`,
+    );
+  }
+  parsed.data.page = input.page;
+  return parsed.data;
+}
+
 async function runWithGemini(
   input: DetectionJobInput,
   prompt: string,
@@ -1253,10 +1326,10 @@ export async function runRuleValidatorVision(
 } | null> {
   try {
     const cfg = await getAiConfig();
-    if (!cfg.geminiKey) return null;
-
-    const { getGeminiClient } = await import("@/lib/gemini");
-    const client = await getGeminiClient();
+    if (cfg.provider === 'gemini' && !cfg.geminiKey) return null;
+    if (cfg.provider === 'openai' && !cfg.openaiKey) return null;
+    if (cfg.provider === 'anthropic' && !cfg.anthropicKey) return null;
+    if (cfg.provider === 'deepseek') return null;
 
     const legendContext =
       input.legendSymbols.length > 0
@@ -1307,6 +1380,31 @@ export async function runRuleValidatorVision(
       candidates,
       legendContext,
     });
+
+    if (cfg.provider !== 'gemini') {
+      const { getVisionProvider } = await import('@/lib/ai-providers');
+      const provider = await getVisionProvider(cfg);
+      const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+      const res = await provider.generateVisionCompletion({
+        model,
+        prompt,
+        imageBase64: input.pageImageBase64,
+        mimeType: 'image/png',
+        temperature: 0.1,
+        maxTokens: 1024,
+        responseFormat: 'json',
+      });
+      return JSON.parse(res.text) as {
+        asset_type: string;
+        confidence: number;
+        source_used: string;
+        reason: string;
+        is_unknown: boolean;
+      };
+    }
+
+    const { getGeminiClient } = await import("@/lib/gemini");
+    const client = await getGeminiClient();
 
     const model = client.getGenerativeModel({
       model: cfg.geminiModel,

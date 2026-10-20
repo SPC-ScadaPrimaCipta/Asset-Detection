@@ -18,7 +18,11 @@ const EDITABLE_GROUPS = [
 export async function GET() {
   try {
     const result = await pool.query(
-      'SELECT ai_provider, gemini_model, deepseek_model, tuning FROM settings WHERE id = 1',
+      `SELECT ai_provider, 
+              gemini_model, deepseek_model, openai_model, openai_base_url, anthropic_model,
+              gemini_api_key, deepseek_api_key, openai_api_key, anthropic_api_key,
+              tuning 
+       FROM settings WHERE id = 1`,
     );
     const row = result.rows[0];
     const tuning = await getTuning();
@@ -27,6 +31,14 @@ export async function GET() {
       // Model defaults live in env only; no literal model id in this route.
       gemini_model: row?.gemini_model || env.GEMINI_MODEL,
       deepseek_model: row?.deepseek_model || env.DEEPSEEK_MODEL,
+      openai_model: row?.openai_model || env.OPENAI_MODEL,
+      openai_base_url: row?.openai_base_url || env.OPENAI_BASE_URL || '',
+      anthropic_model: row?.anthropic_model || env.ANTHROPIC_MODEL,
+      // Masked or indicator for keys
+      has_gemini_key: Boolean(row?.gemini_api_key || env.GEMINI_API_KEY),
+      has_openai_key: Boolean(row?.openai_api_key || env.OPENAI_API_KEY),
+      has_anthropic_key: Boolean(row?.anthropic_api_key || env.ANTHROPIC_API_KEY),
+      has_deepseek_key: Boolean(row?.deepseek_api_key || env.DEEPSEEK_API_KEY),
       // Effective values: DB override > env > code fallback. The UI edits these,
       // so what is displayed is exactly what a job will use.
       tuning: serializableTuning(tuning),
@@ -67,6 +79,12 @@ async function envOnlySettings(): Promise<Record<string, unknown>> {
     ai_provider: env.AI_PROVIDER,
     gemini_model: env.GEMINI_MODEL,
     deepseek_model: env.DEEPSEEK_MODEL,
+    openai_model: env.OPENAI_MODEL,
+    anthropic_model: env.ANTHROPIC_MODEL,
+    has_gemini_key: Boolean(env.GEMINI_API_KEY),
+    has_openai_key: Boolean(env.OPENAI_API_KEY),
+    has_anthropic_key: Boolean(env.ANTHROPIC_API_KEY),
+    has_deepseek_key: Boolean(env.DEEPSEEK_API_KEY),
     tuning: serializableTuning(await getTuning()),
     editable_groups: EDITABLE_GROUPS,
     tuning_overrides: {},
@@ -95,14 +113,26 @@ function serializableTuning(value: unknown): unknown {
 export async function PUT(req: NextRequest) {
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    const { ai_provider, gemini_api_key, deepseek_api_key, gemini_model, deepseek_model, tuning } = body;
+    const {
+      ai_provider,
+      gemini_api_key,
+      deepseek_api_key,
+      openai_api_key,
+      anthropic_api_key,
+      gemini_model,
+      deepseek_model,
+      openai_model,
+      openai_base_url,
+      anthropic_model,
+      tuning,
+    } = body;
 
     const updates: string[] = [];
     const values: (string | null)[] = [];
     let paramIdx = 1;
 
     if (ai_provider !== undefined) {
-      if (!['gemini', 'deepseek'].includes(ai_provider as string)) {
+      if (!['gemini', 'openai', 'anthropic', 'deepseek'].includes(ai_provider as string)) {
         return NextResponse.json({ error: 'Invalid provider' }, { status: 400 });
       }
       updates.push(`ai_provider = $${paramIdx++}`);
@@ -110,8 +140,16 @@ export async function PUT(req: NextRequest) {
     }
     if (gemini_api_key !== undefined) { updates.push(`gemini_api_key = $${paramIdx++}`); values.push((gemini_api_key as string) || null); }
     if (deepseek_api_key !== undefined) { updates.push(`deepseek_api_key = $${paramIdx++}`); values.push((deepseek_api_key as string) || null); }
+    if (openai_api_key !== undefined) { updates.push(`openai_api_key = $${paramIdx++}`); values.push((openai_api_key as string) || null); }
+    if (anthropic_api_key !== undefined) { updates.push(`anthropic_api_key = $${paramIdx++}`); values.push((anthropic_api_key as string) || null); }
     if (gemini_model) { updates.push(`gemini_model = $${paramIdx++}`); values.push(gemini_model as string); }
     if (deepseek_model) { updates.push(`deepseek_model = $${paramIdx++}`); values.push(deepseek_model as string); }
+    if (openai_model) { updates.push(`openai_model = $${paramIdx++}`); values.push(openai_model as string); }
+    if (openai_base_url !== undefined) {
+      updates.push(`openai_base_url = $${paramIdx++}`);
+      values.push((openai_base_url as string)?.trim() || null);
+    }
+    if (anthropic_model) { updates.push(`anthropic_model = $${paramIdx++}`); values.push(anthropic_model as string); }
 
     if (tuning !== undefined) {
       if (tuning !== null && (typeof tuning !== 'object' || Array.isArray(tuning))) {

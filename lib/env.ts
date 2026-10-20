@@ -41,7 +41,12 @@ const envSchema = z.object({
   // configured value is never silently rewritten. Set a valid model yourself.
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
   DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
-  AI_PROVIDER: z.enum(['gemini', 'deepseek']).default('gemini'),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o'),
+  OPENAI_BASE_URL: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-3-7-sonnet-20250219'),
+  AI_PROVIDER: z.enum(['gemini', 'openai', 'anthropic', 'deepseek']).default('gemini'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   STORAGE_PATH: z.string().default('./storage'),
 

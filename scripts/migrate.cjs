@@ -287,6 +287,29 @@ async function migrate() {
       console.warn('  011 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 012: Multi-Provider Vision AI (OpenAI & Anthropic Claude columns)
+    try {
+      const aisql = join(__dirname, '..', 'sql', 'migrate-012-multi-provider-ai.sql');
+      if (existsSync(aisql)) {
+        await p.query(readFileSync(aisql, 'utf-8'));
+        console.log('  012: settings.openai_* + settings.anthropic_* OK');
+      }
+    } catch (e) {
+      console.warn('  012 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 013: Custom OpenAI-compatible Base URL (e.g. 9router)
+    try {
+      const baseurlsql = join(__dirname, '..', 'sql', 'migrate-013-openai-base-url.sql');
+      if (existsSync(baseurlsql)) {
+        await p.query(readFileSync(baseurlsql, 'utf-8'));
+        console.log('  013: settings.openai_base_url OK');
+      }
+    } catch (e) {
+      console.warn('  013 migration warning (non-fatal):', e.message);
+    }
+
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');

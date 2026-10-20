@@ -20,6 +20,7 @@
     "benchmark": "tsx --env-file=.env.local scripts/benchmark-gemini.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@google/generative-ai": "^0.24.1",
     "@phosphor-icons/react": "^2.1.10",
     "@types/sharp": "^0.31.1",
