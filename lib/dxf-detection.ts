@@ -1577,20 +1577,19 @@ export async function classifyLayersWithAI(
 ): Promise<LayerClassificationResult[]> {
   if (!samples.length) return [];
 
-  const { getGeminiClient } = await import('@/lib/gemini');
-  const { resolveGeminiModels } = await import('@/lib/model-resolver');
+  const { getVisionProvider } = await import('@/lib/ai-providers');
+  const { getAiConfig } = await import('@/lib/ai-config');
 
-  let geminiClient: Awaited<ReturnType<typeof getGeminiClient>>;
-  let modelId: string;
+  let provider: import('@/lib/ai-providers').IVisionProvider;
+  let model: string | undefined;
   try {
-    geminiClient = await getGeminiClient();
-    const models = await resolveGeminiModels();
-    modelId = models[0] ?? 'gemini-1.5-flash';
-  } catch {
+    const cfg = await getAiConfig();
+    provider = await getVisionProvider(cfg);
+    model = cfg.provider === 'openai' ? cfg.openaiModel : (cfg.provider === 'anthropic' ? cfg.anthropicModel : cfg.geminiModel);
+  } catch (err) {
+    console.error('getVisionProvider config error in classifyLayersWithAI:', err);
     return [];
   }
-
-  const model = geminiClient.getGenerativeModel({ model: modelId });
 
   const layerList = samples.map((s, i) =>
     `${i+1}. layer="${s.shortName}" samples=${JSON.stringify(s.sampleTexts.slice(0, 5))}`
@@ -1610,23 +1609,30 @@ Categories:
 Layers to classify:
 ${layerList}
 
-Reply ONLY with valid JSON array:
-[{"layerName":"...","category":"...","confidence":0.0-1.0,"reasoning":"..."}]`;
+Reply ONLY with valid JSON object:
+{"layers": [{"layerName":"...","category":"...","confidence":0.0-1.0,"reasoning":"..."}]}`;
 
   try {
-    const result = await model.generateContent(prompt, {
-      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+    const res = await provider.generateVisionCompletion({
+      model,
+      prompt,
+      responseFormat: 'json',
+      maxTokens: 2048,
+      temperature: 0.1,
     });
-    const raw = result.response.text().trim()
+    const raw = res.text.trim()
       .replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(raw) as Array<{
+    const parsed = JSON.parse(raw);
+    const list = (Array.isArray(parsed)
+      ? parsed
+      : (parsed.layers ?? parsed.items ?? Object.values(parsed).find(Array.isArray) ?? (parsed.category ? [parsed] : []))) as Array<{
       layerName: string;
       category: string;
       confidence: number;
       reasoning: string;
     }>;
 
-    return parsed.map((item, i) => ({
+    return list.map((item, i) => ({
       layerName: samples[i]?.layerName ?? item.layerName,
       shortName: samples[i]?.shortName ?? item.layerName,
       category: (['tag','description','pipe','equipment','title','ignore','unknown'] as const)
@@ -1636,18 +1642,19 @@ Reply ONLY with valid JSON array:
       confidence: typeof item.confidence === 'number' ? Math.max(0, Math.min(1, item.confidence)) : 0.5,
       reasoning: item.reasoning ?? '',
     }));
-  } catch {
+  } catch (err) {
+    console.error('classifyLayersWithAI error:', err instanceof Error ? err.message : err);
     return [];
   }
 }
 
-// ── Gemini text-prompt fallback (#7) ──────────────────────────────────────────
+// ── AI text-prompt fallback (#7) ──────────────────────────────────────────
 
 /**
- * Improved Gemini fallback: uses text-only prompt (INSERT block name + nearby texts)
+ * Improved AI fallback: uses text-only prompt (INSERT block name + nearby texts)
  * instead of SVG crop. Cheaper, more reliable for structural P&ID naming.
  *
- * Falls back to vision crop only when block suffix is cryptic (short, alpha-only).
+ * Supports multi-provider (Gemini, OpenAI / 9router, Anthropic).
  */
 export async function applyGeminiFallback(
   detections: DxfDetection[],
@@ -1658,24 +1665,26 @@ export async function applyGeminiFallback(
   rawEntities?: DxfParseResult['entities'],
 ): Promise<void> {
   // Only UNKNOWN-typed candidates: resolved detections don't need re-classification
-  // (previously any estimated-box detection burned a Gemini call).
+  // (previously any estimated-box detection burned an AI call).
   const candidates = detections.filter(
     d => d.needsGeminiClassification && d.blockName && d.assetType === UNKNOWN_ASSET_TYPE,
   );
   if (!candidates.length || !legend.length) return;
 
-  const { getGeminiClient } = await import('@/lib/gemini');
-  const { resolveGeminiModels } = await import('@/lib/model-resolver');
+  const { getVisionProvider } = await import('@/lib/ai-providers');
+  const { getAiConfig } = await import('@/lib/ai-config');
 
-  let geminiClient: Awaited<ReturnType<typeof getGeminiClient>>;
-  let modelId: string;
+  let provider: import('@/lib/ai-providers').IVisionProvider;
+  let model: string | undefined;
   try {
-    geminiClient = await getGeminiClient();
-    const models = await resolveGeminiModels();
-    modelId = models[0] ?? 'gemini-1.5-flash';
-  } catch { return; }
+    const cfg = await getAiConfig();
+    provider = await getVisionProvider(cfg);
+    model = cfg.provider === 'openai' ? cfg.openaiModel : (cfg.provider === 'anthropic' ? cfg.anthropicModel : cfg.geminiModel);
+  } catch (err) {
+    console.error('getVisionProvider config error in applyGeminiFallback:', err);
+    return;
+  }
 
-  const model = geminiClient.getGenerativeModel({ model: modelId });
   const legendTypes = [...new Set(legend.map(s => s.asset_type))].join(', ');
 
   // Dynamic proximity radius: 5% of drawing size.
@@ -1719,16 +1728,23 @@ Classify each DXF block reference. Use block name and nearby text labels as clue
 
 ${listStr}
 
-Reply ONLY with JSON array (same order):
-[{"assetType":"<type or UNKNOWN>","confidence":0.0-1.0,"evidence":"<reason>"}]`;
+Reply ONLY with valid JSON object:
+{"classifications": [{"assetType":"<type or UNKNOWN>","confidence":0.0-1.0,"evidence":"<reason>"}]}`;
 
     try {
-    const result = await model.generateContent(prompt, {
-      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
-    });
-      const raw = result.response.text().trim()
+      const res = await provider.generateVisionCompletion({
+        model,
+        prompt,
+        responseFormat: 'json',
+        maxTokens: 2048,
+        temperature: 0.1,
+      });
+      const raw = res.text.trim()
         .replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-      const parsed = JSON.parse(raw) as Array<{
+      const parsed = JSON.parse(raw);
+      const list = (Array.isArray(parsed)
+        ? parsed
+        : (parsed.classifications ?? parsed.items ?? Object.values(parsed).find(Array.isArray) ?? (parsed.assetType ? [parsed] : []))) as Array<{
         assetType?: string;
         confidence?: number;
         evidence?: string;
@@ -1736,7 +1752,7 @@ Reply ONLY with JSON array (same order):
 
       for (let j = 0; j < batch.length; j++) {
         const det = batch[j];
-        const p = parsed[j];
+        const p = list[j];
         if (!p) continue;
         const at = p.assetType?.trim();
         const cf = typeof p.confidence === 'number' ? Math.max(0, Math.min(1, p.confidence)) : 0.55;
@@ -1744,11 +1760,13 @@ Reply ONLY with JSON array (same order):
           const m = legend.find(s => s.asset_type.toLowerCase() === at.toLowerCase());
           det.assetType = m?.asset_type ?? at;
           det.confidence = Math.max(det.confidence, cf);
-          det.evidence.push(`Gemini text-prompt: ${p.evidence ?? at} (${Math.round(cf*100)}%)`);
+          det.evidence.push(`AI text-prompt: ${p.evidence ?? at} (${Math.round(cf*100)}%)`);
           det.needsGeminiClassification = false;
         }
       }
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      console.error('applyGeminiFallback error:', err instanceof Error ? err.message : err);
+    }
 
     if (i + BATCH < candidates.length) await new Promise(r => setTimeout(r, 200));
   }

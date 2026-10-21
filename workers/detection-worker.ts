@@ -718,7 +718,7 @@ export const worker = new Worker(
             JSON.stringify(det.evidence),
             'DETECTED',
             'PENDING',
-            'DXF',
+            det.source === 'VISION' ? 'DXF_VISION' : 'DXF',
             det.pidPage, // sheet region index + 1
             effectiveLegendId ?? null,
             det.size ?? null,

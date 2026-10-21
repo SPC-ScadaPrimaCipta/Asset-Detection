@@ -6,7 +6,7 @@ export interface VisionCompletionOptions {
   model?: string;
   prompt: string;
   systemPrompt?: string;
-  imageBase64: string;           // Base64-encoded PNG image data
+  imageBase64?: string;          // Optional Base64-encoded PNG image data (text-only when omitted)
   mimeType?: string;            // Default: 'image/png'
   temperature?: number;         // Generation temperature (0.0 to 1.0)
   maxTokens?: number;           // Max output tokens

@@ -43,13 +43,15 @@ export class GeminiVisionAdapter implements IVisionProvider {
 
     parts.push(options.prompt);
 
-    // Primary image part
-    parts.push({
-      inlineData: {
-        data: options.imageBase64,
-        mimeType: options.mimeType || 'image/png',
-      },
-    });
+    // Primary image part (optional)
+    if (options.imageBase64 && options.imageBase64.trim().length > 0) {
+      parts.push({
+        inlineData: {
+          data: options.imageBase64,
+          mimeType: options.mimeType || 'image/png',
+        },
+      });
+    }
 
     // Reference crops if provided
     if (options.inlineCropCrops && options.inlineCropCrops.size > 0) {

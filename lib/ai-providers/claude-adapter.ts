@@ -38,20 +38,21 @@ export class ClaudeVisionAdapter implements IVisionProvider {
       text: promptWithSchema,
     });
 
-    const { base64: optMainB64, mimeType: optMainMime } = await optimizeImageForVision(
-      options.imageBase64,
-      options.mimeType || 'image/png',
-    );
-
-    // Main image part
-    contentParts.push({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: (optMainMime as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'),
-        data: optMainB64,
-      },
-    });
+    // Main image part (optional)
+    if (options.imageBase64 && options.imageBase64.trim().length > 0) {
+      const { base64: optMainB64, mimeType: optMainMime } = await optimizeImageForVision(
+        options.imageBase64,
+        options.mimeType || 'image/png',
+      );
+      contentParts.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: (optMainMime as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'),
+          data: optMainB64,
+        },
+      });
+    }
 
     // Reference crops if provided
     if (options.inlineCropCrops && options.inlineCropCrops.size > 0) {

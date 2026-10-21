@@ -35,21 +35,23 @@ export class OpenAIVisionAdapter implements IVisionProvider {
       messages.push({ role: 'system', content: options.systemPrompt });
     }
 
-    const { base64: optMainB64, mimeType: optMainMime } = await optimizeImageForVision(
-      options.imageBase64,
-      options.mimeType || 'image/png',
-    );
-
     const userParts: OpenAI.Chat.ChatCompletionContentPart[] = [
       { type: 'text', text: options.prompt },
-      {
+    ];
+
+    if (options.imageBase64 && options.imageBase64.trim().length > 0) {
+      const { base64: optMainB64, mimeType: optMainMime } = await optimizeImageForVision(
+        options.imageBase64,
+        options.mimeType || 'image/png',
+      );
+      userParts.push({
         type: 'image_url',
         image_url: {
           url: `data:${optMainMime};base64,${optMainB64}`,
           detail: 'high',
         },
-      },
-    ];
+      });
+    }
 
     if (options.inlineCropCrops && options.inlineCropCrops.size > 0) {
       for (const [key, cropB64] of options.inlineCropCrops) {
