@@ -38,6 +38,7 @@ function legend(id: string, name: string, assetTypes: string[]): JobLegendWithSy
       isa_function_code: null,
       iso_category: null,
       reference_image_url: null,
+      quality_status: null,
     })),
   };
 }

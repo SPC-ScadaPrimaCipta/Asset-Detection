@@ -640,16 +640,25 @@ export const worker = new Worker(
         // Even if a pipeline stage slips junk through ("iso", "9"), it dies here.
         const { isValidAssetTag: isTagOk2, resolveAssetType } =
           await import('@/lib/validation');
+        const { formatLegendAssetType } = await import('@/lib/rule-validator');
         const vocabRows = (await db.query(
-          `SELECT DISTINCT ls.asset_type AS t FROM legend_symbols ls
+          `SELECT DISTINCT LOWER(ls.asset_type) AS t, LOWER(ls.symbol_name) AS s FROM legend_symbols ls
            LEFT JOIN legends l ON l.id = ls.legend_id
-           WHERE ls.status='ACTIVE' AND ls.asset_type IS NOT NULL AND (
+           WHERE ls.status='ACTIVE' AND (
              ($1::text <> '' AND ls.legend_id = ANY($1::uuid[]))
              OR COALESCE(l.is_builtin, FALSE) = TRUE
            )`,
           [effectiveLegendIds.length > 0 ? `{${effectiveLegendIds.join(',')}}` : ''],
-        )).rows as Array<{ t: string }>;
-        const typeVocab = new Set(vocabRows.map((r) => r.t).filter(Boolean));
+        )).rows as Array<{ t: string | null; s: string | null }>;
+        const typeVocab = new Set<string>();
+        for (const row of vocabRows) {
+          if (row.t) typeVocab.add(row.t.trim().toLowerCase());
+          if (row.s) {
+            typeVocab.add(row.s.trim().toLowerCase());
+            const formatted = formatLegendAssetType(row.s, row.t ?? '').trim().toLowerCase();
+            if (formatted) typeVocab.add(formatted);
+          }
+        }
         const tagRegexesFinal = (await import('@/lib/validation')).buildTagRegexes(
           dxfLegendSymbols.map((s) => s.tag_pattern),
         );

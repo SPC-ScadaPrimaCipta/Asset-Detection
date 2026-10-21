@@ -3,11 +3,20 @@
 import { useState, useEffect } from 'react';
 
 interface Settings {
-  ai_provider: 'gemini' | 'deepseek';
+  ai_provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek';
   gemini_api_key?: string;
+  openai_api_key?: string;
+  anthropic_api_key?: string;
   deepseek_api_key?: string;
   gemini_model: string;
+  openai_model?: string;
+  openai_base_url?: string;
+  anthropic_model?: string;
   deepseek_model?: string;
+  has_gemini_key?: boolean;
+  has_openai_key?: boolean;
+  has_anthropic_key?: boolean;
+  has_deepseek_key?: boolean;
 }
 
 /** Effective tuning the server resolved (DB override > env > code fallback). */
@@ -212,6 +221,8 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState('');
 
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
+  const [openaiModels, setOpenaiModels] = useState<{ id: string; name: string }[]>([]);
+  const [anthropicModels, setAnthropicModels] = useState<{ id: string; name: string }[]>([]);
   const [scanning, setScanning] = useState(false);
   const [dsQuota, setDsQuota] = useState<{ balance: string; currency: string; granted?: string; toppedUp?: string } | null>(null);
   const [dsModels, setDsModels] = useState<{ id: string; name: string }[]>([]);
@@ -221,6 +232,9 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState<Settings>({
     ai_provider: 'gemini',
     gemini_model: '',
+    openai_model: 'gpt-4o',
+    openai_base_url: '',
+    anthropic_model: 'claude-3-7-sonnet-20250219',
   });
 
   useEffect(() => {
@@ -234,6 +248,9 @@ export default function SettingsPage() {
           ...prev,
           ai_provider: data.ai_provider,
           gemini_model: data.gemini_model,
+          openai_model: data.openai_model || 'gpt-4o',
+          openai_base_url: data.openai_base_url || '',
+          anthropic_model: data.anthropic_model || 'claude-3-7-sonnet-20250219',
           deepseek_model: data.deepseek_model,
         }));
         setTuning(data.tuning ?? null);
@@ -241,6 +258,12 @@ export default function SettingsPage() {
         // empty and a stale saved value is visible.
         if (data.gemini_model) {
           setAvailableModels([{ id: data.gemini_model, name: data.gemini_model }]);
+        }
+        if (data.openai_model) {
+          setOpenaiModels([{ id: data.openai_model, name: data.openai_model }]);
+        }
+        if (data.anthropic_model) {
+          setAnthropicModels([{ id: data.anthropic_model, name: data.anthropic_model }]);
         }
         if (data.deepseek_model) {
           setDsModels([{ id: data.deepseek_model, name: data.deepseek_model }]);
@@ -273,9 +296,24 @@ export default function SettingsPage() {
     });
   };
 
-  const handleScan = async (provider: 'gemini' | 'deepseek') => {
-    const key = provider === 'gemini' ? formData.gemini_api_key : formData.deepseek_api_key;
-    if (!key) {
+  const handleScan = async (provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek') => {
+    let key = '';
+    let hasStoredKey = false;
+    if (provider === 'gemini') {
+      key = formData.gemini_api_key || '';
+      hasStoredKey = !!settings?.has_gemini_key;
+    } else if (provider === 'openai') {
+      key = formData.openai_api_key || '';
+      hasStoredKey = !!settings?.has_openai_key;
+    } else if (provider === 'anthropic') {
+      key = formData.anthropic_api_key || '';
+      hasStoredKey = !!settings?.has_anthropic_key;
+    } else if (provider === 'deepseek') {
+      key = formData.deepseek_api_key || '';
+      hasStoredKey = !!settings?.has_deepseek_key;
+    }
+
+    if (!key && !hasStoredKey) {
       setError(`Please enter an API key for ${provider} to scan models.`);
       return;
     }
@@ -288,7 +326,11 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/scan-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, api_key: key }),
+        body: JSON.stringify({
+          provider,
+          api_key: key || undefined,
+          base_url: provider === 'openai' ? (formData.openai_base_url || undefined) : undefined,
+        }),
       });
       const data = await res.json();
 
@@ -301,6 +343,18 @@ export default function SettingsPage() {
         setSuccess(`Successfully scanned ${data.models.length} Gemini models.`);
         if (data.models.length > 0 && !data.models.find((m: any) => m.id === formData.gemini_model)) {
           setFormData(prev => ({ ...prev, gemini_model: data.models[0].id }));
+        }
+      } else if (provider === 'openai') {
+        setOpenaiModels(data.models);
+        setSuccess(`Successfully scanned ${data.models.length} OpenAI vision models.`);
+        if (data.models.length > 0 && !data.models.find((m: any) => m.id === formData.openai_model)) {
+          setFormData(prev => ({ ...prev, openai_model: data.models[0].id }));
+        }
+      } else if (provider === 'anthropic') {
+        setAnthropicModels(data.models);
+        setSuccess(`Successfully scanned ${data.models.length} Anthropic Claude models.`);
+        if (data.models.length > 0 && !data.models.find((m: any) => m.id === formData.anthropic_model)) {
+          setFormData(prev => ({ ...prev, anthropic_model: data.models[0].id }));
         }
       } else {
         setDsModels(data.models);
@@ -331,9 +385,14 @@ export default function SettingsPage() {
       const payload: Record<string, unknown> = {
         ai_provider: formData.ai_provider,
         gemini_model: formData.gemini_model,
+        openai_model: formData.openai_model,
+        openai_base_url: formData.openai_base_url,
+        anthropic_model: formData.anthropic_model,
         deepseek_model: formData.deepseek_model,
       };
       if (formData.gemini_api_key) payload.gemini_api_key = formData.gemini_api_key;
+      if (formData.openai_api_key) payload.openai_api_key = formData.openai_api_key;
+      if (formData.anthropic_api_key) payload.anthropic_api_key = formData.anthropic_api_key;
       if (formData.deepseek_api_key) payload.deepseek_api_key = formData.deepseek_api_key;
       // Send the whole effective tuning document. The server merges it into
       // settings.tuning, so saving one section never clears another.
@@ -396,20 +455,25 @@ export default function SettingsPage() {
         {/* Provider Selection */}
         <div style={cardStyle}>
           <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '16px' }}>AI Provider</h2>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            {(['gemini', 'deepseek'] as const).map(provider => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
+            {([
+              { id: 'gemini', label: 'Google Gemini' },
+              { id: 'openai', label: 'OpenAI (ChatGPT)' },
+              { id: 'anthropic', label: 'Anthropic (Claude)' },
+              { id: 'deepseek', label: 'DeepSeek' },
+            ] as const).map(p => (
               <button
-                key={provider}
-                onClick={() => setFormData(f => ({ ...f, ai_provider: provider }))}
+                key={p.id}
+                onClick={() => setFormData(f => ({ ...f, ai_provider: p.id }))}
                 style={{
                   ...buttonStyle,
-                  flex: 1,
-                  background: formData.ai_provider === provider ? 'var(--primary-soft)' : 'var(--surface)',
-                  color: formData.ai_provider === provider ? 'var(--primary)' : 'var(--foreground)',
-                  fontWeight: formData.ai_provider === provider ? '600' : '500',
+                  background: formData.ai_provider === p.id ? 'var(--primary-soft)' : 'var(--surface)',
+                  color: formData.ai_provider === p.id ? 'var(--primary)' : 'var(--foreground)',
+                  fontWeight: formData.ai_provider === p.id ? '600' : '500',
+                  border: formData.ai_provider === p.id ? '1px solid var(--primary)' : '1px solid var(--border)',
                 }}
               >
-                {provider === 'gemini' ? 'Google Gemini' : 'DeepSeek'}
+                {p.label}
               </button>
             ))}
           </div>
@@ -418,11 +482,13 @@ export default function SettingsPage() {
         {/* Gemini Configuration */}
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>Google Gemini</h2>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
+              Google Gemini {settings?.has_gemini_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+            </h2>
             <button
               onClick={() => handleScan('gemini')}
-              disabled={scanning || !formData.gemini_api_key}
-              style={scanning || !formData.gemini_api_key ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
+              disabled={scanning || (!formData.gemini_api_key && !settings?.has_gemini_key)}
+              style={scanning || (!formData.gemini_api_key && !settings?.has_gemini_key) ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
             >
               {scanning ? 'Scanning…' : 'Scan Models'}
             </button>
@@ -433,7 +499,7 @@ export default function SettingsPage() {
               <label style={labelStyle}>API Key</label>
               <input
                 type="password"
-                placeholder="Enter Gemini API key"
+                placeholder={settings?.has_gemini_key ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter Gemini API key'}
                 style={inputStyle}
                 value={formData.gemini_api_key || ''}
                 onChange={e => setFormData(f => ({ ...f, gemini_api_key: e.target.value }))}
@@ -468,14 +534,152 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* OpenAI Configuration */}
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
+              OpenAI (ChatGPT) {settings?.has_openai_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+            </h2>
+            <button
+              onClick={() => handleScan('openai')}
+              disabled={scanning || (!formData.openai_api_key && !settings?.has_openai_key)}
+              style={scanning || (!formData.openai_api_key && !settings?.has_openai_key) ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
+            >
+              {scanning ? 'Scanning…' : 'Scan Models'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={labelStyle}>API Key</label>
+              <input
+                type="password"
+                placeholder={settings?.has_openai_key ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter OpenAI API key'}
+                style={inputStyle}
+                value={formData.openai_api_key || ''}
+                onChange={e => setFormData(f => ({ ...f, openai_api_key: e.target.value }))}
+              />
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', marginTop: '6px' }}>Stored securely server-side only</p>
+            </div>
+
+            <div>
+              <label style={labelStyle}>API Base URL (Optional / Custom Gateway)</label>
+              <input
+                type="text"
+                placeholder="https://api.openai.com/v1 (e.g. https://api.9router.com/v1)"
+                style={inputStyle}
+                value={formData.openai_base_url || ''}
+                onChange={e => setFormData(f => ({ ...f, openai_base_url: e.target.value }))}
+              />
+              <p style={hintStyle}>
+                Leave blank for official OpenAI, or specify a custom OpenAI-compatible proxy gateway
+                (e.g. 9router, OpenRouter, LiteLLM, vLLM).
+              </p>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Model</label>
+              <select
+                style={selectStyle}
+                value={formData.openai_model || ''}
+                onChange={e => setFormData(f => ({ ...f, openai_model: e.target.value }))}
+              >
+                {openaiModels.length === 0 && (
+                  <option value="">Scan models to populate this list</option>
+                )}
+                {openaiModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Or Custom Model ID</label>
+              <input
+                type="text"
+                placeholder="e.g. gpt-4o, gpt-4o-mini, o1"
+                style={inputStyle}
+                value={formData.openai_model || ''}
+                onChange={e => setFormData(f => ({ ...f, openai_model: e.target.value }))}
+              />
+              <p style={hintStyle}>
+                Supports multimodal vision models (GPT-4o, GPT-4o-mini, o1, etc.).
+                Vision capability is required for P&amp;ID detection and legend scanning.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Anthropic Configuration */}
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
+              Anthropic (Claude) {settings?.has_anthropic_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+            </h2>
+            <button
+              onClick={() => handleScan('anthropic')}
+              disabled={scanning || (!formData.anthropic_api_key && !settings?.has_anthropic_key)}
+              style={scanning || (!formData.anthropic_api_key && !settings?.has_anthropic_key) ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
+            >
+              {scanning ? 'Scanning…' : 'Scan Models'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={labelStyle}>API Key</label>
+              <input
+                type="password"
+                placeholder={settings?.has_anthropic_key ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter Anthropic API key'}
+                style={inputStyle}
+                value={formData.anthropic_api_key || ''}
+                onChange={e => setFormData(f => ({ ...f, anthropic_api_key: e.target.value }))}
+              />
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', marginTop: '6px' }}>Stored securely server-side only</p>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Model</label>
+              <select
+                style={selectStyle}
+                value={formData.anthropic_model || ''}
+                onChange={e => setFormData(f => ({ ...f, anthropic_model: e.target.value }))}
+              >
+                {anthropicModels.length === 0 && (
+                  <option value="">Scan models to populate this list</option>
+                )}
+                {anthropicModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Or Custom Model ID</label>
+              <input
+                type="text"
+                placeholder="e.g. claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022"
+                style={inputStyle}
+                value={formData.anthropic_model || ''}
+                onChange={e => setFormData(f => ({ ...f, anthropic_model: e.target.value }))}
+              />
+              <p style={hintStyle}>
+                Supports Claude multimodal vision models (Claude 3.7 Sonnet, Claude 3.5 Sonnet, Claude 3.5 Haiku).
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* DeepSeek Configuration */}
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>DeepSeek</h2>
+            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
+              DeepSeek {settings?.has_deepseek_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+            </h2>
             <button
               onClick={() => handleScan('deepseek')}
-              disabled={scanning || !formData.deepseek_api_key}
-              style={scanning || !formData.deepseek_api_key ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
+              disabled={scanning || (!formData.deepseek_api_key && !settings?.has_deepseek_key)}
+              style={scanning || (!formData.deepseek_api_key && !settings?.has_deepseek_key) ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
             >
               {scanning ? 'Scanning…' : 'Check Balance'}
             </button>
@@ -486,7 +690,7 @@ export default function SettingsPage() {
               <label style={labelStyle}>API Key</label>
               <input
                 type="password"
-                placeholder="Enter DeepSeek API key"
+                placeholder={settings?.has_deepseek_key ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter DeepSeek API key'}
                 style={inputStyle}
                 value={formData.deepseek_api_key || ''}
                 onChange={e => setFormData(f => ({ ...f, deepseek_api_key: e.target.value }))}

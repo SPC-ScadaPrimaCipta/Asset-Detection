@@ -12,6 +12,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { detectionConfig } from '@/lib/detection/config';
+import { formatLegendAssetType, isSpecificAssetType } from '@/lib/rule-validator';
 
 /** Minimal query surface — keeps the repository testable without a live DB. */
 export interface DbLike {
@@ -40,6 +41,7 @@ export interface PersistableDetection {
   area?: string | null;
   mainEquipment?: string | null;
   legendSymbol?: string | null;
+  legendSymbolId?: string | null;
   confidence: number;
   bbox: PageBBox;
   evidence: string[];
@@ -114,14 +116,28 @@ export function resolveLegendSymbol(
   legendSymbols: LegendSymbolRef[]
 ): LegendSymbolRef | null {
   if (!legendSymbol) return null;
+  const target = legendSymbol.trim().toLowerCase();
+  if (!target) return null;
+
   // Direct id match first (defs-from-crops preserves DB ids).
   const byId = legendSymbols.find((s) => s.id === legendSymbol);
   if (byId) return byId;
-  return (
-    legendSymbols.find(
-      (s) => s.asset_type === legendSymbol || s.symbol_name === legendSymbol
-    ) ?? null
+
+  // Exact case-insensitive match on symbol_name or asset_type
+  const exact = legendSymbols.find(
+    (s) => (s.symbol_name && s.symbol_name.trim().toLowerCase() === target) ||
+           (s.asset_type && s.asset_type.trim().toLowerCase() === target)
   );
+  if (exact) return exact;
+
+  // Substring match: e.g. "ball valve" matches "BALL VALVE (OPEN/CLOSED)"
+  const bySub = legendSymbols.find(
+    (s) => (s.symbol_name && (s.symbol_name.trim().toLowerCase().includes(target) || target.includes(s.symbol_name.trim().toLowerCase()))) ||
+           (s.asset_type && (s.asset_type.trim().toLowerCase().includes(target) || target.includes(s.asset_type.trim().toLowerCase())))
+  );
+  if (bySub) return bySub;
+
+  return null;
 }
 
 interface FieldConf {
@@ -245,8 +261,18 @@ export async function persistDetections(
   await ensureSizeColumn(db);
   const ids: string[] = [];
   for (const d of items) {
-    const matchedSymbol = resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);
-    const legendSymbolId = matchedSymbol?.id ?? null;
+    const matchedSymbol = d.legendSymbolId
+      ? (ctx.legendSymbols.find((s) => s.id === d.legendSymbolId) ?? resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols))
+      : resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);
+    const legendSymbolId = matchedSymbol?.id ?? d.legendSymbolId ?? null;
+
+    let finalAssetType = d.assetType;
+    if (matchedSymbol && matchedSymbol.symbol_name) {
+      if (!isSpecificAssetType(d.assetType) || d.assetType.toLowerCase() === (matchedSymbol.asset_type ?? '').toLowerCase()) {
+        finalAssetType = formatLegendAssetType(matchedSymbol.symbol_name, matchedSymbol.asset_type ?? d.assetType);
+      }
+    }
+
     const detectionSource = d.detection_source ?? 'VISION';
     const canonicalFeatures = d.canonical_features ?? null;
     const imageHash = d.image_hash ?? null;
@@ -279,7 +305,7 @@ export async function persistDetections(
       ctx.jobId,
       ctx.docId,
       normalizeAssetTag(d.assetTag),
-      d.assetType,
+      finalAssetType,
       d.equipmentClass ?? null,
       gated.description,
       gated.service,

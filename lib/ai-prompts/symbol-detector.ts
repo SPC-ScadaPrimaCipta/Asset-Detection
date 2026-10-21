@@ -62,7 +62,11 @@ Your task: detect EVERY equipment symbol AND read EVERY asset tag on this P&ID p
 ${hasLegend ? `${multiLegend ? 'LEGENDS (primary reference for symbol identification — LEGEND 1 wins every conflict between legends)' : 'LEGEND (primary reference for symbol identification)'}:
 ${legendRef}
 
-IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
+CRITICAL — assetType MUST be the EXACT name from the legend list above (copy-paste verbatim).
+• If a symbol matches "Gate Valve" in the legend → assetType must be "Gate Valve", NOT "Valve" or "Ball Valve".
+• If a symbol matches "Pressure Differential Transmitter" → use exactly "Pressure Differential Transmitter".
+• Do NOT substitute a generic ISA/ISO name when a legend entry matches — the legend name wins ALWAYS.
+• If unsure between two legend entries, pick the one whose description or tag pattern best fits.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
 ` : `No legend provided. Use your knowledge of ISA 5.1 and ISO 10628-2 P&ID standards.`}
 
 COMMON SPECIALTY EQUIPMENT — detect these even when not in legend:

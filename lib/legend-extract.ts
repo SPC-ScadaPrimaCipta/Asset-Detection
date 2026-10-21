@@ -33,8 +33,16 @@ export function isJsonModeIncompatible(
 
 async function getModelWithFallback() {
   const cfg = await getAiConfig();
-  const client = await getGeminiClient();
-  const [candidates, tuning] = await Promise.all([resolveGeminiModels(), getTuning()]);
+  if (cfg.provider === 'deepseek') {
+    throw new Error('DeepSeek cannot analyse images — switch provider to Gemini, OpenAI, or Anthropic in Settings');
+  }
+  let client = null;
+  let candidates: string[] = [];
+  if (cfg.provider === 'gemini') {
+    client = await getGeminiClient();
+    candidates = await resolveGeminiModels();
+  }
+  const tuning = await getTuning();
   return { client, candidates, cfg, tuning };
 }
 
@@ -151,9 +159,9 @@ export async function callWithRetry<T>(
 }
 
 export function extractBbox(sym: Record<string, unknown>): { x: number | null; y: number | null; w: number | null; h: number | null } {
-  const arr = sym.bbox as unknown;
-  if (Array.isArray(arr) && arr.length >= 4) {
-    const a = (arr as unknown[]).map(Number);
+  const rawBox = (sym.graphic_bbox ?? sym.symbol_bbox ?? sym.drawing_bbox ?? sym.bbox) as unknown;
+  if (Array.isArray(rawBox) && rawBox.length >= 4) {
+    const a = (rawBox as unknown[]).map(Number);
     const ymin = a[0], xmin = a[1], ymax = a[2], xmax = a[3];
     if (xmax < xmin || ymax < ymin) return { x: Math.round(a[0]), y: Math.round(a[1]), w: Math.max(1, Math.round(a[2])), h: Math.max(1, Math.round(a[3])) };
     return { x: Math.round(xmin), y: Math.round(ymin), w: Math.max(1, Math.round(xmax - xmin)), h: Math.max(1, Math.round(ymax - ymin)) };
@@ -246,27 +254,40 @@ function makeRegionPrompt(regionLabel: string): string {
   return `You are a P&ID legend digitizer analyzing a CROPPED REGION of a legend sheet.
 This crop shows region: "${regionLabel}"
 
-YOUR MISSION: Find EVERY SINGLE symbol graphic in this crop. Missing even one is a failure.
+YOUR MISSION: Find EVERY SINGLE physical equipment symbol in this crop. Missing even one is a failure.
 
-For EACH distinct symbol graphic/icon/drawing visible:
-1. Read the EXACT label/name printed next to or below it
-2. Identify asset type from this list: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|Flange|Reducer|Tee|Elbow|other
-3. Read tag pattern if shown (e.g. P-###, XV-###, FV-##). Use null if not shown.
-4. Read aliases/abbreviations if shown next to the label (e.g. "P", "XV"). Use [] if none.
-5. Provide TIGHT bounding box around ONLY the icon/drawing graphic:
-   - Coordinates 0-1000 where (0,0)=top-left of THIS CROP, (1000,1000)=bottom-right
-   - Format: [ymin, xmin, ymax, xmax]
-   - TIGHT = box edges touch the outermost pixels of the symbol graphic only
-   - Do NOT include text labels, whitespace padding, or empty space in the box
+IMPORTANT STRUCTURE OF THE LEGEND SHEET:
+In this P&ID legend sheet, each equipment item consists of TWO separate visual parts:
+1. The DRAWING / GRAPHIC / ICON: The physical drawing of the equipment (impeller, casing, nozzle, circle, lines, valve body).
+2. The TEXT LABEL: The printed alphanumeric text (e.g. "CENTRIFUGAL PUMP").
+
+For EACH distinct symbol:
+- "name": The exact text label (e.g. "CENTRIFUGAL PUMP")
+- "assetType": Equipment category from list: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|Flange|Reducer|Tee|Elbow|other
+- "tagPattern": Tag pattern if shown (e.g. P-###), or null
+- "aliases": List of short codes/abbreviations if shown (e.g. ["P"]), or []
+- "label_bbox": [ymin, xmin, ymax, xmax] coordinates of the TEXT WORDS ONLY (0-1000 space)
+- "graphic_bbox": [ymin, xmin, ymax, xmax] coordinates of the PHYSICAL DRAWING / ICON ONLY (0-1000 space). TIGHT around the drawing lines only. Look beside/left/above the label to locate the drawing.
 
 Return JSON ONLY (no markdown, no explanation):
-{"symbols":[{"name":"exact label text","assetType":"type from list above","tagPattern":"P-### or null","description":"one short phrase or null","aliases":["abbrev1","abbrev2"],"bbox":[ymin,xmin,ymax,xmax]}]}
+{
+  "symbols": [
+    {
+      "name": "exact label text",
+      "assetType": "type from list above",
+      "tagPattern": "P-### or null",
+      "description": "one short phrase or null",
+      "aliases": ["abbrev1", "abbrev2"],
+      "label_bbox": [ymin, xmin, ymax, xmax],
+      "graphic_bbox": [ymin, xmin, ymax, xmax]
+    }
+  ]
+}
 
 RULES:
 - Scan systematically top-to-bottom, left-to-right — do not skip any row or column
-- Include ALL symbols including partial ones at crop edges
 - Small/simple symbols (single line, circle, rectangle, triangle) MUST be included
-- Each symbol graphic = one entry. If same symbol appears twice, return both with their labels.
+- Each symbol graphic = one entry.
 - Do NOT include: title headers, text-only rows, grid lines, page numbers, notes sections
 - Aliases: short codes printed near the label, e.g. "XV" for "Solenoid Valve", "P" for "Pump"
 - If truly no symbols visible: return {"symbols":[]}`;
@@ -289,7 +310,30 @@ async function analyzeRegion(
   generation: ReturnType<typeof generationConfigFrom>,
   jsonIncompatible: ReadonlySet<string>,
   guard: ModelChainGuard,
-): Promise<Array<{ name: string; assetType: string; tagPattern: string | null; description: string | null; aliases: string[]; bbox: number[] }>> {
+  cfg?: Awaited<ReturnType<typeof getAiConfig>>,
+): Promise<Array<{ name: string; assetType: string; tagPattern: string | null; description: string | null; aliases: string[]; bbox?: number[]; graphic_bbox?: number[]; label_bbox?: number[] }>> {
+  if (cfg && cfg.provider !== 'gemini') {
+    const { getVisionProvider } = await import('@/lib/ai-providers');
+    const provider = await getVisionProvider(cfg);
+    const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+    const prompt = makeRegionPrompt(regionLabel);
+
+    const result = await provider.generateVisionCompletion({
+      model,
+      prompt,
+      imageBase64: cropBase64,
+      mimeType: 'image/png',
+      temperature: generation.temperature ?? 0.1,
+      maxTokens: generation.maxOutputTokens ?? 4096,
+      responseFormat: 'json',
+    });
+
+    const j = parseJsonResponse(result.text) as { symbols?: unknown[] };
+    const raw = Array.isArray(j.symbols) ? j.symbols : [];
+    console.log(`[legend-extract] page ${page} region ${regionIdx} "${regionLabel}": ${raw.length} symbols via ${cfg.provider} (${model})`);
+    return raw as any[];
+  }
+
   const imgPart = { inlineData: { mimeType: 'image/png' as const, data: cropBase64 } };
   let lastErr: unknown;
 
@@ -383,6 +427,7 @@ export function isChainUnavailable(
   jsonIncompatible: ReadonlySet<string>,
   breaker: ModelCircuitBreaker,
 ): boolean {
+  if (candidates.length === 0) return false;
   return candidates.every(
     (m) => isJsonModeIncompatible(jsonIncompatible, m) || breaker.isOpen(m),
   );
@@ -512,7 +557,7 @@ export async function extractLegendSymbolsFromPng(
   pngBuffer?: Buffer,
 ): Promise<ParsedSymbol[]> {
   const { client, candidates, cfg, tuning } = await getModelWithFallback();
-  if (cfg.provider === 'deepseek') throw new Error('DeepSeek cannot analyse images — switch provider to Gemini in Settings');
+  if (cfg.provider === 'deepseek') throw new Error('DeepSeek cannot analyse images — switch provider to Gemini, OpenAI, or Anthropic in Settings');
 
   const jsonIncompatible = tuning.model.jsonIncompatible;
   const perf = tuning.performance;
@@ -520,7 +565,7 @@ export async function extractLegendSymbolsFromPng(
 
   // If no buffer provided, fall back to single-pass (legacy)
   if (!pngBuffer) {
-    return extractSinglePass(pngBase64, page, client, candidates, tuning);
+    return extractSinglePass(pngBase64, page, client, candidates, tuning, cfg);
   }
 
   const sharp = (await import('sharp')).default;
@@ -557,7 +602,7 @@ export async function extractLegendSymbolsFromPng(
 
     // Whole provider outage: every model has tripped its breaker. Stop the page
     // here instead of walking the remaining regions into guaranteed failures.
-    if (isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
+    if (cfg.provider === 'gemini' && isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
       console.error(
         `[legend-extract] page ${page} aborted after ${allSymbols.length} symbol(s) from ${i}/${regions.length} regions: no usable model left (open circuits: ${guard.breaker.openModels().join(', ') || 'none'})`,
       );
@@ -603,6 +648,7 @@ export async function extractLegendSymbolsFromPng(
         regionGeneration,
         jsonIncompatible,
         guard,
+        cfg,
       );
     } catch (e) {
       console.warn(`[legend-extract] page ${page} region ${i} analyze failed:`, e);
@@ -665,11 +711,9 @@ export async function extractLegendSymbolsFromPng(
   console.log(`[legend-extract] page ${page}: ${allSymbols.length} raw → ${deduplicated.length} after dedup`);
 
   // ── Catch-up pass: full page scan to find anything missed ───────────────────
-  // Send full page with list of already-detected names so Gemini only returns NEW ones
+  // Send full page with list of already-detected names so model only returns NEW ones
   try {
-    // A full-page image is the most expensive request in this flow. Do not send
-    // it when the region sweep already proved every model is down.
-    if (isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
+    if (cfg.provider === 'gemini' && isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
       throw new Error('skipping catch-up: no usable model left (all circuits open)');
     }
 
@@ -688,53 +732,85 @@ Focus on: small symbols, symbols near page borders, symbols in dense/crowded are
 
 Asset types: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|other
 
-Return JSON ONLY:
-{"symbols":[{"name":"exact label","assetType":"type from list","tagPattern":"P-### or null","description":"short or null","aliases":["abbrev"],"bbox":[ymin,xmin,ymax,xmax]}]}
+IMPORTANT: Each item consists of TWO separate parts:
+1. The TEXT LABEL (the words)
+2. The DRAWING / ICON (the physical equipment line art)
 
-- bbox: 0-1000 coords relative to full image, TIGHT around icon only (not text)
-- aliases: short codes near the label, e.g. "XV", "P", "FV". Use [] if none.
+Return JSON ONLY:
+{
+  "symbols": [
+    {
+      "name": "exact label",
+      "assetType": "type from list",
+      "tagPattern": "P-### or null",
+      "description": "short or null",
+      "aliases": ["abbrev"],
+      "label_bbox": [ymin, xmin, ymax, xmax],
+      "graphic_bbox": [ymin, xmin, ymax, xmax]
+    }
+  ]
+}
+
+- label_bbox: coordinates of the text words only (0-1000 coords relative to full image)
+- graphic_bbox: coordinates TIGHT around the physical equipment icon/drawing only (0-1000 coords)
 - If all symbols already detected: return {"symbols":[]}`;
 
-    // Walk the chain instead of picking one model up front. The previous version
-    // took the first usable candidate and gave up if that single model failed,
-    // so a 429 or 503 on it lost the whole catch-up pass even though other
-    // models were healthy.
     let missed: Array<Record<string, unknown>> = [];
     let catchupModel: string | null = null;
     let catchupErr: unknown;
-    for (const m of candidates) {
-      if (isJsonModeIncompatible(jsonIncompatible, m)) continue;
-      if (guard.breaker.isOpen(m)) {
-        console.warn(`[legend-extract] page ${page} catchup skipping ${m}: circuit open`);
-        continue;
+    if (cfg.provider !== 'gemini') {
+      const { getVisionProvider } = await import('@/lib/ai-providers');
+      const provider = await getVisionProvider(cfg);
+      const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+
+      const res = await provider.generateVisionCompletion({
+        model,
+        prompt: catchupPrompt,
+        imageBase64: pngBase64,
+        mimeType: 'image/png',
+        temperature: 0.1,
+        maxTokens: 4096,
+        responseFormat: 'json',
+      });
+      catchupModel = model;
+      const j = parseJsonResponse(res.text) as { symbols?: unknown[] };
+      missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
+    } else {
+      for (const m of candidates) {
+        if (isJsonModeIncompatible(jsonIncompatible, m)) continue;
+        if (guard.breaker.isOpen(m)) {
+          console.warn(`[legend-extract] page ${page} catchup skipping ${m}: circuit open`);
+          continue;
+        }
+        try {
+          await guard.gate.wait();
+          const model = (client as any).getGenerativeModel({
+            model: m,
+            generationConfig: generationConfigFrom(tuning.generation, 'legendCatchup'),
+          });
+          const res = await model.generateContent([
+            { text: catchupPrompt },
+            { inlineData: { mimeType: 'image/png', data: pngBase64 } },
+          ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
+          guard.breaker.recordSuccess(m);
+          const j = parseJsonResponse(res.response.text()) as { symbols?: unknown[] };
+          missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
+          catchupModel = m;
+          break;
+        } catch (e: unknown) {
+          catchupErr = e;
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn(`[legend-extract] page ${page} catchup model ${m}: ${msg.slice(0, 150)}`);
+          if (!isProviderUnavailable(msg)) break;
+          guard.breaker.recordFailure(m);
+          if (/429|rate.limit|quota|resource.?exhausted|503|overloaded|high.demand|unavailable/i.test(msg)) {
+            await guard.gate.backoff(parseRetryDelayMs(msg, guard.attemptDelayMs * 2));
+          } else if (guard.attemptDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
+          }
+        }
       }
-      try {
-        await guard.gate.wait();
-        const model = (client as any).getGenerativeModel({
-          model: m,
-          generationConfig: generationConfigFrom(tuning.generation, 'legendCatchup'),
-        });
-        const res = await model.generateContent([
-          { text: catchupPrompt },
-          { inlineData: { mimeType: 'image/png', data: pngBase64 } },
-        ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
-        guard.breaker.recordSuccess(m);
-        const j = parseJsonResponse(res.response.text()) as { symbols?: unknown[] };
-        missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
-        catchupModel = m;
-        break;
-      } catch (e: unknown) {
-        catchupErr = e;
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[legend-extract] page ${page} catchup model ${m}: ${msg.slice(0, 150)}`);
-        if (!isProviderUnavailable(msg)) break;
-        guard.breaker.recordFailure(m);
-        // Same 429/503-aware pause as the region sweep, honouring a RetryInfo
-        // hint from the provider.
-        if (/429|rate.limit|quota|resource.?exhausted|503|overloaded|high.demand|unavailable/i.test(msg)) {
-          await guard.gate.backoff(parseRetryDelayMs(msg, guard.attemptDelayMs * 2));
-        } else if (guard.attemptDelayMs > 0) {
-          await new Promise((r) => setTimeout(r, guard.attemptDelayMs));
+    }
         }
       }
     }
@@ -784,10 +860,59 @@ async function extractSinglePass(
   client: any,
   candidates: string[],
   tuning: Awaited<ReturnType<typeof getTuning>>,
+  cfg?: Awaited<ReturnType<typeof getAiConfig>>,
 ): Promise<ParsedSymbol[]> {
   const PROMPT = `You are a P&ID legend digitizer. Extract ALL symbols from this legend page.
-Return JSON ONLY: {"symbols":[{"name":"label","assetType":"type","tagPattern":"P-### or null","description":"string or null","aliases":[],"bbox":[ymin,xmin,ymax,xmax]}]}
-bbox: tight around symbol graphic only, 0-1000 coords, NOT including text label.`;
+Each item consists of TWO separate elements:
+1. The TEXT LABEL (the printed alphanumeric text words)
+2. The DRAWING / ICON (the physical equipment drawing/line art)
+
+Return JSON ONLY:
+{
+  "symbols": [
+    {
+      "name": "label",
+      "assetType": "type",
+      "tagPattern": "P-### or null",
+      "description": "string or null",
+      "aliases": [],
+      "label_bbox": [ymin, xmin, ymax, xmax],
+      "graphic_bbox": [ymin, xmin, ymax, xmax]
+    }
+  ]
+}
+- label_bbox: 0-1000 coords around the text words
+- graphic_bbox: 0-1000 coords tight around the physical symbol drawing/icon only`;
+
+  if (cfg && cfg.provider !== 'gemini') {
+    const { getVisionProvider } = await import('@/lib/ai-providers');
+    const provider = await getVisionProvider(cfg);
+    const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+
+    const res = await provider.generateVisionCompletion({
+      model,
+      prompt: PROMPT,
+      imageBase64: pngBase64,
+      mimeType: 'image/png',
+      temperature: 0.1,
+      maxTokens: 4096,
+      responseFormat: 'json',
+    });
+
+    const j = parseJsonResponse(res.text) as { symbols?: unknown[] };
+    const raw = Array.isArray(j.symbols) ? j.symbols : [];
+    return raw.map((s: any) => {
+      const { x, y, w, h } = extractBbox(s);
+      return {
+        asset_type: String(s.assetType ?? 'Unknown').slice(0, 120),
+        symbol_name: strOrNull(s.name),
+        tag_pattern: strOrNull(s.tagPattern),
+        description: strOrNull(s.description),
+        aliases: Array.isArray(s.aliases) ? s.aliases.map((a: any) => String(a)) : [],
+        bbox_x: x, bbox_y: y, bbox_w: w, bbox_h: h,
+      };
+    });
+  }
 
   const imgPart = { inlineData: { mimeType: 'image/png' as const, data: pngBase64 } };
   const generation = generationConfigFrom(tuning.generation, 'legend');
