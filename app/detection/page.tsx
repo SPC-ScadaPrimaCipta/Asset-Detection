@@ -871,6 +871,12 @@ function PidViewer({
   const [fullscreen, setFullscreen] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Text overlay — read every text token on the drawing (DXF TEXT or PDF text layer)
+  const [showText, setShowText] = useState(true);
+  const [textTokens, setTextTokens] = useState<
+    Array<{ text: string; x: number; y: number; w: number; h: number }>
+  >([]);
   // Natural image dimensions — used to map bbox coords to display space
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(
     null,
@@ -897,12 +903,14 @@ function PidViewer({
   const [drawStart, setDrawStart] = useState<{ sx: number; sy: number } | null>(null);
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  // Reset drag/draw saat ganti seleksi / halaman / dokumen / mode
+  // Fetch tokens
   useEffect(() => {
-    setDragBbox(null);
-    setDrawStart(null);
-    setDrawRect(null);
-  }, [selectedId, page, documentId, drawMode]);
+    if (!showText || !documentId) return;
+    fetch(`/api/documents/${documentId}/text?page=${page}`)
+      .then((r) => r.json())
+      .then((d: { tokens: typeof textTokens }) => setTextTokens(d.tokens))
+      .catch(console.error);
+  }, [showText, documentId, page]);
 
   const isDxf = fileType === 'dxf';
   const dxfRawUrl = documentId && isDxf ? `/api/documents/${documentId}/raw` : null;
@@ -1331,6 +1339,18 @@ function PidViewer({
           </button>
         )}
 
+        {/* Text toggle */}
+        <button
+          onClick={() => setShowText(!showText)}
+          style={showText ? cadToolBtnActive : cadToolBtn}
+          title="Show all drawing text"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 19h16M4 15h16M4 11h16M4 7h16" />
+          </svg>
+          Text
+        </button>
+
         {/* Status hints */}
         {bboxSavedFlash && selectedId && (
           <span style={{ fontSize: "11px", color: "#00e676", fontWeight: "600", fontFamily: "ui-monospace,monospace" }}>✓ BBox saved</span>
@@ -1379,6 +1399,8 @@ function PidViewer({
         <DxfViewer
           url={dxfRawUrl}
           detections={detections}
+          textTokens={textTokens}
+          showText={showText}
           selectedId={selectedId}
           onSelectAsset={onSelect}
           showAll={showAll}
@@ -1657,6 +1679,22 @@ function PidViewer({
                         style={{ pointerEvents: "none" }}
                       />
                     )}
+                    {/* Text Overlay */}
+                    {showText && imgNatural && textTokens.map((t, i) => (
+                      <text
+                        key={i}
+                        x={(t.x / 1000) * imgNatural.w}
+                        y={(t.y / 1000) * imgNatural.h}
+                        fontSize={10}
+                        fill="#ffffff"
+                        fillOpacity={0.8}
+                        stroke="#000000"
+                        strokeWidth={0.2}
+                        style={{ userSelect: 'none', pointerEvents: 'none' }}
+                      >
+                        {t.text}
+                      </text>
+                    ))}
                   </svg>
                 )}
               </div>

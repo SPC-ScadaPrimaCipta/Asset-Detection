@@ -661,6 +661,17 @@ export async function runHybridPipeline(
         ? verifiedSanitized
         : ruleType;
 
+    const finalTag = det.ocrText && det.isTag ? det.ocrText : null;
+
+    // Build evidence array
+    const evidence: string[] = [
+      `YOLO GEO-2: ${det.rawLabel} (score=${det.yoloScore.toFixed(2)})`,
+      `Rule: ${rule.source} → ${rule.resolvedAssetName}`,
+    ];
+    if (det.ocrText) evidence.push(`OCR: "${det.ocrText}" (conf=${det.ocrConfidence.toFixed(2)})`);
+    if (verifiedType) evidence.push(`Gemini verifier: ${verifiedType}`);
+    if (rule.negativePenalty < 0) evidence.push(`Negative learning penalty: ${rule.negativePenalty.toFixed(2)}`);
+
     if (finalAssetType === 'UNKNOWN') {
       const { inferAssetTypeFromEvidence, GENERIC_ASSET_TYPE } = await import('./type-inference');
       const inferred = inferAssetTypeFromEvidence({ evidence, assetTag: det.ocrText && det.isTag ? det.ocrText : null, legendSymbols: input.legendSymbols });
@@ -675,16 +686,6 @@ export async function runHybridPipeline(
 
     // UNKNOWN is never auto-valid — it always needs a human.
     if (finalAssetType === 'UNKNOWN') needsHumanReview = true;
-    const finalTag = det.ocrText && det.isTag ? det.ocrText : null;
-
-    // Build evidence array
-    const evidence: string[] = [
-      `YOLO GEO-2: ${det.rawLabel} (score=${det.yoloScore.toFixed(2)})`,
-      `Rule: ${rule.source} → ${rule.resolvedAssetName}`,
-    ];
-    if (det.ocrText) evidence.push(`OCR: "${det.ocrText}" (conf=${det.ocrConfidence.toFixed(2)})`);
-    if (verifiedType) evidence.push(`Gemini verifier: ${verifiedType}`);
-    if (rule.negativePenalty < 0) evidence.push(`Negative learning penalty: ${rule.negativePenalty.toFixed(2)}`);
 
     const validationStatus: 'VALID' | 'NEEDS_REVIEW' | 'CONFLICT' =
       (needsHumanReview || finalConf < (env.DETECTION_REVIEW_THRESHOLD ?? 0.65)) ? 'NEEDS_REVIEW'

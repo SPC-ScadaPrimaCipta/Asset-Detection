@@ -32,6 +32,8 @@ export interface DxfViewerProps {
   selectedId?: string | null;
   onSelectAsset?: (id: string) => void;
   showAll?: boolean;
+  textTokens?: Array<{ text: string; x: number; y: number; w: number; h: number }>;
+  showText?: boolean;
   /** Sheet regions (world units) for sheet navigation. Omit = whole-file view. */
   regions?: Array<{
     pidPage: number;
@@ -50,6 +52,8 @@ export default function DxfViewer({
   selectedId = null,
   onSelectAsset,
   showAll = true,
+  textTokens = [],
+  showText = true,
   regions = [],
   activeSheet = null,
   className,
@@ -199,7 +203,25 @@ export default function DxfViewer({
 
       ctx.restore();
     }
-  }, [detections, selectedId, showAll, loading, worldToCanvas, getVisible]);
+
+    if (showText) {
+      ctx.save();
+      ctx.font = '12px ui-monospace, monospace';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx.fillStyle = '#f5f5f5';
+      for (const token of textTokens) {
+        const wx = bounds.minX + (token.x / 1000) * spanX;
+        const wy = bounds.maxY - (token.y / 1000) * spanY;
+        const point = worldToCanvas(wx, wy, cw, ch);
+        if (point.x < -500 || point.x > cw + 500 || point.y < -100 || point.y > ch + 100) continue;
+        ctx.strokeText(token.text, point.x, point.y);
+        ctx.fillText(token.text, point.x, point.y);
+      }
+      ctx.restore();
+    }
+  }, [detections, selectedId, showAll, textTokens, showText, loading, worldToCanvas, getVisible]);
 
   // Selalu tunjuk ke implementasi terbaru (lawan closure basi).
   useEffect(() => {
