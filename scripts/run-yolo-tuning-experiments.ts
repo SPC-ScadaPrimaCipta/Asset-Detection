@@ -863,7 +863,7 @@ export async function runTuningExperiments() {
     generatedAt: new Date().toISOString(),
     environment: {
       node: process.version,
-      onnxruntime: ort.version,
+      onnxruntime: (ort as any).version ?? 'unknown',
       platform: process.platform,
     },
     baselineReference: {

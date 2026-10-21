@@ -49,7 +49,7 @@ import { applyNMS } from '@/lib/spatial';
 import { humanizeYoloLabel, sanitizeAssetType } from '@/lib/validation';
 import { isJunkAssetType } from '@/lib/detection/duplicate-detection';
 
-// ── Verifier (lazy import — only used when GEMINI_VERIFIER_ENABLED) ────────
+// ── Verifier (lazy import — only used when AI_VERIFIER_ENABLED) ────────
 async function getVerifier() {
   return import('@/lib/detection/ai/verifier');
 }
@@ -287,7 +287,7 @@ function resolveVerifierType(
   return isJunkAssetType(raw) ? null : raw;
 }
 
-async function runGeminiVerifier(
+async function runAiVerifier(
   det: YoloOcrDetection,
   ruleConf: number,
   legendId: string,
@@ -352,9 +352,9 @@ async function runGeminiVerifier(
   return { verifiedConf: ruleConf, verifiedType: null, needsHumanReview: false };
 }
 
-// ── Stage 5: Gemini Full-page Fallback ─────────────────────────────────────
+// ── Stage 5: AI Full-page Fallback ─────────────────────────────────────
 
-async function runGeminiFallback(
+async function runAiFallback(
   pageImageB64: string,
   pageWidth: number,
   pageHeight: number,
@@ -369,7 +369,7 @@ async function runGeminiFallback(
   log: (msg: string) => void,
 ): Promise<PersistableDetection[]> {
   try {
-    const geminiResult = await runDetectionAgent({
+    const aiResult = await runDetectionAgent({
       page: params.page,
       pageImageBase64: pageImageB64,
       legendId: params.legendId,
@@ -384,7 +384,7 @@ async function runGeminiFallback(
     const newDetections: PersistableDetection[] = [];
     let merged = 0;
 
-    for (const gd of geminiResult.detections) {
+    for (const gd of aiResult.detections) {
       const gdBbox = { x: gd.bbox.x, y: gd.bbox.y, width: gd.bbox.width, height: gd.bbox.height };
       const overlaps = existingBboxes.some(ex => {
         const iou = computeIoU(
@@ -395,7 +395,7 @@ async function runGeminiFallback(
       });
 
       if (!overlaps) {
-        // New detection from Gemini — apply negative learning penalty for consistency
+        // New detection from AI — apply negative learning penalty for consistency
         let negativePenalty = 0;
         if (env.NEGATIVE_LEARNING_ENABLED === 'true') {
           try {
@@ -412,19 +412,19 @@ async function runGeminiFallback(
         newDetections.push({
           ...gd,
           confidence: adjustedConf,
-          detection_source: 'GEMINI_FALLBACK' as const,
+          detection_source: 'AI_FALLBACK' as const,
           validation_status: adjustedConf < reviewThreshold ? 'NEEDS_REVIEW' : 'VALID',
-          evidence: [...(Array.isArray(gd.evidence) ? gd.evidence : []), 'Source: Gemini fallback (YOLO missed)'],
+          evidence: [...(Array.isArray(gd.evidence) ? gd.evidence : []), 'Source: AI fallback (YOLO missed)'],
         } as PersistableDetection);
       } else {
         merged++;
       }
     }
 
-    log(`Gemini fallback: ${geminiResult.detections.length} detections, ${newDetections.length} new (${merged} already covered by YOLO)`);
+    log(`AI fallback: ${aiResult.detections.length} detections, ${newDetections.length} new (${merged} already covered by YOLO)`);
     return newDetections;
   } catch (e) {
-    log(`Gemini fallback failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+    log(`AI fallback failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }
@@ -514,8 +514,10 @@ export interface HybridPipelineInput {
 export interface HybridPipelineStats {
   yoloDetections: number;
   yoloWithTags: number;
-  geminiVerifierCalls: number;
-  geminiFallbackDetections: number;
+  aiVerifierCalls: number;
+  aiFallbackDetections: number;
+  geminiVerifierCalls: number;      // backward-compat alias
+  geminiFallbackDetections: number; // backward-compat alias
   totalFinal: number;
   durationMs: number;
 }
@@ -596,9 +598,9 @@ export async function runHybridPipeline(
   }
   const yoloWithTags = yoloOcrDets.filter(d => d.isTag || d.ocrText).length;
 
-  // ── Stage 3+4+5+7+8: Rule Validator + optional Gemini Verifier per detection ──
-  const verifierEnabled = env.GEMINI_VERIFIER_ENABLED === 'true';
-  const verifierThreshold = env.GEMINI_VERIFIER_THRESHOLD ?? 0.65;
+  // ── Stage 3+4+5+7+8: Rule Validator + optional AI Verifier per detection ──
+  const verifierEnabled = (env.AI_VERIFIER_ENABLED ?? env.GEMINI_VERIFIER_ENABLED) === 'true';
+  const verifierThreshold = env.AI_VERIFIER_THRESHOLD ?? env.GEMINI_VERIFIER_THRESHOLD ?? 0.65;
   let verifierCalls = 0;
 
   const persistable: PersistableDetection[] = [];
@@ -624,7 +626,7 @@ export async function runHybridPipeline(
 
     const finalBboxNorm = pxToNorm(refinedBboxPx, input.pageWidth, input.pageHeight);
 
-    // Stage 4: Gemini Verifier (only for ambiguous / UNKNOWN / low confidence)
+    // Stage 4: AI Verifier (only for ambiguous / UNKNOWN / low confidence)
     let verifiedConf = rule.ruleConfidence;
     let verifiedType: string | null = null;
     // Derive needsHumanReview from confidence + source (no validationStatus on RuleValidationResult)
@@ -636,7 +638,7 @@ export async function runHybridPipeline(
 
     if (shouldVerify && det.cropB64 && verifierCalls < (env.VERIFIER_MAX_CALLS_PER_PAGE ?? 10)) {
       verifierCalls++;
-      const v = await runGeminiVerifier(det, rule.ruleConfidence, input.legendId, input.legendSymbols, input.pageImageBase64);
+      const v = await runAiVerifier(det, rule.ruleConfidence, input.legendId, input.legendSymbols, input.pageImageBase64);
       verifiedConf = v.verifiedConf;
       verifiedType = resolveVerifierType(v.verifiedType, input.legendSymbols);
       needsHumanReview = v.needsHumanReview;
@@ -669,7 +671,7 @@ export async function runHybridPipeline(
       `Rule: ${rule.source} → ${rule.resolvedAssetName}`,
     ];
     if (det.ocrText) evidence.push(`OCR: "${det.ocrText}" (conf=${det.ocrConfidence.toFixed(2)})`);
-    if (verifiedType) evidence.push(`Gemini verifier: ${verifiedType}`);
+    if (verifiedType) evidence.push(`AI verifier: ${verifiedType}`);
     if (rule.negativePenalty < 0) evidence.push(`Negative learning penalty: ${rule.negativePenalty.toFixed(2)}`);
 
     if (finalAssetType === 'UNKNOWN') {
@@ -724,10 +726,11 @@ export async function runHybridPipeline(
     } as PersistableDetection);
   }
 
-  // ── Stage 5: Gemini Full-page Fallback ──
-  let geminiFallbackDets: PersistableDetection[] = [];
-  if (env.GEMINI_FALLBACK_ENABLED === 'true' && input.legendSymbols.length > 0) {
-    geminiFallbackDets = await runGeminiFallback(
+  // ── Stage 5: AI Full-page Fallback ──
+  let aiFallbackDets: PersistableDetection[] = [];
+  const fallbackEnabled = (env.AI_FALLBACK_ENABLED ?? env.GEMINI_FALLBACK_ENABLED) === 'true';
+  if (fallbackEnabled && input.legendSymbols.length > 0) {
+    aiFallbackDets = await runAiFallback(
       input.pageImageBase64,
       input.pageWidth,
       input.pageHeight,
@@ -744,7 +747,7 @@ export async function runHybridPipeline(
   }
 
   // ── Stage 6: Merge + NMS ──
-  const allDets = [...persistable, ...geminiFallbackDets];
+  const allDets = [...persistable, ...aiFallbackDets];
   const finalDets = applyNMS(allDets, env.HYBRID_MERGE_IOU ?? 0.4) as PersistableDetection[];
 
   return {
@@ -752,8 +755,10 @@ export async function runHybridPipeline(
     stats: {
       yoloDetections: yoloOcrDets.length,
       yoloWithTags,
+      aiVerifierCalls: verifierCalls,
+      aiFallbackDetections: aiFallbackDets.length,
       geminiVerifierCalls: verifierCalls,
-      geminiFallbackDetections: geminiFallbackDets.length,
+      geminiFallbackDetections: aiFallbackDets.length,
       totalFinal: finalDets.length,
       durationMs: Date.now() - t0,
     },

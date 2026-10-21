@@ -75,7 +75,8 @@ export interface DxfDetection {
   layer: string;
   source: 'INSERT' | 'TEXT' | 'CIRCLE' | 'ATTRIBUTE' | 'VISION';
   rawPosition: DxfPoint;
-  needsGeminiClassification?: boolean;
+  needsAiClassification?: boolean;
+  needsGeminiClassification?: boolean; // backward-compat alias
   /** 0-based sheet region index (lihat splitDxfRegions). */
   regionIndex: number;
   /** 1-based halaman P&ID (= regionIndex + 1). */
@@ -132,7 +133,8 @@ export interface DxfDetectionResult {
     circleCount: number;
     lineCount: number;
     unmatchedInserts: number;
-    geminiCandidates: number;
+    aiCandidates: number;
+    geminiCandidates: number; // backward-compat alias
     textTagsFound: number;
     /** Symbol stroke clusters formed (Blok 2.1). */
     clusterCount: number;
@@ -892,13 +894,16 @@ export function runDxfDetection(
   const globalCircleCount = collectCircleCandidates(globalEntities, globalExtents, lookup).length;
 
   // Detect pipeline type (global — satu file, satu pipeline)
+  const DEST_LABEL_RE = /^(?:TO|FROM)\s+.+?\b([A-Z]{1,6}[-_][0-9]{2,6}[A-Z]{0,2})\s*$/i;
   const hasAttribs = globalInserts.some(i => i.attributes?.length > 0);
-  const tagLayerTexts = globalTexts.filter(t => isTagLayer(t.layer, lookup) && isTagText(t.text, legendTagRegexes));
-  const isXrefBound = !hasAttribs && tagLayerTexts.length > 0;
+  const tagLayerTexts = globalTexts.filter(t =>
+    isTagLayer(t.layer, lookup) && (isTagText(t.text, legendTagRegexes) || DEST_LABEL_RE.test(t.text.trim()))
+  );
+  const isXrefBound = !hasAttribs && (tagLayerTexts.length > 0 || globalInserts.length === 0);
 
   const allDetections: DxfDetection[] = [];
   const regionsInfo: DxfRegionInfo[] = [];
-  let unmatchedInserts = 0, geminiCandidates = 0, textTagsFoundTotal = 0, circleCountTotal = 0, clusterCountTotal = 0;
+  let unmatchedInserts = 0, aiCandidates = 0, textTagsFoundTotal = 0, circleCountTotal = 0, clusterCountTotal = 0;
 
   for (const region of regions) {
     // Scope lokal: jarak/radius asosiasi memakai extents region (densitas lokal),
@@ -974,7 +979,6 @@ export function runDxfDetection(
     //   - evidence note explaining they are referenced, not drawn here
     //   - confidence capped at 0.65 (below review threshold → always PENDING)
     // Excluded: title strip, excluded layers, texts already picked up as tagTexts.
-    const DEST_LABEL_RE = /^(?:TO|FROM)\s+.+?\b([A-Z]{1,6}[-_][0-9]{2,6}[A-Z]{0,2})\s*$/i;
     const alreadyTagSet = new Set(tagTexts.map(t => t.text.trim().toUpperCase()));
     const destLabelTags: Array<{ text: DxfTextEntity; extractedTag: string; labelText: string }> = [];
     for (const t of allTexts) {
@@ -1176,6 +1180,7 @@ export function runDxfDetection(
         rawPosition: pos,
         regionIndex,
         pidPage,
+        needsAiClassification: typeUnknown || !bboxFromGeometry,
         needsGeminiClassification: typeUnknown || !bboxFromGeometry,
       });
     }
@@ -1213,6 +1218,7 @@ export function runDxfDetection(
         rawPosition: t.position,
         regionIndex,
         pidPage,
+        needsAiClassification: !legendMatch,
         needsGeminiClassification: !legendMatch,
       });
     }
@@ -1265,8 +1271,8 @@ export function runDxfDetection(
       };
       const confidence = fuseConfidence(tag ? 0.62 : 0.42, signals);
 
-      const needsGemini = !tag && !legendMatch;
-      if (needsGemini) { geminiCandidates++; }
+      const needsAi = !tag && !legendMatch;
+      if (needsAi) { aiCandidates++; }
 
       detections.push({
         assetTag: tag,
@@ -1287,7 +1293,8 @@ export function runDxfDetection(
         rawPosition: cc.center,
         regionIndex,
         pidPage,
-        needsGeminiClassification: needsGemini || !tag,
+        needsAiClassification: needsAi || !tag,
+        needsGeminiClassification: needsAi || !tag,
       });
     }
 
@@ -1326,8 +1333,8 @@ export function runDxfDetection(
       }
 
       const lgMatch = matchBlockSuffixToLegend(suffix, legend);
-      const needsGemini = !lgMatch;
-      if (needsGemini) { unmatchedInserts++; geminiCandidates++; }
+      const needsAi = !lgMatch;
+      if (needsAi) { unmatchedInserts++; aiCandidates++; }
 
       const signals: FusionSignals = {
         legendTagMatch: false,
@@ -1359,7 +1366,8 @@ export function runDxfDetection(
         rawPosition: ins.position,
         regionIndex,
         pidPage,
-        needsGeminiClassification: needsGemini || !bboxFromGeometry,
+        needsAiClassification: needsAi || !bboxFromGeometry,
+        needsGeminiClassification: needsAi || !bboxFromGeometry,
       });
     }
 
@@ -1440,8 +1448,8 @@ export function runDxfDetection(
       const tm = tag ? matchTagToLegend(tag, legend) : null;
       const lm = bm ?? tm;
       const assetType = lm?.asset_type ?? UNKNOWN_ASSET_TYPE;
-      const needsGemini = !lm;
-      if (needsGemini) { unmatchedInserts++; geminiCandidates++; }
+      const needsAi = !lm;
+      if (needsAi) { unmatchedInserts++; aiCandidates++; }
 
       const signals: FusionSignals = {
         legendTagMatch: !!tm && !!tm.tag_pattern,
@@ -1481,7 +1489,8 @@ export function runDxfDetection(
         rawPosition: ins.position,
         regionIndex,
         pidPage,
-        needsGeminiClassification: needsGemini || !bboxFromGeometry,
+        needsAiClassification: needsAi || !bboxFromGeometry,
+        needsGeminiClassification: needsAi || !bboxFromGeometry,
       });
     }
 
@@ -1517,7 +1526,8 @@ export function runDxfDetection(
       clusterCount: clusterCountTotal,
       lineCount,
       unmatchedInserts,
-      geminiCandidates,
+      aiCandidates,
+      geminiCandidates: aiCandidates,
       textTagsFound: textTagsFoundTotal,
     },
   };
@@ -1656,7 +1666,7 @@ Reply ONLY with valid JSON object:
  *
  * Supports multi-provider (Gemini, OpenAI / 9router, Anthropic).
  */
-export async function applyGeminiFallback(
+export async function applyAiFallback(
   detections: DxfDetection[],
   _svgBuffer: Buffer,        // kept for API compat, only used for vision fallback path
   legend: LegendSymbolRef[],
@@ -1667,7 +1677,7 @@ export async function applyGeminiFallback(
   // Only UNKNOWN-typed candidates: resolved detections don't need re-classification
   // (previously any estimated-box detection burned an AI call).
   const candidates = detections.filter(
-    d => d.needsGeminiClassification && d.blockName && d.assetType === UNKNOWN_ASSET_TYPE,
+    d => (d.needsAiClassification ?? d.needsGeminiClassification) && d.blockName && d.assetType === UNKNOWN_ASSET_TYPE,
   );
   if (!candidates.length || !legend.length) return;
 
@@ -1681,7 +1691,7 @@ export async function applyGeminiFallback(
     provider = await getVisionProvider(cfg);
     model = cfg.provider === 'openai' ? cfg.openaiModel : (cfg.provider === 'anthropic' ? cfg.anthropicModel : cfg.geminiModel);
   } catch (err) {
-    console.error('getVisionProvider config error in applyGeminiFallback:', err);
+    console.error('getVisionProvider config error in applyAiFallback:', err);
     return;
   }
 
@@ -1761,16 +1771,20 @@ Reply ONLY with valid JSON object:
           det.assetType = m?.asset_type ?? at;
           det.confidence = Math.max(det.confidence, cf);
           det.evidence.push(`AI text-prompt: ${p.evidence ?? at} (${Math.round(cf*100)}%)`);
+          det.needsAiClassification = false;
           det.needsGeminiClassification = false;
         }
       }
     } catch (err) {
-      console.error('applyGeminiFallback error:', err instanceof Error ? err.message : err);
+      console.error('applyAiFallback error:', err instanceof Error ? err.message : err);
     }
 
     if (i + BATCH < candidates.length) await new Promise(r => setTimeout(r, 200));
   }
 }
+
+/** Backward-compatibility alias */
+export const applyGeminiFallback = applyAiFallback;
 
 // ── Piping Line & Valve Size Association ─────────────────────────────────────
 

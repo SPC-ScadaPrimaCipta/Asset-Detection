@@ -55,7 +55,7 @@ async function main() {
   const row = r.rows[0]; await pool.end();
   if (!row || row.ai_provider !== 'gemini' || !row.gemini_api_key) throw new Error('Effective Gemini configuration/key unavailable');
 
-  const standard = await import('../lib/standard-legends.ts');
+  const standard = await import('../lib/standard-legends');
   const combined = standard.BUILTIN_LEGENDS.find((l: any) => l.standard_code === 'COMBINED');
   if (!combined) throw new Error('COMBINED built-in legend unavailable');
   const legendSymbols = combined.symbols.map((s: any) => ({ assetType: s.asset_type, symbolName: s.symbol_name, tagPattern: s.tag_pattern, aliases: s.aliases, standardCode: s.standard_code }));
@@ -80,7 +80,7 @@ async function main() {
   try {
     sdkCallCounts.generateContent += 1;
     const result = await model.generateContent([{ text: prompt }, { inlineData: { mimeType: 'image/png', data: imageBase64 } }]);
-    rawText = result.response.text(); usage = result.usageMetadata ?? null; finishReason = result.response.candidates?.[0]?.finishReason ?? null;
+    rawText = result.response.text(); usage = (result as any).usageMetadata ?? null; finishReason = result.response.candidates?.[0]?.finishReason ?? null;
   } catch (e: any) { error = e instanceof Error ? e.message : String(e); }
   const durationMs = Date.now() - generationStartedMs;
   const parsed: any = rawText ? parseJson(rawText) : null;

@@ -27,8 +27,9 @@ function patternToRegex(pattern: string): RegExp | null {
 
 async function main() {
   const args = process.argv.slice(2);
-  const fallback = resolve('storage/9880cba6-3f38-4526-bea4-6d2a4b1d9bd6-INTAN_GS.dxf');
-  const file = args[0] ?? (existsSync(fallback) ? fallback : resolve('scratch/test-pid.dxf'));
+  const intan = resolve('storage/9880cba6-3f38-4526-bea4-6d2a4b1d9bd6-INTAN_GS.dxf');
+  const fixture = resolve('fixtures/test-pid.dxf');
+  const file = args[0] ?? (existsSync(intan) ? intan : fixture);
   if (!existsSync(file)) {
     console.error(`file not found: ${file}`);
     process.exit(1);

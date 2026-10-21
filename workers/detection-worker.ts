@@ -189,7 +189,7 @@ export const worker = new Worker(
 
     const yoloActive = isYoloEnabled();
     const agentRunId = uuidv4();
-    const modelName = yoloActive ? "yolo-pid-v8n-203.onnx" : "gemini-vision-only";
+    const modelName = yoloActive ? "yolo-pid-v8n-203.onnx" : "ai-vision-only";
     const promptVersion = yoloActive ? "geo2" : "v2";
 
     try {
@@ -390,12 +390,13 @@ export const worker = new Worker(
           return { jobId, status: "FAILED" };
         }
 
+        const aiCandidates = dxfResult.parseStats.aiCandidates ?? dxfResult.parseStats.geminiCandidates;
         log("dxf parse done", {
           entities: dxfResult.parseStats.totalEntities,
           inserts: dxfResult.parseStats.insertCount,
           circles: dxfResult.parseStats.circleCount,
           detections: dxfResult.detections.length,
-          geminiCandidates: dxfResult.parseStats.geminiCandidates,
+          aiCandidates,
         });
 
         await db.query(
@@ -403,25 +404,25 @@ export const worker = new Worker(
           [jobId]
         );
 
-        // ── Gemini text-prompt fallback for unmatched blocks (#7) ─────────
+        // ── AI text-prompt fallback for unmatched blocks (#7) ─────────
         // Uses text prompt (block name + nearby texts) — no SVG crop needed.
         // Non-fatal: failures leave detections at their current confidence.
-        if (dxfResult.parseStats.geminiCandidates > 0 && dxfLegendSymbols.length > 0) {
+        if (aiCandidates > 0 && dxfLegendSymbols.length > 0) {
           try {
-            const { applyGeminiFallback } = await import('@/lib/dxf-detection');
+            const { applyAiFallback } = await import('@/lib/dxf-detection');
             // Pass empty buffer for svgBuffer (text-prompt path doesn't use it)
-            await applyGeminiFallback(
+            await applyAiFallback(
               dxfResult.detections,
               Buffer.alloc(0),
               dxfLegendSymbols,
               parsedDxf!.extents,
               parsedDxf!.entities,
             );
-            log("gemini text-prompt fallback done", {
-              candidates: dxfResult.parseStats.geminiCandidates,
+            log("ai text-prompt fallback done", {
+              candidates: aiCandidates,
             });
           } catch (gErr) {
-            log("gemini fallback skipped", {
+            log("ai fallback skipped", {
               reason: gErr instanceof Error ? gErr.message.slice(0, 120) : String(gErr),
             });
           }
@@ -479,7 +480,10 @@ export const worker = new Worker(
                 if (vr && vr.source !== 'UNKNOWN' && vr.resolvedAssetType && vr.resolvedAssetType !== 'UNKNOWN') {
                   det.assetType = vr.resolvedAssetType;
                   det.evidence.push(`Rule-validator [${vr.source}]: ${vr.ruleApplied} (${Math.round(vr.confidence * 100)}%)`);
-                  if (vr.confidence >= 0.6) det.needsGeminiClassification = false;
+                  if (vr.confidence >= 0.6) {
+                    det.needsAiClassification = false;
+                    det.needsGeminiClassification = false;
+                  }
                   enriched++;
                 }
               }
@@ -561,7 +565,7 @@ export const worker = new Worker(
               log('dxf vision region done', {
                 region: out.vr.index + 1,
                 yolo: out.hybrid.stats.yoloDetections,
-                fallback: out.hybrid.stats.geminiFallbackDetections,
+                fallback: out.hybrid.stats.aiFallbackDetections,
                 merged: st.mergedIntoVector,
                 new: st.visionOnlyNew,
               });
@@ -773,11 +777,13 @@ export const worker = new Worker(
         renderScale,
         regionMode,
       });
-      console.log(`[Detection] pipeline=${yoloActive ? "yolo-hybrid" : "gemini-vision-only"} regions=${regionMode}`);
+      const aiVerifierOn = (env.AI_VERIFIER_ENABLED ?? env.GEMINI_VERIFIER_ENABLED) === "true";
+      const aiFallbackOn = (env.AI_FALLBACK_ENABLED ?? env.GEMINI_FALLBACK_ENABLED) === "true";
+      console.log(`[Detection] pipeline=${yoloActive ? "yolo-hybrid" : "ai-vision-only"} regions=${regionMode}`);
       console.log(`[Detection] ocr=${yoloActive ? (env.OCR_ENGINE ?? "tesseract") : "none"}`);
       console.log(`[Detection] cv=${yoloActive && env.CV_SERVICE_ENABLED === "true" ? "python-fastapi" : "none"}`);
-      console.log(`[Detection] gemini-verifier=${yoloActive && env.GEMINI_VERIFIER_ENABLED === "true" ? "enabled" : "disabled"}`);
-      console.log(`[Detection] gemini-fallback=${yoloActive && env.GEMINI_FALLBACK_ENABLED === "true" ? "enabled" : "disabled"}`);
+      console.log(`[Detection] ai-verifier=${yoloActive && aiVerifierOn ? "enabled" : "disabled"}`);
+      console.log(`[Detection] ai-fallback=${yoloActive && aiFallbackOn ? "enabled" : "disabled"}`);
       console.log(`[Detection] render scale=${renderScale}`);
       console.log(`[Detection] input pages=${pageCount}`);
 
@@ -865,7 +871,7 @@ export const worker = new Worker(
           promptVersion,
           JSON.stringify({
             pageCount,
-            engine: yoloActive ? "YOLO_GEO2" : "GEMINI_VISION",
+            engine: yoloActive ? "YOLO_GEO2" : "AI_VISION",
             effectiveConfig: yoloActive ? getEffectiveGeo2Config() : undefined,
             legendCount: cappedSymbols.length,
             legendIds: effectiveLegendIds.length > 0 ? effectiveLegendIds : null,
@@ -940,8 +946,8 @@ export const worker = new Worker(
               page,
               yoloDetections: hybridResult.stats.yoloDetections,
               yoloWithTags: hybridResult.stats.yoloWithTags,
-              geminiVerifierCalls: hybridResult.stats.geminiVerifierCalls,
-              geminiFallbackNew: hybridResult.stats.geminiFallbackDetections,
+              aiVerifierCalls: hybridResult.stats.aiVerifierCalls,
+              aiFallbackNew: hybridResult.stats.aiFallbackDetections,
               totalFinal: hybridResult.stats.totalFinal,
               durationMs: hybridResult.stats.durationMs,
             });
@@ -1131,7 +1137,7 @@ export const worker = new Worker(
         [
           JSON.stringify({
             durationMs: Date.now() - start,
-            engine: yoloActive ? "YOLO_GEO2" : "GEMINI_VISION",
+            engine: yoloActive ? "YOLO_GEO2" : "AI_VISION",
             effectiveConfig: yoloActive ? getEffectiveGeo2Config() : undefined,
           }),
           agentRunId,

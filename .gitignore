@@ -66,3 +66,6 @@ labels.zip
 # Diagnostics output directory (temporary runtime buffers)
 /fixtures/diagnostics/
 
+# Scratch directory (temporary debug/test scripts)
+/scratch/
+

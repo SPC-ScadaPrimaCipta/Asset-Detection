@@ -171,7 +171,8 @@ export function mergeVisionDetections(
       for (const e of vEv.slice(0, 3)) {
         if (match.evidence.length < 12 && !match.evidence.includes(e)) match.evidence.push(e);
       }
-      if (match.assetType !== UNKNOWN_ASSET_TYPE && match.needsGeminiClassification && v.confidence >= 0.6) {
+      if (match.assetType !== UNKNOWN_ASSET_TYPE && (match.needsAiClassification ?? match.needsGeminiClassification) && v.confidence >= 0.6) {
+        match.needsAiClassification = false;
         match.needsGeminiClassification = false;
       }
     } else {
@@ -206,6 +207,7 @@ export function mergeVisionDetections(
         rawPosition: globalNormCenterToWorld(vBox, globalExtents),
         regionIndex,
         pidPage,
+        needsAiClassification: true,
         needsGeminiClassification: true,
       });
     }

@@ -310,13 +310,16 @@ const envSchema = z.object({
   CV_SERVICE_ENABLED: z.enum(['true', 'false']).default('false'),
   // OCR engine preference: 'tesseract' (Node), 'cv-service' (Python auto), 'none'
   OCR_ENGINE: z.enum(['tesseract', 'cv-service', 'none']).default('tesseract'),
-  // Gemini verifier: call Gemini for UNKNOWN or low-confidence YOLO detections
+  // AI verifier: call AI vision for UNKNOWN or low-confidence YOLO detections
+  AI_VERIFIER_ENABLED: z.enum(['true', 'false']).default('true'),
   GEMINI_VERIFIER_ENABLED: z.enum(['true', 'false']).default('true'),
-  // Confidence threshold below which Gemini verifier is invoked for YOLO detections
+  // Confidence threshold below which AI verifier is invoked for YOLO detections
+  AI_VERIFIER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
   GEMINI_VERIFIER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
-  // Gemini full-page fallback: run Gemini on full page after YOLO to catch missed symbols
+  // AI full-page fallback: run AI vision on full page after YOLO to catch missed symbols
+  AI_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
   GEMINI_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
-  // Min IoU for merging YOLO + Gemini detections (avoid double-counting same symbol)
+  // Min IoU for merging YOLO + AI detections (avoid double-counting same symbol)
   HYBRID_MERGE_IOU: z.coerce.number().min(0).max(1).default(0.4),
   // BBox refinement via OpenCV contour detection (requires CV_SERVICE_ENABLED)
   BBOX_REFINE_ENABLED: z.enum(['true', 'false']).default('false'),
