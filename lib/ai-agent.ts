@@ -959,7 +959,7 @@ Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${i
         { text: contextText },
         ...refCropParts,
         mediaPart,
-      ]);
+      ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
       const raw = result.response.text();
       const json = extractJson(raw) as Record<string, unknown>;
       // P2: sanitasi per-item dulu — deteksi rusak di-drop, sisanya tetap divalidasi
@@ -1303,7 +1303,9 @@ export async function runRuleValidatorVision(
       generationConfig: await getGenerationConfig("ruleValidator"),
     });
 
-    const result = await model.generateContent([{ text: prompt }]);
+    const result = await model.generateContent([{ text: prompt }], {
+      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+    });
     const raw = result.response.text();
     return JSON.parse(raw) as {
       asset_type: string;

@@ -7,6 +7,7 @@ import {
   buildTagRegexes,
   humanizeYoloLabel,
   sanitizeAssetType,
+  resolveAssetType,
 } from '@/lib/validation';
 
 describe('isValidAssetTag', () => {
@@ -80,5 +81,37 @@ describe('sanitizeAssetType', () => {
     const vocab = new Set(['vessel', 'tank', 'centrifugal pump']);
     expect(sanitizeAssetType('Vessel', vocab)).toBe('Vessel');
     expect(sanitizeAssetType('Ball Valve', vocab)).toBe('UNKNOWN');
+  });
+});
+
+describe('resolveAssetType', () => {
+  const vocab = new Set(['Ball Valve', 'Gate Valve', 'Centrifugal Pump', 'Vessel']);
+
+  it('keeps a readable type that is absent from the vocabulary', () => {
+    expect(resolveAssetType('Flare Stack', vocab)).toEqual({
+      assetType: 'Flare Stack',
+      matchedVocabulary: false,
+    });
+  });
+
+  it('maps a variant to the closest vocabulary entry', () => {
+    expect(resolveAssetType('Gate Valve', vocab)).toEqual({
+      assetType: 'Gate Valve',
+      matchedVocabulary: true,
+    });
+  });
+
+  it('does not guess on a tie (General Valve)', () => {
+    expect(resolveAssetType('General Valve', vocab)).toEqual({
+      assetType: 'General Valve',
+      matchedVocabulary: false,
+    });
+  });
+
+  it('still nukes junk to UNKNOWN', () => {
+    expect(resolveAssetType('niso', vocab)).toEqual({
+      assetType: 'UNKNOWN',
+      matchedVocabulary: false,
+    });
   });
 });

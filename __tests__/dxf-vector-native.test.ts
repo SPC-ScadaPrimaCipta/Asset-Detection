@@ -158,3 +158,56 @@ describe('runDxfDetection (vector-native Lap 1)', () => {
     }
   });
 });
+
+describe('runDxfDetection — destination labels', () => {
+  it('extracts tag from "TO ... TAG" destination label', () => {
+    const body = [
+      frameLines('Level 3', 0, 0, 400, 400),
+      textEntity('P-101', 'Level 6', 100, 200),
+      ['0', 'TEXT', '8', 'Level 6',
+        '10', '200', '20', '100', '40', '2.5',
+        '1', 'TO WASH TANK 1 T-0101',
+      ].join('\n'),
+    ].join('\n');
+    const buf = dxfDoc(body);
+    const legend = [{ id: 'sym1', asset_type: 'Tank', symbol_name: 'Storage Tank', tag_pattern: 'T-####', aliases: ['T', 'TK'] }];
+    const result = runDxfDetection(buf, legend);
+    const destDet = result.detections.find(d => d.assetTag === 'T-0101');
+    expect(destDet).toBeDefined();
+    expect(destDet!.assetType).toBe('Tank');
+    expect(destDet!.evidence.some(e => e.includes('Destination label'))).toBe(true);
+    expect(destDet!.confidence).toBeLessThanOrEqual(0.65);
+  });
+
+  it('extracts tag from "FROM ... TAG" destination label', () => {
+    const body = [
+      frameLines('Level 3', 0, 0, 400, 400),
+      ['0', 'TEXT', '8', 'Level 6',
+        '10', '200', '20', '100', '40', '2.5',
+        '1', 'FROM WASTE PIT W-0102',
+      ].join('\n'),
+    ].join('\n');
+    const buf = dxfDoc(body);
+    const result = runDxfDetection(buf, []);
+    const destDet = result.detections.find(d => d.assetTag === 'W-0102');
+    expect(destDet).toBeDefined();
+    expect(destDet!.evidence.some(e => e.includes('Destination label'))).toBe(true);
+  });
+
+  it('does not double-count tag already detected via normal tag layer', () => {
+    const body = [
+      frameLines('Level 3', 0, 0, 400, 400),
+      textEntity('T-0101', 'Level 6', 100, 200),
+      ['0', 'TEXT', '8', 'Level 6',
+        '10', '200', '20', '150', '40', '2.5',
+        '1', 'TO WASH TANK 1 T-0101',
+      ].join('\n'),
+    ].join('\n');
+    const buf = dxfDoc(body);
+    const legend = [{ id: 'sym1', asset_type: 'Tank', symbol_name: 'Storage Tank', tag_pattern: 'T-####', aliases: ['T', 'TK'] }];
+    const result = runDxfDetection(buf, legend);
+    const t0101 = result.detections.filter(d => d.assetTag === 'T-0101');
+    expect(t0101).toHaveLength(1);
+    expect(t0101[0].evidence.some(e => e.includes('Destination label'))).toBe(false);
+  });
+});

@@ -12,6 +12,7 @@
  */
 import { getAiConfig } from '@/lib/ai-config';
 import { getTuning } from '@/lib/tuning';
+import { env } from '@/lib/env';
 
 export interface EmbeddingResult {
   embedding: number[];
@@ -47,7 +48,9 @@ export async function embedCanonical(canonical: string): Promise<EmbeddingResult
     for (const modelName of chain) {
       try {
         const model = genai.getGenerativeModel({ model: modelName });
-        const result = await model.embedContent(canonical);
+        const result = await model.embedContent(canonical, {
+          timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+        });
         const embedding = result.embedding.values;
 
         if (!embedding || embedding.length !== embeddingDimensions) {

@@ -271,6 +271,9 @@ const envSchema = z.object({
   WORKER_STALLED_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   WORKER_MAX_STALLED_COUNT: z.coerce.number().int().min(0).default(1),
   VERIFIER_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // Hard limit for any Gemini generateContent call. Without this a provider
+  // connection that never answers stalls the worker indefinitely.
+  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   VERIFIER_CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(500),
   VERIFIER_MAX_CALLS_PER_PAGE: z.coerce.number().int().positive().default(10),
 
@@ -317,6 +320,10 @@ const envSchema = z.object({
   TEMPLATE_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.70),
   // Negative learning penalty applied during YOLO path rule validation
   NEGATIVE_LEARNING_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Delete duplicate detections after a job finishes (same rules as the
+  // Remove Duplicates button). Off by default: duplicates are annotated for
+  // review so a false positive is never removed without a trace.
+  DETECTION_AUTO_DEDUPE: z.enum(['true', 'false']).default('false'),
   // How many YOLO detections to process OCR in parallel per page
   OCR_BATCH_SIZE: z.coerce.number().int().positive().default(5),
 });

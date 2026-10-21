@@ -15,6 +15,7 @@ import {
   type PersistableDetection,
 } from "@/lib/detection/persistence/detection-repository";
 import { isTerminalJobStatus } from "@/lib/detection/job-status";
+import { findDuplicates, type DuplicateRow } from "@/lib/detection/duplicate-detection";
 import { isYoloEnabled } from "@/lib/detection/feature-flags";
 import { runYoloGeo2Page } from "@/lib/detection/yolo/yolo-geo2-runner";
 import {
@@ -57,8 +58,102 @@ function inferDrawingType(filename: string): string | null {
   return null;
 }
 
-/** Legend `tag_pattern` (P-### style) → RegExp, for tag validation. */
-function buildTagPatterns(
+type WorkerLog = (msg: string, extra?: Record<string, unknown>) => void;
+
+/**
+ * Post-job entity resolution for every pipeline (DXF and PDF).
+ *
+ * Rules live in lib/detection/duplicate-detection.ts — the same rules the UI
+ * preview and Remove Duplicates button use. Duplicates are annotated for
+ * review; DETECTION_AUTO_DEDUPE=true additionally deletes them, but never
+ * rows the user already reviewed or approved.
+ */
+async function resolveJobDuplicates(jobId: string, log: WorkerLog): Promise<void> {
+  try {
+    const allDetRows = await db.query<{
+      id: string;
+      asset_tag: string | null;
+      asset_type: string;
+      confidence: number | null;
+      review_status: string;
+      created_at: string;
+      pid_page: number | null;
+      bbox_x: number | null;
+      bbox_y: number | null;
+      bbox_w: number | null;
+      bbox_h: number | null;
+    }>(
+      `SELECT id, asset_tag, asset_type, confidence, review_status, created_at,
+              pid_page, bbox_x, bbox_y, bbox_w, bbox_h
+       FROM detections
+       WHERE job_id = $1
+         AND detection_status != 'REJECTED'`,
+      [jobId],
+    );
+
+    const candidates: DuplicateRow[] = allDetRows.rows.map((r) => ({
+      id: r.id,
+      assetTag: r.asset_tag,
+      assetType: r.asset_type,
+      confidence: r.confidence,
+      reviewStatus: r.review_status,
+      createdAt: r.created_at,
+      page: r.pid_page,
+      bbox:
+        r.bbox_x !== null && r.bbox_y !== null && r.bbox_w !== null && r.bbox_h !== null
+          ? { x: r.bbox_x, y: r.bbox_y, width: r.bbox_w, height: r.bbox_h }
+          : null,
+    }));
+
+    const { groups } = findDuplicates(candidates);
+
+    if (groups.length > 0) {
+      log(`entity resolution: ${groups.length} canonical group(s) with duplicates`);
+
+      for (const group of groups) {
+        const canonicalNote = `CANONICAL: selected as representative (duplicate group of ${group.duplicateIds.length + 1})`;
+        await db.query(
+          `UPDATE detections SET evidence = evidence || $1::jsonb
+           WHERE id = $2 AND NOT (evidence::text LIKE '%CANONICAL:%')`,
+          [JSON.stringify([canonicalNote]), group.winnerId],
+        );
+
+        const dupNote = `DUPLICATE: same symbol detected at overlapping location — canonical is ${group.winnerId.slice(0, 8)}… — review required`;
+        await db.query(
+          `UPDATE detections
+           SET evidence = evidence || $1::jsonb,
+               validation_status = CASE WHEN validation_status = 'CONFLICT' THEN 'CONFLICT' ELSE 'NEEDS_REVIEW' END
+           WHERE id = ANY($2::uuid[]) AND NOT (evidence::text LIKE '%DUPLICATE:%')`,
+          [JSON.stringify([dupNote]), group.duplicateIds],
+        );
+      }
+
+      log(`entity resolution complete: ${groups.length} canonical groups, ${groups.reduce((s, g) => s + g.duplicateIds.length, 0)} duplicates marked`);
+
+      if (env.DETECTION_AUTO_DEDUPE === 'true') {
+        const duplicateIds = groups.flatMap((g) => g.duplicateIds);
+        if (duplicateIds.length > 0) {
+          const deleted = await db.query<{ id: string }>(
+            `DELETE FROM detections
+             WHERE id = ANY($1::uuid[])
+               AND review_status NOT IN ('APPROVED', 'REVIEWED')
+             RETURNING id`,
+            [duplicateIds],
+          );
+          log(`auto-dedupe removed ${deleted.rowCount ?? 0} duplicate(s); kept reviewed/approved rows`);
+        }
+      }
+    }
+  } catch (resolveErr: unknown) {
+    // Non-fatal — entity resolution is advisory only
+    console.warn(
+      "[entity-resolution] post-job check failed (non-fatal):",
+      resolveErr instanceof Error ? resolveErr.message : resolveErr,
+    );
+  }
+}
+
+/** Legend `tag_pattern` (P-### style) → RegExp, for tag validation. */function buildTagPatterns(
   symbols: { tag_pattern?: string | null }[],
 ): RegExp[] {
   return symbols
@@ -543,10 +638,10 @@ export const worker = new Worker(
 
         // Final safety net (Blok 6): type vocabulary + tag validity.
         // Even if a pipeline stage slips junk through ("iso", "9"), it dies here.
-        const { isValidAssetTag: isTagOk2, sanitizeAssetType: sanitizeType } =
+        const { isValidAssetTag: isTagOk2, resolveAssetType } =
           await import('@/lib/validation');
         const vocabRows = (await db.query(
-          `SELECT DISTINCT LOWER(ls.asset_type) AS t FROM legend_symbols ls
+          `SELECT DISTINCT ls.asset_type AS t FROM legend_symbols ls
            LEFT JOIN legends l ON l.id = ls.legend_id
            WHERE ls.status='ACTIVE' AND ls.asset_type IS NOT NULL AND (
              ($1::text <> '' AND ls.legend_id = ANY($1::uuid[]))
@@ -575,11 +670,30 @@ export const worker = new Worker(
             det.evidence.push(`Tag "${det.assetTag}" rejected by validator — not persisted`);
             droppedTag++;
           }
-          const atype = sanitizeType(det.assetType, typeVocab.size > 0 ? typeVocab : undefined);
-          if (atype !== det.assetType) {
-            det.evidence.push(`Type "${det.assetType}" not in standards vocabulary → UNKNOWN`);
+          const resolved = resolveAssetType(det.assetType, typeVocab.size > 0 ? typeVocab : undefined);
+          let atype = resolved.assetType;
+          if (atype === 'UNKNOWN') {
+            const { inferAssetTypeFromEvidence, GENERIC_ASSET_TYPE } = await import('@/lib/detection/type-inference');
+            const inferred = inferAssetTypeFromEvidence({ evidence: det.evidence, assetTag: tag, legendSymbols: dxfLegendSymbols as any });
+            if (inferred) {
+              atype = inferred.assetType;
+              det.evidence.push(`Type inferred: ${inferred.reason}`);
+            } else if (tag) {
+              atype = GENERIC_ASSET_TYPE;
+              det.evidence.push(`No evidence-based type; assigned fallback: ${GENERIC_ASSET_TYPE}`);
+            }
+          }
+
+          if (!resolved.matchedVocabulary && atype !== 'UNKNOWN') {
+            det.evidence.push(`Type "${det.assetType}" has no exact standards match — kept for review`);
+            fixedType++;
+          } else if (atype !== det.assetType) {
+            det.evidence.push(`Type "${det.assetType}" mapped to standards vocabulary → ${atype}`);
             fixedType++;
           }
+          // UNKNOWN and non-standard types are never auto-valid: they must
+          // reach the human review queue.
+          const validationStatus = atype === 'UNKNOWN' || !resolved.matchedVocabulary ? 'NEEDS_REVIEW' : 'VALID';
           dxfInserts.push([
             uuidv4(),
             jobId,
@@ -599,6 +713,7 @@ export const worker = new Worker(
             det.pidPage, // sheet region index + 1
             effectiveLegendId ?? null,
             det.size ?? null,
+            validationStatus,
           ]);
         }
 
@@ -611,8 +726,8 @@ export const worker = new Worker(
                   asset_tag, asset_type, confidence,
                   bbox_x, bbox_y, bbox_w, bbox_h,
                   evidence, detection_status, review_status,
-                  detection_source, pid_page, legend_id, size)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                  detection_source, pid_page, legend_id, size, validation_status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
               row
             );
           }
@@ -626,6 +741,7 @@ export const worker = new Worker(
         );
 
         log("dxf pipeline done", { detections: dxfInserts.length, droppedTag, fixedType });
+        await resolveJobDuplicates(jobId, log);
         return { jobId, status: "COMPLETED", dxf: true, detections: dxfInserts.length };
       }
       // ── End DXF fast path ────────────────────────────────────────────────
@@ -984,138 +1100,8 @@ export const worker = new Worker(
         );
       }
 
-      // Post-job entity resolution: spatial-aware.
-      // True duplicate = same asset_tag + same asset_type + bbox overlap (IoU ≥ 0.3)
-      // OR centroid distance < 80 units (0-1000 space).
-      // Same tag but different type = different component → NOT duplicate.
-      // Same tag+type but different location on page → NOT duplicate.
-      try {
-        // Fetch all candidate rows with bbox info for spatial check
-        const allDetRows = await db.query<{
-          id: string;
-          asset_tag: string;
-          asset_type: string;
-          confidence: number | null;
-          bbox_x: number | null;
-          bbox_y: number | null;
-          bbox_w: number | null;
-          bbox_h: number | null;
-        }>(
-          `SELECT id, asset_tag, asset_type, confidence, bbox_x, bbox_y, bbox_w, bbox_h
-           FROM detections
-           WHERE job_id = $1
-             AND asset_tag IS NOT NULL AND asset_tag != ''
-             AND detection_status != 'REJECTED'
-           ORDER BY COALESCE(confidence, 0) DESC NULLS LAST`,
-          [jobId],
-        );
-
-        const dets = allDetRows.rows;
-
-        function workerIoU(
-          ax: number, ay: number, aw: number, ah: number,
-          bx: number, by: number, bw: number, bh: number,
-        ): number {
-          const ix0 = Math.max(ax, bx), iy0 = Math.max(ay, by);
-          const ix1 = Math.min(ax + aw, bx + bw), iy1 = Math.min(ay + ah, by + bh);
-          const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
-          const inter = iw * ih;
-          if (inter === 0) return 0;
-          const union = aw * ah + bw * bh - inter;
-          return union > 0 ? inter / union : 0;
-        }
-
-        function workerCentDist(
-          ax: number, ay: number, aw: number, ah: number,
-          bx: number, by: number, bw: number, bh: number,
-        ): number {
-          return Math.hypot(ax + aw / 2 - (bx + bw / 2), ay + ah / 2 - (by + bh / 2));
-        }
-
-        const IOU_THRESHOLD = 0.3;
-        const CENTROID_THRESHOLD = 80; // 0-1000 space
-
-        // Build spatial duplicate groups
-        const canonicalMap = new Map<string, string>();   // duplicateId → canonicalId
-        const groupMap = new Map<string, string[]>();     // canonicalId → [duplicateIds]
-        const processed = new Set<string>();
-
-        for (let i = 0; i < dets.length; i++) {
-          const a = dets[i];
-          if (processed.has(a.id)) continue;
-          processed.add(a.id);
-
-          const aTag = a.asset_tag.toUpperCase().trim();
-          const aType = (a.asset_type ?? '').toUpperCase().trim();
-          const duplicatesOfA: string[] = [];
-
-          for (let j = i + 1; j < dets.length; j++) {
-            const b = dets[j];
-            if (processed.has(b.id)) continue;
-
-            const bTag = b.asset_tag.toUpperCase().trim();
-            const bType = (b.asset_type ?? '').toUpperCase().trim();
-
-            // Different tag or different type → not a duplicate
-            if (aTag !== bTag) continue;
-            if (aType && bType && aType !== bType) continue;
-
-            // Spatial check
-            const aHas = a.bbox_x !== null && a.bbox_y !== null && a.bbox_w !== null && a.bbox_h !== null;
-            const bHas = b.bbox_x !== null && b.bbox_y !== null && b.bbox_w !== null && b.bbox_h !== null;
-
-            let isSpatial = false;
-            if (aHas && bHas) {
-              const overlap = workerIoU(a.bbox_x!, a.bbox_y!, a.bbox_w!, a.bbox_h!, b.bbox_x!, b.bbox_y!, b.bbox_w!, b.bbox_h!);
-              const cdist = workerCentDist(a.bbox_x!, a.bbox_y!, a.bbox_w!, a.bbox_h!, b.bbox_x!, b.bbox_y!, b.bbox_w!, b.bbox_h!);
-              isSpatial = overlap >= IOU_THRESHOLD || cdist < CENTROID_THRESHOLD;
-            } else {
-              // No bbox — fall back to tag+type match only
-              isSpatial = true;
-            }
-
-            if (isSpatial) {
-              processed.add(b.id);
-              duplicatesOfA.push(b.id);
-              canonicalMap.set(b.id, a.id);
-            }
-          }
-
-          if (duplicatesOfA.length > 0) {
-            groupMap.set(a.id, duplicatesOfA);
-          }
-        }
-
-        if (groupMap.size > 0) {
-          log(`entity resolution: ${groupMap.size} canonical group(s) with spatial duplicates`);
-
-          for (const [canonicalId, duplicateIds] of groupMap) {
-            const canonicalNote = `CANONICAL: selected as representative (highest confidence, spatial duplicate group of ${duplicateIds.length + 1})`;
-            await db.query(
-              `UPDATE detections SET evidence = evidence || $1::jsonb
-               WHERE id = $2 AND NOT (evidence::text LIKE '%CANONICAL:%')`,
-              [JSON.stringify([canonicalNote]), canonicalId],
-            );
-
-            const dupNote = `DUPLICATE: same tag+type detected at overlapping location — canonical is ${canonicalId.slice(0, 8)}… — review required`;
-            await db.query(
-              `UPDATE detections
-               SET evidence = evidence || $1::jsonb,
-                   validation_status = CASE WHEN validation_status = 'CONFLICT' THEN 'CONFLICT' ELSE 'NEEDS_REVIEW' END
-               WHERE id = ANY($2::uuid[]) AND NOT (evidence::text LIKE '%DUPLICATE:%')`,
-              [JSON.stringify([dupNote]), `{${duplicateIds.join(",")}}`],
-            );
-          }
-
-          log(`entity resolution complete: ${groupMap.size} canonical groups, ${Array.from(groupMap.values()).reduce((s, v) => s + v.length, 0)} duplicates marked`);
-        }
-      } catch (resolveErr: unknown) {
-        // Non-fatal — entity resolution is advisory only
-        console.warn(
-          "[entity-resolution] post-job check failed (non-fatal):",
-          resolveErr instanceof Error ? resolveErr.message : resolveErr,
-        );
-      }
+      // Post-job entity resolution: geometry-first (shared with the DXF branch).
+      await resolveJobDuplicates(jobId, log);
 
       const final = (await db.query("SELECT status FROM detection_jobs WHERE id=$1", [jobId])).rows[0];
 

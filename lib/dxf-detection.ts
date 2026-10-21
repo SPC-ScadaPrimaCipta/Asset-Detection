@@ -41,6 +41,7 @@ import {
   nearestCluster,
 } from '@/lib/dxf-clusters';
 import { parseLineSpecText } from '@/lib/piping-parser';
+import { env } from '@/lib/env';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -965,6 +966,31 @@ export function runDxfDetection(
       if (!tagTexts.some(t => t === ut)) tagTexts.push(ut);
     }
 
+    // 1c. Destination / off-page labels — e.g. "TO WASH TANK 1 T-0101"
+    // These are flow-continuation arrows pointing to equipment on another sheet.
+    // The tag appears at the END of the label text after a keyword like TO/FROM.
+    // They are NOT equipment on this page, so they get:
+    //   - source: 'TEXT' (same as normal tag text)
+    //   - evidence note explaining they are referenced, not drawn here
+    //   - confidence capped at 0.65 (below review threshold → always PENDING)
+    // Excluded: title strip, excluded layers, texts already picked up as tagTexts.
+    const DEST_LABEL_RE = /^(?:TO|FROM)\s+.+?\b([A-Z]{1,6}[-_][0-9]{2,6}[A-Z]{0,2})\s*$/i;
+    const alreadyTagSet = new Set(tagTexts.map(t => t.text.trim().toUpperCase()));
+    const destLabelTags: Array<{ text: DxfTextEntity; extractedTag: string; labelText: string }> = [];
+    for (const t of allTexts) {
+      if (isExcludedLayer(t.layer, lookup)) continue;
+      if (isInTitleStrip(t.position)) continue;
+      const raw = t.text.trim();
+      // Must be long enough to be a label (> 28 = too long for isTagText)
+      if (raw.length <= 10) continue;
+      const m = DEST_LABEL_RE.exec(raw);
+      if (!m) continue;
+      const extracted = m[1].trim();
+      // Don't double-count tags already found via normal tag layer
+      if (alreadyTagSet.has(extracted.toUpperCase())) continue;
+      destLabelTags.push({ text: t, extractedTag: extracted, labelText: raw });
+    }
+
     // 2. Description texts — layer ignore/title tidak boleh jadi deskripsi.
     // Syarat kualitas: tolak kode status (R-ST/PIT), tolak teks yang mengandung
     // pola tag (label ganda "V-0101 B"), dan wajib frasa bermakna (ada spasi
@@ -1151,6 +1177,43 @@ export function runDxfDetection(
         regionIndex,
         pidPage,
         needsGeminiClassification: typeUnknown || !bboxFromGeometry,
+      });
+    }
+
+    // 4b. Destination label detections — referenced equipment on other sheets.
+    // Tags extracted from "TO WASH TANK 1 T-0101" style labels.
+    // Confidence capped at 0.65 so they always land in PENDING review.
+    for (const { text: t, extractedTag, labelText } of destLabelTags) {
+      const legendMatch = matchTagToLegend(extractedTag, legend);
+      const assetType = legendMatch?.asset_type ?? UNKNOWN_ASSET_TYPE;
+      // Place bbox at the arrow/label position using a small estimated box
+      const normPos = dxfToNorm(t.position, globalExtents);
+      const bbox: DxfDetection['bbox'] = {
+        x: Math.max(0, normPos.x - 30),
+        y: Math.max(0, normPos.y - 15),
+        width: 60,
+        height: 30,
+      };
+      detections.push({
+        assetTag: extractedTag,
+        assetType,
+        description: labelText,
+        confidence: 0.65,
+        bbox,
+        evidence: [
+          `Destination label: "${labelText}"`,
+          `Tag "${extractedTag}" referenced in off-page continuation — equipment may be on another sheet`,
+          legendMatch
+            ? `Legend match: ${legendMatch.symbol_name ?? legendMatch.asset_type}`
+            : 'No legend match — type UNKNOWN, needs rule validation',
+        ],
+        blockName: null,
+        layer: t.layer,
+        source: 'TEXT',
+        rawPosition: t.position,
+        regionIndex,
+        pidPage,
+        needsGeminiClassification: !legendMatch,
       });
     }
 
@@ -1551,7 +1614,9 @@ Reply ONLY with valid JSON array:
 [{"layerName":"...","category":"...","confidence":0.0-1.0,"reasoning":"..."}]`;
 
   try {
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent(prompt, {
+      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+    });
     const raw = result.response.text().trim()
       .replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
     const parsed = JSON.parse(raw) as Array<{
@@ -1658,7 +1723,9 @@ Reply ONLY with JSON array (same order):
 [{"assetType":"<type or UNKNOWN>","confidence":0.0-1.0,"evidence":"<reason>"}]`;
 
     try {
-      const result = await model.generateContent(prompt);
+    const result = await model.generateContent(prompt, {
+      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+    });
       const raw = result.response.text().trim()
         .replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
       const parsed = JSON.parse(raw) as Array<{

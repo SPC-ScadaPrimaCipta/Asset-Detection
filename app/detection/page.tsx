@@ -12,6 +12,7 @@ import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import { Lightning, CheckCircle, XCircle, PencilSimple, FloppyDisk, FileXls, PlusCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
 import { LegendSelector } from '../../components/ui/LegendSelector';
+import { findDuplicates } from '../../lib/detection/duplicate-detection';
 
 const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
   ssr: false,
@@ -2280,19 +2281,27 @@ function DetectionsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  // M1: Build dedup map — for each normalized key keep highest-confidence detection
-  const dedupMap = useMemo(() => {
-    const map = new Map<string, Detection>();
-    const countMap = new Map<string, number>();
-    for (const d of detections) {
-      const key = `${(d.asset_tag ?? "").toUpperCase().trim()}|${normalizeType(d.asset_type)}`;
-      countMap.set(key, (countMap.get(key) ?? 0) + 1);
-      const existing = map.get(key);
-      if (!existing || (d.confidence ?? 0) > (existing.confidence ?? 0)) {
-        map.set(key, d);
-      }
-    }
-    return { map, countMap };
+  // Duplicate detection — one geometry-first rule shared with the API/worker.
+  // Keyed by tag+type before; that hid every untagged symbol of a type behind a
+  // single row and missed duplicates whose labels drifted between lanes.
+  const duplicateInfo = useMemo(() => {
+    const result = findDuplicates(
+      detections.map((d) => ({
+        id: d.id,
+        assetTag: d.asset_tag,
+        assetType: d.asset_type,
+        confidence: d.confidence,
+        page: d.pid_page,
+        reviewStatus: d.review_status,
+        bbox:
+          d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
+            ? { x: d.bbox_x, y: d.bbox_y, width: d.bbox_w, height: d.bbox_h }
+            : null,
+      })),
+    );
+    const groupSize = new Map<string, number>();
+    for (const g of result.groups) groupSize.set(g.winnerId, g.duplicateIds.length + 1);
+    return { ...result, groupSize };
   }, [detections]);
 
   // Unique asset types for filter dropdown
@@ -2303,8 +2312,10 @@ function DetectionsTable({
   }, [detections]);
 
   const filtered = (() => {
-    // M1: Apply dedup first if enabled
-    const base = hideDupes ? Array.from(dedupMap.map.values()) : detections;
+    // Duplicates are hidden (not deleted) until the user runs Remove Duplicates.
+    const base = hideDupes
+      ? detections.filter((d) => !duplicateInfo.duplicateIds.has(d.id))
+      : detections;
     return base.filter((d) => {
       const tag = d.asset_tag ?? "";
       const type = normalizeType(d.asset_type);
@@ -2888,10 +2899,9 @@ function DetectionsTable({
                       }}
                     >
                       {confBadge(d.confidence)}
-                      {/* M1: Show duplicate count */}
+                      {/* Duplicate group size — same rule as the warning bar */}
                       {(() => {
-                        const key = `${(d.asset_tag ?? "").toUpperCase().trim()}|${normalizeType(d.asset_type)}`;
-                        const cnt = dedupMap.countMap.get(key) ?? 1;
+                        const cnt = duplicateInfo.groupSize.get(d.id) ?? 1;
                         return cnt > 1 ? (
                           <span
                             style={{
@@ -3109,62 +3119,25 @@ function DetectionWorkspace() {
       )
     : null;
 
-  // Spatial-aware duplicate count.
-  // True duplicate = same tag (non-empty) + same type + bbox overlap OR close centroid.
-  const duplicateCount = (() => {
-    const IOU_THRESHOLD = 0.3;
-    const CENTROID_THRESHOLD = 80; // 0-1000 space
-
-    function uiIoU(a: Detection, b: Detection): number {
-      if (a.bbox_x === null || b.bbox_x === null) return 0;
-      const ax2 = (a.bbox_x ?? 0) + (a.bbox_w ?? 0);
-      const ay2 = (a.bbox_y ?? 0) + (a.bbox_h ?? 0);
-      const bx2 = (b.bbox_x ?? 0) + (b.bbox_w ?? 0);
-      const by2 = (b.bbox_y ?? 0) + (b.bbox_h ?? 0);
-      const ix0 = Math.max(a.bbox_x ?? 0, b.bbox_x ?? 0);
-      const iy0 = Math.max(a.bbox_y ?? 0, b.bbox_y ?? 0);
-      const ix1 = Math.min(ax2, bx2), iy1 = Math.min(ay2, by2);
-      const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
-      const inter = iw * ih;
-      if (inter === 0) return 0;
-      const aw = a.bbox_w ?? 0, ah = a.bbox_h ?? 0;
-      const bw = b.bbox_w ?? 0, bh = b.bbox_h ?? 0;
-      const union = aw * ah + bw * bh - inter;
-      return union > 0 ? inter / union : 0;
-    }
-
-    function uiCentDist(a: Detection, b: Detection): number {
-      if (a.bbox_x === null || b.bbox_x === null) return Infinity;
-      const acx = (a.bbox_x ?? 0) + (a.bbox_w ?? 0) / 2;
-      const acy = (a.bbox_y ?? 0) + (a.bbox_h ?? 0) / 2;
-      const bcx = (b.bbox_x ?? 0) + (b.bbox_w ?? 0) / 2;
-      const bcy = (b.bbox_y ?? 0) + (b.bbox_h ?? 0) / 2;
-      return Math.hypot(acx - bcx, acy - bcy);
-    }
-
-    const isDuplicate = new Set<string>();
-    for (let i = 0; i < detections.length; i++) {
-      const a = detections[i];
-      if (isDuplicate.has(a.id)) continue;
-      const aTag = (a.asset_tag ?? "").toUpperCase().trim();
-      const aType = (a.asset_type ?? "").toUpperCase().trim();
-      if (!aTag) continue;
-      for (let j = i + 1; j < detections.length; j++) {
-        const b = detections[j];
-        if (isDuplicate.has(b.id)) continue;
-        const bTag = (b.asset_tag ?? "").toUpperCase().trim();
-        const bType = (b.asset_type ?? "").toUpperCase().trim();
-        if (aTag !== bTag) continue;
-        if (aType && bType && aType !== bType) continue;
-        const overlap = uiIoU(a, b);
-        const cdist = uiCentDist(a, b);
-        if (overlap >= IOU_THRESHOLD || cdist < CENTROID_THRESHOLD) {
-          isDuplicate.add(b.id); // mark lower-confidence one (detections not sorted here, but mark j)
-        }
-      }
-    }
-    return isDuplicate.size;
-  })();
+  // Duplicate count — same geometry-first rules as the table and the API.
+  const duplicateCount = useMemo(
+    () =>
+      findDuplicates(
+        detections.map((d) => ({
+          id: d.id,
+          assetTag: d.asset_tag,
+          assetType: d.asset_type,
+          confidence: d.confidence,
+          page: d.pid_page,
+          reviewStatus: d.review_status,
+          bbox:
+            d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null
+              ? { x: d.bbox_x, y: d.bbox_y, width: d.bbox_w, height: d.bbox_h }
+              : null,
+        })),
+      ).duplicateIds.size,
+    [detections],
+  );
 
   const [deduping, setDeduping] = useState(false);
   const [dedupeError, setDedupeError] = useState('');

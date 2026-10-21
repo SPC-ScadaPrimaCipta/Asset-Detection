@@ -117,7 +117,7 @@ async function defaultTransport(
   const res = await Promise.race([
     model.generateContent({
       contents: [{ role: 'user', parts: parts as never[] }],
-    }),
+    }, { timeout: timeoutMs }),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('gemini timeout')), timeoutMs)
     ),

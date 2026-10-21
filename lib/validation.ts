@@ -50,6 +50,7 @@ export function isValidAssetTag(tag: string | null | undefined, legendRegexes: R
   if (!tag) return false;
   const t = tag.trim();
   if (t.length < 3 || t.length > 28) return false;
+  if (/^UNK[-_ ]?\d+$/i.test(t)) return false;
   if (PIPE_SPEC_RE.test(t)) return false;
   if (STATUS_RE.test(t)) return false;
   if (/^\d/.test(t)) return false;
@@ -131,4 +132,49 @@ export function sanitizeAssetType(
     if (!ok) return UNKNOWN_ASSET_TYPE_VALUE;
   }
   return t;
+}
+
+/**
+ * Type gate used at persist time. Unlike sanitizeAssetType() this never throws
+ * away a human-readable type just because the active legend vocabulary lacks
+ * the exact string: "Flare Stack" / "General Valve" are real detections, not
+ * junk. Falls back to the closest vocabulary entry when the label is a variant
+ * of a standard type, otherwise keeps the label and flags it for review.
+ */
+export function resolveAssetType(
+  assetType: string | null | undefined,
+  knownTypes?: Set<string>,
+): { assetType: string; matchedVocabulary: boolean } {
+  const base = sanitizeAssetType(assetType);
+  if (base === UNKNOWN_ASSET_TYPE_VALUE) {
+    return { assetType: UNKNOWN_ASSET_TYPE_VALUE, matchedVocabulary: false };
+  }
+  if (!knownTypes || knownTypes.size === 0) {
+    return { assetType: base, matchedVocabulary: true };
+  }
+
+  const lower = base.toLowerCase();
+  for (const k of knownTypes) {
+    if (k.toLowerCase() === lower) return { assetType: base, matchedVocabulary: true };
+  }
+
+  const tokens = new Set(base.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2));
+  let best: string | null = null;
+  let bestScore = 0;
+  let tie = false;
+  for (const candidate of knownTypes) {
+    const ct = new Set(candidate.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2));
+    let score = 0;
+    for (const t of tokens) if (ct.has(t)) score++;
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+      tie = false;
+    } else if (score === bestScore && score > 0) {
+      tie = true;
+    }
+  }
+
+  if (best && !tie && bestScore >= 2) return { assetType: best, matchedVocabulary: true };
+  return { assetType: base, matchedVocabulary: false };
 }

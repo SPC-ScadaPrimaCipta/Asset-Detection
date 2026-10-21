@@ -1,0 +1,53 @@
+IMPORTANT! Eviction policy is allkeys-lru. It should be "noeviction"
+It is highly recommended to use a minimum Redis version of 6.2.0
+             Current: 5.0.14.1
+IMPORTANT! Eviction policy is allkeys-lru. It should be "noeviction"
+It is highly recommended to use a minimum Redis version of 6.2.0
+             Current: 5.0.14.1
+IMPORTANT! Eviction policy is allkeys-lru. It should be "noeviction"
+It is highly recommended to use a minimum Redis version of 6.2.0
+             Current: 5.0.14.1
+[model-resolver] Gemini model list unavailable, using configured fallback order
+[model-resolver] Gemini model list unavailable, using configured fallback order
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [503 Service Unavailable] This model is currently experiencing
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] model=gemini-3.6-flash failed: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, pleas
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=1: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=1: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=2: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=1: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=1: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=3: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=6: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=1: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=5: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures
+[gemini] skipping model=gemini-3.6-flash page=4: circuit open after 3 consecutive provider failures

@@ -46,7 +46,8 @@ import {
 import { runDetectionAgent } from '@/lib/ai-agent';
 import type { DetectionJobInput } from '@/lib/ai-agent';
 import { applyNMS } from '@/lib/spatial';
-import { humanizeYoloLabel } from '@/lib/validation';
+import { humanizeYoloLabel, sanitizeAssetType } from '@/lib/validation';
+import { isJunkAssetType } from '@/lib/detection/duplicate-detection';
 
 // ── Verifier (lazy import — only used when GEMINI_VERIFIER_ENABLED) ────────
 async function getVerifier() {
@@ -258,6 +259,31 @@ async function runRuleValidation(
 }
 
 // ── Stage 4: Gemini Verifier ───────────────────────────────────────────────
+
+/**
+ * The verifier returns a LEGEND LABEL (symbol_name), not an asset type. Using
+ * it verbatim persisted things like "GATE VALVE (GATE VALVE) 1) OPEN…" or
+ * "UNKNOWN" and discarded an already-resolved rule type. Map it back through
+ * the legend, then fall back to humanizing a dotted YOLO label.
+ */
+function resolveVerifierType(
+  label: string | null,
+  legendSymbols: LegendSymbol[],
+): string | null {
+  if (!label) return null;
+  const raw = label.trim();
+  if (!raw || raw.toUpperCase() === 'UNKNOWN') return null;
+
+  const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
+  const match = legendSymbols.find(
+    (s) => norm(s.symbol_name) === norm(raw) || norm(s.asset_type) === norm(raw),
+  );
+  if (match?.asset_type && !isJunkAssetType(match.asset_type)) return match.asset_type;
+
+  const humanized = humanizeYoloLabel(raw);
+  if (humanized) return humanized;
+  return isJunkAssetType(raw) ? null : raw;
+}
 
 async function runGeminiVerifier(
   det: YoloOcrDetection,
@@ -501,7 +527,7 @@ export async function runHybridPipeline(
 
   // ── Stage 1+2: YOLO + OCR ──
   if (input.skipOcr) pageLog('OCR skipped (caller-provided tags)');
-  let yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
+  const yoloOcrDets = await runYoloWithOcr(input.pngBuffer, input.pageWidth, input.pageHeight, pageLog, input.skipOcr);
 
   // ── Stage 1.5: Template Matching Fallback (if YOLO found 0 candidates and enabled) ──
   if (
@@ -610,7 +636,7 @@ export async function runHybridPipeline(
       verifierCalls++;
       const v = await runGeminiVerifier(det, rule.ruleConfidence, input.legendId, input.legendSymbols, input.pageImageBase64);
       verifiedConf = v.verifiedConf;
-      verifiedType = v.verifiedType;
+      verifiedType = resolveVerifierType(v.verifiedType, input.legendSymbols);
       needsHumanReview = v.needsHumanReview;
     }
 
@@ -624,7 +650,29 @@ export async function runHybridPipeline(
       rule.negativePenalty,
     );
 
-    const finalAssetType = verifiedType ?? rule.resolvedAssetType;
+    // Never let a junk verifier label ("UNKNOWN", "iso") erase a resolved
+    // rule type, and never persist a dotted/fragment type.
+    const ruleType = sanitizeAssetType(rule.resolvedAssetType);
+    const verifiedSanitized = verifiedType ? sanitizeAssetType(verifiedType) : null;
+    let finalAssetType =
+      verifiedSanitized && verifiedSanitized !== 'UNKNOWN'
+        ? verifiedSanitized
+        : ruleType;
+
+    if (finalAssetType === 'UNKNOWN') {
+      const { inferAssetTypeFromEvidence, GENERIC_ASSET_TYPE } = await import('./type-inference');
+      const inferred = inferAssetTypeFromEvidence({ evidence, assetTag: det.ocrText && det.isTag ? det.ocrText : null, legendSymbols: input.legendSymbols });
+      if (inferred) {
+        finalAssetType = inferred.assetType;
+        evidence.push(`Type inferred: ${inferred.reason}`);
+      } else if (finalTag) {
+        finalAssetType = GENERIC_ASSET_TYPE;
+        evidence.push(`No evidence-based type; assigned fallback: ${GENERIC_ASSET_TYPE}`);
+      }
+    }
+
+    // UNKNOWN is never auto-valid — it always needs a human.
+    if (finalAssetType === 'UNKNOWN') needsHumanReview = true;
     const finalTag = det.ocrText && det.isTag ? det.ocrText : null;
 
     // Build evidence array

@@ -311,7 +311,10 @@ async function analyzeRegion(
         model: modelName,
         generationConfig: generation,
       });
-      const r = await model.generateContent([{ text: makeRegionPrompt(regionLabel) }, imgPart]);
+      const r = await model.generateContent(
+        [{ text: makeRegionPrompt(regionLabel) }, imgPart],
+        { timeout: env.GEMINI_REQUEST_TIMEOUT_MS },
+      );
       guard.breaker.recordSuccess(modelName);
       const text = r.response.text();
       const j = parseJsonResponse(text) as { symbols?: unknown[] };
@@ -714,7 +717,7 @@ Return JSON ONLY:
         const res = await model.generateContent([
           { text: catchupPrompt },
           { inlineData: { mimeType: 'image/png', data: pngBase64 } },
-        ]);
+        ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
         guard.breaker.recordSuccess(m);
         const j = parseJsonResponse(res.response.text()) as { symbols?: unknown[] };
         missed = Array.isArray(j.symbols) ? j.symbols as any[] : [];
@@ -801,7 +804,10 @@ bbox: tight around symbol graphic only, 0-1000 coords, NOT including text label.
     try {
       await guard.gate.wait();
       const model = client.getGenerativeModel({ model: modelName, generationConfig: generation });
-      const r = await model.generateContent([{ text: PROMPT }, imgPart]);
+      const r = await model.generateContent(
+        [{ text: PROMPT }, imgPart],
+        { timeout: env.GEMINI_REQUEST_TIMEOUT_MS },
+      );
       guard.breaker.recordSuccess(modelName);
       const j = parseJsonResponse(r.response.text()) as { symbols?: unknown[] };
       const raw = Array.isArray(j.symbols) ? j.symbols : [];
