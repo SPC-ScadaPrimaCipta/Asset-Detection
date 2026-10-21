@@ -811,9 +811,6 @@ Return JSON ONLY:
         }
       }
     }
-        }
-      }
-    }
 
     if (catchupModel === null && catchupErr) {
       console.warn(
