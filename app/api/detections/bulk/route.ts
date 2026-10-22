@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
 
       await db.query(
-        `UPDATE detections SET detection_status='CONFIRMED', review_status='APPROVED', updated_at=NOW()
+         `UPDATE detections SET detection_status='CONFIRMED', review_status='APPROVED', candidate_status='APPROVED', candidate_reviewed_at=NOW(), updated_at=NOW()
          WHERE id IN (${placeholders})`,
         ids
       );
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     );
 
     await db.query(
-      `UPDATE detections SET detection_status='REJECTED', review_status='REJECTED', updated_at=NOW()
+      `UPDATE detections SET detection_status='REJECTED', review_status='REJECTED', candidate_status='NOISE', candidate_reviewed_at=NOW(), updated_at=NOW()
        WHERE id IN (${placeholders})`,
       ids
     );
