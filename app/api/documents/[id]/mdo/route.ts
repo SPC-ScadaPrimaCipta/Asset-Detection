@@ -49,34 +49,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }, anchors);
       await db.query(
         `INSERT INTO detection_mdo_records
-          (detection_id, document_id, equipment, tag_no_proposed, equipment_type, size,
-           from_value, to_value, of_value, at_value, tag_number,
-           alternative_description_acn, description_proposed, description_len,
-           object_type, size_dimension, flow_direction, bypass, relation_status,
-           relation_confidence, relation_evidence, isolation_status, flow_source, confidence_breakdown, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW())
+          (detection_id, document_id, tag_no_proposed, equipment_type, component_name, size,
+            from_value, to_value, of_value, at_value, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
          ON CONFLICT (detection_id) DO UPDATE SET
-           equipment=EXCLUDED.equipment, tag_no_proposed=EXCLUDED.tag_no_proposed,
-           equipment_type=EXCLUDED.equipment_type, size=EXCLUDED.size,
-           from_value=EXCLUDED.from_value, to_value=EXCLUDED.to_value,
-           of_value=EXCLUDED.of_value, at_value=EXCLUDED.at_value,
-           alternative_description_acn=EXCLUDED.alternative_description_acn,
-           description_proposed=EXCLUDED.description_proposed,
-           description_len=EXCLUDED.description_len, object_type=EXCLUDED.object_type,
-           size_dimension=EXCLUDED.size_dimension, flow_direction=EXCLUDED.flow_direction,
-           bypass=EXCLUDED.bypass, relation_status=EXCLUDED.relation_status,
-           relation_confidence=EXCLUDED.relation_confidence,
-           relation_evidence=EXCLUDED.relation_evidence, isolation_status=EXCLUDED.isolation_status,
-           flow_source=EXCLUDED.flow_source, confidence_breakdown=EXCLUDED.confidence_breakdown, updated_at=NOW()`,
-        [d.id, documentId, mdo.equipment, mdo.tagNoProposed, mdo.equipmentType, mdo.size,
-          mdo.from, mdo.to, mdo.of, mdo.at, mdo.tagNumber, mdo.alternativeDescriptionAcn,
-          mdo.descriptionProposed, mdo.descriptionLen, mdo.objectType, mdo.sizeDimension,
-          mdo.relations.direction, mdo.relations.bypass,
-          mdo.relations.confidence >= 0.8 ? 'VALID' : 'NEEDS_REVIEW', mdo.relations.confidence,
-           JSON.stringify(mdo.relations.evidence), mdo.isolationStatus,
-           mdo.relations.evidence.some((e) => /FROM|TO/i.test(e)) ? 'CONTINUATION_TEXT' : null,
-           JSON.stringify({ relation: mdo.relations.confidence })],
-      );
+            tag_no_proposed=EXCLUDED.tag_no_proposed, equipment_type=EXCLUDED.equipment_type,
+            component_name=EXCLUDED.component_name, size=EXCLUDED.size,
+            from_value=EXCLUDED.from_value, to_value=EXCLUDED.to_value,
+            of_value=EXCLUDED.of_value, at_value=EXCLUDED.at_value,
+            approval_status = CASE WHEN detection_mdo_records.tag_no_proposed IS NOT DISTINCT FROM EXCLUDED.tag_no_proposed
+              AND detection_mdo_records.equipment_type IS NOT DISTINCT FROM EXCLUDED.equipment_type
+              AND detection_mdo_records.component_name IS NOT DISTINCT FROM EXCLUDED.component_name
+              AND detection_mdo_records.size IS NOT DISTINCT FROM EXCLUDED.size
+              AND detection_mdo_records.from_value IS NOT DISTINCT FROM EXCLUDED.from_value
+              AND detection_mdo_records.to_value IS NOT DISTINCT FROM EXCLUDED.to_value
+              AND detection_mdo_records.of_value IS NOT DISTINCT FROM EXCLUDED.of_value
+              AND detection_mdo_records.at_value IS NOT DISTINCT FROM EXCLUDED.at_value
+              THEN detection_mdo_records.approval_status ELSE 'PENDING' END,
+            approved_at = CASE WHEN detection_mdo_records.tag_no_proposed IS NOT DISTINCT FROM EXCLUDED.tag_no_proposed
+              AND detection_mdo_records.equipment_type IS NOT DISTINCT FROM EXCLUDED.equipment_type
+              AND detection_mdo_records.component_name IS NOT DISTINCT FROM EXCLUDED.component_name
+              AND detection_mdo_records.size IS NOT DISTINCT FROM EXCLUDED.size
+              AND detection_mdo_records.from_value IS NOT DISTINCT FROM EXCLUDED.from_value
+              AND detection_mdo_records.to_value IS NOT DISTINCT FROM EXCLUDED.to_value
+              AND detection_mdo_records.of_value IS NOT DISTINCT FROM EXCLUDED.of_value
+              AND detection_mdo_records.at_value IS NOT DISTINCT FROM EXCLUDED.at_value
+              THEN detection_mdo_records.approved_at ELSE NULL END,
+            approved_by = CASE WHEN detection_mdo_records.tag_no_proposed IS NOT DISTINCT FROM EXCLUDED.tag_no_proposed
+              AND detection_mdo_records.equipment_type IS NOT DISTINCT FROM EXCLUDED.equipment_type
+              AND detection_mdo_records.component_name IS NOT DISTINCT FROM EXCLUDED.component_name
+              AND detection_mdo_records.size IS NOT DISTINCT FROM EXCLUDED.size
+              AND detection_mdo_records.from_value IS NOT DISTINCT FROM EXCLUDED.from_value
+              AND detection_mdo_records.to_value IS NOT DISTINCT FROM EXCLUDED.to_value
+              AND detection_mdo_records.of_value IS NOT DISTINCT FROM EXCLUDED.of_value
+              AND detection_mdo_records.at_value IS NOT DISTINCT FROM EXCLUDED.at_value
+              THEN detection_mdo_records.approved_by ELSE NULL END,
+            updated_at=NOW()`,
+         [d.id, documentId, mdo.tagNoProposed, mdo.equipmentType, mdo.componentName, mdo.size,
+           mdo.from, mdo.to, mdo.of, mdo.at],
+       );
       count++;
     }
     return NextResponse.json({ ok: true, count });
@@ -88,6 +99,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const rows = await db.query('SELECT * FROM detection_mdo_records WHERE document_id=$1 ORDER BY created_at, id', [id]);
+  const rows = await db.query(`SELECT id, detection_id, document_id, tag_no_proposed, equipment_type,
+    component_name, size, from_value, to_value, of_value, at_value, approval_status,
+    approved_at, approved_by, rejection_reason, created_at, updated_at
+    FROM detection_mdo_records WHERE document_id=$1 ORDER BY created_at, id`, [id]);
   return NextResponse.json({ records: rows.rows });
 }

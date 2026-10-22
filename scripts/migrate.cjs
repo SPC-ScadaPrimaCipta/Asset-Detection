@@ -342,6 +342,17 @@ async function migrate() {
       console.warn('  016 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 017: narrowed MDO fields and independent MDO approval workflow
+    try {
+      const mdoV3Sql = join(__dirname, '..', 'sql', 'migrate-mdo-v3.sql');
+      if (existsSync(mdoV3Sql)) {
+        await p.query(readFileSync(mdoV3Sql, 'utf-8'));
+        console.log('  017: narrowed MDO + approval workflow OK');
+      }
+    } catch (e) {
+      console.warn('  017 migration warning (non-fatal):', e.message);
+    }
+
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

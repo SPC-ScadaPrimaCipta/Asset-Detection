@@ -14,26 +14,14 @@ export interface MdoDetectionInput {
 }
 
 export interface MdoRecordDraft {
-  equipment: string;
   tagNoProposed: string | null;
   equipmentType: string;
+  componentName: string | null;
   size: string | null;
   from: string | null;
   to: string | null;
   of: string | null;
   at: string | null;
-  tagNumber: string | null;
-  alternativeDescriptionOld: null;
-  alternativeDescriptionAcn: string;
-  descriptionProposed: string;
-  descriptionLen: number;
-  class: null;
-  objectType: string;
-  weight: null;
-  uom: null;
-  sizeDimension: string | null;
-  relations: PidRelations;
-  isolationStatus: string | null;
 }
 
 function upper(value: string | null | undefined): string {
@@ -58,35 +46,14 @@ export function buildMdoRecord(
   }
   const equipmentType = upper(detection.assetType);
   const size = detection.size?.trim() || null;
-  const parts = [
-    equipmentType,
-    size ? `${size}"` : null,
-    relations.of ? `OF ${relations.of}` : null,
-    relations.at ? `AT ${relations.at}` : null,
-    relations.from ? `FROM ${relations.from}` : null,
-    relations.to ? `TO ${relations.to}` : null,
-  ].filter(Boolean) as string[];
-  const descriptionProposed = parts.join(' ');
   return {
-    equipment: equipmentType || 'EQUIPMENT',
     tagNoProposed: detection.assetTag,
     equipmentType,
+    componentName: detection.description?.trim() || null,
     size,
     from: relations.from,
     to: relations.to,
     of: relations.of,
     at: relations.at,
-    tagNumber: detection.assetTag,
-    alternativeDescriptionOld: null,
-    alternativeDescriptionAcn: descriptionProposed,
-    descriptionProposed,
-    descriptionLen: descriptionProposed.length,
-    class: null,
-    objectType: equipmentType || 'EQUIPMENT',
-    weight: null,
-    uom: null,
-    sizeDimension: size,
-    relations,
-    isolationStatus: relations.isolationStatus,
   };
 }

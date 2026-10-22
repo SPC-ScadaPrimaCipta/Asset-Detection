@@ -62,7 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             }}
           >
             <img
-              src="/spc.png"
+              src="/ptm.png"
               alt="Asset Detection"
               style={{
                 width: "100%",

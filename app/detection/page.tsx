@@ -109,24 +109,16 @@ interface Detection {
   legend_symbol_id: string | null;
   detection_source: string | null;
   validation_status: string | null;
-  mdo_equipment?: string | null;
+  mdo_id?: string | null;
   mdo_tag_no_proposed?: string | null;
   mdo_equipment_type?: string | null;
+  mdo_component_name?: string | null;
+  mdo_size?: string | null;
   mdo_from?: string | null;
   mdo_to?: string | null;
   mdo_of?: string | null;
   mdo_at?: string | null;
-  mdo_description_proposed?: string | null;
-  mdo_alternative_description_old?: string | null;
-  mdo_alternative_description_acn?: string | null;
-  mdo_description_len?: number | null;
-  mdo_class?: string | null;
-  mdo_object_type?: string | null;
-  mdo_weight?: number | null;
-  mdo_uom?: string | null;
-  mdo_size_dimension?: string | null;
-  mdo_flow_direction?: string | null;
-  mdo_bypass?: boolean | null;
+  mdo_approval_status?: "PENDING" | "APPROVED" | "REJECTED" | null;
   candidate_status?: string | null;
   candidate_source?: string | null;
 }
@@ -2798,12 +2790,16 @@ function DetectionsTable({
   selectedId,
   onSelect,
   onBulkAction,
+  onMdoAction,
+  approvingMdoId,
   currentViewerPage,
 }: {
   detections: Detection[];
   selectedId: string | null;
   onSelect: (d: Detection) => void;
   onBulkAction?: (action: "confirm" | "reject", ids: string[]) => Promise<void>;
+  onMdoAction?: (id: string, action: "approve" | "reject") => Promise<void>;
+  approvingMdoId?: string | null;
   currentViewerPage?: number | null;
 }) {
   const [q, setQ] = useState("");
@@ -3362,36 +3358,12 @@ function DetectionsTable({
               >
                 No
               </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Equipment
-              </th>
               <SortHeader col="tag" label="Asset Tag" />
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Tag No Proposed
-              </th>
               <SortHeader col="type" label="Asset Type" />
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Equipment Type
-              </th>
               <SortHeader col="size" label="Size" />
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Tag No Proposed</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Equipment Type</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Component Name</th>
               <th
                 style={{
                   ...cellBase,
@@ -3428,106 +3400,18 @@ function DetectionsTable({
               >
                 At
               </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Description Proposed
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Object Type
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Tag Number
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                ACN Old
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                ACN
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Description Len
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Class
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Weight
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                UOM
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Size/Dimension
-              </th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>MDO Size</th>
               <SortHeader col="page" label="Page" />
               <SortHeader col="conf" label="Conf." />
               <SortHeader col="status" label="Status" />
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>MDO Status</th>
             </tr>
           </thead>
           <tbody>
             {slice.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onBulkAction ? 24 : 23}
+                  colSpan={onBulkAction ? 16 : 15}
                   style={{
                     padding: "48px 12px",
                     textAlign: "center",
@@ -3585,9 +3469,6 @@ function DetectionsTable({
                     style={{ ...cellBase, color: "var(--foreground-subtle)" }}
                   >
                     {(page - 1) * pageSize + i + 1}
-                  </td>
-                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>
-                    {d.mdo_equipment || "—"}
                   </td>
                   {/* M4: No-tag indicator */}
                   <td
@@ -3699,16 +3580,15 @@ function DetectionsTable({
                       </span>
                     )}
                   </td>
-                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>
-                    {d.mdo_tag_no_proposed || "—"}
-                  </td>
+                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>{d.mdo_tag_no_proposed || "—"}</td>
                   {[
+                    d.mdo_equipment_type,
+                    d.mdo_component_name,
                     d.mdo_from,
                     d.mdo_to,
                     d.mdo_of,
                     d.mdo_at,
-                    d.mdo_description_proposed,
-                    d.mdo_object_type,
+                    d.mdo_size,
                   ].map((value, index) => (
                     <td
                       key={index}
@@ -3717,41 +3597,15 @@ function DetectionsTable({
                         color: value
                           ? "var(--foreground)"
                           : "var(--foreground-subtle)",
-                        whiteSpace: index === 4 ? "normal" : "nowrap",
-                        maxWidth: index === 4 ? 360 : undefined,
+                        whiteSpace: index === 1 ? "normal" : "nowrap",
+                        maxWidth: index === 1 ? 220 : undefined,
                       }}
                     >
                       {value || "—"}
                     </td>
                   ))}
-                  {[
-                    d.asset_tag,
-                    d.mdo_alternative_description_old,
-                    d.mdo_alternative_description_acn,
-                    d.mdo_description_len,
-                    d.mdo_class,
-                    d.mdo_weight,
-                    d.mdo_uom,
-                    d.mdo_size_dimension,
-                  ].map((value, index) => (
-                    <td
-                      key={`mdo-extra-${index}`}
-                      style={{
-                        ...cellBase,
-                        color: value
-                          ? "var(--foreground)"
-                          : "var(--foreground-subtle)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {value ?? "—"}
-                    </td>
-                  ))}
                   <td style={{ ...cellBase, color: "var(--foreground-muted)" }}>
                     {d.pid_page ?? "—"}
-                  </td>
-                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>
-                    {d.mdo_equipment_type || "—"}
                   </td>
                   <td style={cellBase}>
                     <div
@@ -3781,6 +3635,43 @@ function DetectionsTable({
                   </td>
                   <td style={cellBase}>
                     {statusBadge(d.detection_status, d.review_status)}
+                  </td>
+                  <td style={cellBase}>
+                    {d.mdo_id ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{
+                          ...badgeBase,
+                          fontSize: "10px",
+                          ...(d.mdo_approval_status === "APPROVED"
+                            ? { background: "var(--success-soft)", color: "var(--success)" }
+                            : d.mdo_approval_status === "REJECTED"
+                              ? { background: "var(--danger-soft)", color: "var(--danger)" }
+                              : { background: "var(--warning-soft)", color: "var(--warning)" }),
+                        }}>
+                          {d.mdo_approval_status ?? "PENDING"}
+                        </span>
+                        {d.mdo_approval_status !== "APPROVED" && onMdoAction && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onMdoAction(d.mdo_id!, "approve"); }}
+                            disabled={approvingMdoId === d.mdo_id}
+                            style={{ ...toolButtonStyle, fontSize: "10px", padding: "2px 6px", background: "#2D7A3A", color: "#fff", border: "1px solid #2D7A3A" }}
+                          >
+                            {approvingMdoId === d.mdo_id ? "…" : "Approve"}
+                          </button>
+                        )}
+                        {d.mdo_approval_status !== "REJECTED" && onMdoAction && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onMdoAction(d.mdo_id!, "reject"); }}
+                            disabled={approvingMdoId === d.mdo_id}
+                            style={{ ...toolButtonStyle, fontSize: "10px", padding: "2px 6px" }}
+                          >
+                            Reject
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span style={{ color: "var(--foreground-subtle)", fontSize: "11px" }}>—</span>
+                    )}
                   </td>
                 </tr>
               ))
@@ -3987,6 +3878,33 @@ function DetectionWorkspace() {
   const [showAllBbox, setShowAllBbox] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [buildingMdo, setBuildingMdo] = useState(false);
+  const [approving, setApproving] = useState<string | null>(null);
+
+  const handleMdoAction = async (mdoId: string, action: 'approve' | 'reject') => {
+    setApproving(mdoId);
+    try {
+      await fetch(`/api/mdo/${mdoId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      await loadDetections();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setApproving(null);
+    }
+  };
+
+  const handleApproveAll = async () => {
+    if (!documentId) return;
+    try {
+      await fetch(`/api/documents/${documentId}/mdo/approve-all`, { method: 'POST' });
+      await loadDetections();
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const [mdoMessage, setMdoMessage] = useState<string | null>(null);
 
   const maxPage = detections.length
@@ -4966,22 +4884,16 @@ function DetectionWorkspace() {
                 }}
               >
                 <span style={{ color: "var(--success)", fontSize: "11px" }}>
-                  Final{" "}
-                  {
-                    detections.filter(
-                      (d) =>
-                        d.candidate_status === "FINAL" ||
-                        d.candidate_status === "APPROVED",
-                    ).length
-                  }
+                  Approved{" "}
+                  {detections.filter((d) => d.mdo_approval_status === "APPROVED").length}
                 </span>
                 <span style={{ color: "var(--warning)", fontSize: "11px" }}>
-                  Review{" "}
-                  {
-                    detections.filter(
-                      (d) => d.candidate_status === "REVIEW_CANDIDATE",
-                    ).length
-                  }
+                  Pending{" "}
+                  {detections.filter((d) => d.mdo_approval_status === "PENDING").length}
+                </span>
+                <span style={{ color: "var(--danger)", fontSize: "11px" }}>
+                  Rejected{" "}
+                  {detections.filter((d) => d.mdo_approval_status === "REJECTED").length}
                 </span>
                 <span
                   style={{
@@ -4990,8 +4902,23 @@ function DetectionWorkspace() {
                     fontFamily: "var(--font-geist-mono, monospace)",
                   }}
                 >
-                  {detections.length} records
+                  {detections.filter((d) => d.mdo_id).length} MDO records
                 </span>
+                <button
+                  onClick={handleApproveAll}
+                  disabled={!detections.some((d) => d.mdo_approval_status === "PENDING")}
+                  style={{
+                    ...buttonStyle,
+                    fontSize: "11px",
+                    padding: "4px 10px",
+                    background: "#2D7A3A",
+                    color: "#fff",
+                    border: "1px solid #2D7A3A",
+                    opacity: detections.some((d) => d.mdo_approval_status === "PENDING") ? 1 : 0.4,
+                  }}
+                >
+                  Approve All Pending
+                </button>
               </div>
             </div>
             <div style={{ overflowX: "auto", padding: "0 8px 8px" }}>
@@ -4999,6 +4926,8 @@ function DetectionWorkspace() {
                 detections={detections}
                 selectedId={selectedId}
                 onBulkAction={handleBulkAction}
+                onMdoAction={handleMdoAction}
+                approvingMdoId={approving}
                 onSelect={(d) => {
                   setSelectedDetection(d);
                   setShowDetail(true);
