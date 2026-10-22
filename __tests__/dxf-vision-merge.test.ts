@@ -52,6 +52,18 @@ describe('regionNormToGlobalNorm', () => {
 });
 
 describe('mergeVisionDetections', () => {
+  test('merges fuzzy tag and overlapping bbox into vector detection', () => {
+    const vector = [{
+      assetTag: 'PCV-003', assetType: 'Control Valve', description: null, confidence: 0.8,
+      bbox: { x: 400, y: 400, width: 100, height: 100 }, evidence: [],
+      blockName: null, layer: 'tag', source: 'TEXT' as const, rawPosition: { x: 0, y: 0 }, regionIndex: 0, pidPage: 1,
+    }];
+    const stats = mergeVisionDetections(vector, [{ assetTag: 'PCV-003B', assetType: 'Control Valve', confidence: 0.85, bboxNorm: { x: 405, y: 405, width: 90, height: 90 }, evidence: [] }],
+      { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 },
+      { minX: 0, minY: 0, maxX: 100, maxY: 100, width: 100, height: 100 }, 1, 0);
+    expect(stats.mergedIntoVector).toBe(1);
+    expect(vector).toHaveLength(1);
+  });
   it('merges same tag near centers; vector type wins when resolved', () => {
     const vec = [vectorDet()];
     // Vision box at same world spot: world (29108,5051) → region norm ≈ (495,495)

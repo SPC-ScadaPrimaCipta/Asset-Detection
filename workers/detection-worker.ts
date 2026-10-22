@@ -531,8 +531,9 @@ export const worker = new Worker(
                     legendSymbols: dxfRuleLegendSymbols as Parameters<typeof runHybridPipeline>[0]['legendSymbols'],
                     projectId: jrow.project_id ?? null,
                     drawingType,
-                    // Tag DXF dari vektor eksak — OCR hanya bakar waktu tesseract.
-                    skipOcr: true,
+                    // OCR selectively recovers tags/size text missed by DXF TEXT
+                    // layers; vector tags still remain authoritative on merge.
+                    skipOcr: false,
                   },
                   (msg, extra) => log(`dxf-vision r${vr.index + 1} ${msg}`, extra),
                 );

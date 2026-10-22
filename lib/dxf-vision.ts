@@ -69,6 +69,18 @@ function normTag(tag: string | null): string {
   return (tag ?? '').trim().toUpperCase();
 }
 
+function tagBase(tag: string | null): string {
+  return normTag(tag).replace(/([0-9])[A-Z]+$/, '$1');
+}
+
+function bboxIoU(a: DxfDetection['bbox'], b: DxfDetection['bbox']): number {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width), y2 = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
 function bboxCenter(b: DxfDetection['bbox']): DxfPoint {
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
@@ -152,6 +164,23 @@ export function mergeVisionDetections(
         const dist = Math.hypot(c.x - vCenter.x, c.y - vCenter.y);
         if (dist <= VISION_MERGE_DIST_NORM && dist < bestD) { bestD = dist; match = d; }
       }
+      if (!match) {
+        const base = tagBase(vTag);
+        let bestD = Infinity;
+        for (const d of vector) {
+          if (d.pidPage !== pidPage || tagBase(d.assetTag) !== base) continue;
+          const c = bboxCenter(d.bbox);
+          const dist = Math.hypot(c.x - vCenter.x, c.y - vCenter.y);
+          if (dist <= VISION_MERGE_DIST_NORM * 1.5 && dist < bestD) { bestD = dist; match = d; }
+        }
+      }
+    }
+    if (!match) {
+      const spatial = vector
+        .filter((d) => d.pidPage === pidPage && (d.assetType ?? '').toLowerCase() === (v.assetType ?? '').toLowerCase())
+        .map((d) => ({ d, iou: bboxIoU(d.bbox, vBox) }))
+        .sort((a, b) => b.iou - a.iou)[0];
+      if (spatial && spatial.iou >= 0.5) match = spatial.d;
     }
 
     if (match) {
