@@ -62,6 +62,7 @@ export function buildMdoRecord(
     equipmentType,
     size ? `${size}"` : null,
     relations.of ? `OF ${relations.of}` : null,
+    relations.at ? `AT ${relations.at}` : null,
     relations.from ? `FROM ${relations.from}` : null,
     relations.to ? `TO ${relations.to}` : null,
   ].filter(Boolean) as string[];
