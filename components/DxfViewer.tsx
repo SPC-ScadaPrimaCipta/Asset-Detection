@@ -198,7 +198,9 @@ export default function DxfViewer({
 
       // Label
       const label    = (d.asset_tag ?? d.asset_type).slice(0, 18);
-      const showLabel = !isReviewCandidate || showReviewCandidates || isSelected;
+      // Show All must expose every detected candidate. AI Candidates only
+      // controls verbose emphasis; it must not hide source labels entirely.
+      const showLabel = !isReviewCandidate || showReviewCandidates || showAll || isSelected;
       if (!showLabel) { ctx.restore(); continue; }
       const fontSize = isSelected ? 13 : isReviewCandidate ? 9 : 11;
       ctx.font       = `${isSelected ? 700 : 500} ${fontSize}px ui-monospace, monospace`;
