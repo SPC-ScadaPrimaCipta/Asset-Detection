@@ -150,6 +150,25 @@ export default function DxfViewer({
     if (spanX <= 0 || spanY <= 0) return;
 
     const visible = getVisible();
+    const labelRects: Array<{ x: number; y: number; w: number; h: number }> = [];
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const placeLabel = (x: number, y: number, w: number, h: number) => {
+      const candidates = [
+        { x, y }, { x, y: y + h + 4 }, { x, y: y - h - 4 },
+        { x: x + w + 4, y }, { x: Math.max(2, x - w - 4), y },
+      ];
+      for (const candidate of candidates) {
+        const rect = { ...candidate, w, h };
+        if (rect.x >= 0 && rect.y >= 0 && rect.x + w <= cw && rect.y + h <= ch && !labelRects.some((other) => overlaps(rect, other))) {
+          labelRects.push(rect);
+          return rect;
+        }
+      }
+      const fallback = { x: Math.max(0, Math.min(cw - w, x)), y: Math.max(0, Math.min(ch - h, y)), w, h };
+      labelRects.push(fallback);
+      return fallback;
+    };
     // Draw non-selected first so selected renders on top
     const sorted = [...visible].sort((a, b) =>
       a.id === selectedId ? 1 : b.id === selectedId ? -1 : 0,
@@ -206,17 +225,18 @@ export default function DxfViewer({
       ctx.font       = `${isSelected ? 700 : 500} ${fontSize}px ui-monospace, monospace`;
       const textW    = ctx.measureText(label).width + 8;
       const textH    = fontSize + 6;
-      const labelY   = ry > textH + 2 ? ry - textH - 2 : ry + rh + 2;
+      const labelRect = placeLabel(rx, ry > textH + 2 ? ry - textH - 2 : ry + rh + 2, textW, textH);
+      const labelY = labelRect.y;
 
       ctx.globalAlpha = isSelected ? 1.0 : 0.82;
       ctx.fillStyle   = color;
       ctx.beginPath();
-      ctx.roundRect(rx, labelY, textW, textH, 3);
+      ctx.roundRect(labelRect.x, labelY, textW, textH, 3);
       ctx.fill();
 
       ctx.globalAlpha = 1.0;
       ctx.fillStyle   = '#ffffff';
-      ctx.fillText(label, rx + 4, labelY + fontSize);
+      ctx.fillText(label, labelRect.x + 4, labelY + fontSize);
 
       ctx.restore();
     }
