@@ -26,6 +26,7 @@ export interface DxfViewerProps {
     bbox_y: number | null;
     bbox_w: number | null;
     bbox_h: number | null;
+    pid_page?: number | null;
     detection_status: string;
     review_status: string;
   }>;
@@ -93,9 +94,12 @@ export default function DxfViewer({
 
   /** Get valid detections to render based on showAll / selectedId. */
   const getVisible = useCallback(() => {
-    const list = showAll
+    const sheetDetections = activeSheet === null || activeSheet === undefined
       ? detections
-      : detections.filter((d) => d.id === selectedId);
+      : detections.filter((d) => d.pid_page === null || d.pid_page === activeSheet);
+    const list = showAll
+      ? sheetDetections
+      : sheetDetections.filter((d) => d.id === selectedId);
     return list.filter(
       (d) =>
         d.detection_status !== 'REJECTED' &&
@@ -103,7 +107,7 @@ export default function DxfViewer({
         d.bbox_x !== null && d.bbox_y !== null &&
         d.bbox_w !== null && d.bbox_h !== null,
     );
-  }, [detections, selectedId, showAll]);
+  }, [detections, selectedId, showAll, activeSheet]);
 
   // ── Draw overlay ─────────────────────────────────────────────────────────────
   const drawOverlay = useCallback(() => {
@@ -206,15 +210,18 @@ export default function DxfViewer({
 
     if (showText) {
       ctx.save();
-      ctx.font = '12px ui-monospace, monospace';
       ctx.textBaseline = 'top';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 1.5;
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
       ctx.fillStyle = '#f5f5f5';
       for (const token of textTokens) {
         const wx = bounds.minX + (token.x / 1000) * spanX;
         const wy = bounds.maxY - (token.y / 1000) * spanY;
         const point = worldToCanvas(wx, wy, cw, ch);
+        const textHeightWorld = Math.max(0.001, (token.h / 1000) * spanY);
+        const textTop = worldToCanvas(wx, wy - textHeightWorld, cw, ch);
+        const fontSize = Math.max(6, Math.min(72, Math.abs(point.y - textTop.y)));
+        ctx.font = `${fontSize}px ui-monospace, monospace`;
         if (point.x < -500 || point.x > cw + 500 || point.y < -100 || point.y > ch + 100) continue;
         ctx.strokeText(token.text, point.x, point.y);
         ctx.fillText(token.text, point.x, point.y);
@@ -304,7 +311,10 @@ export default function DxfViewer({
           return { x: ((v.x + 1) / 2) * cw, y: ((1 - v.y) / 2) * ch };
         };
 
-        const visible = (showAll ? detections : detections.filter(d => d.id === selectedId))
+        const sheetDetections = activeSheet === null || activeSheet === undefined
+          ? detections
+          : detections.filter(d => d.pid_page === null || d.pid_page === activeSheet);
+        const visible = (showAll ? sheetDetections : sheetDetections.filter(d => d.id === selectedId))
           .filter(d =>
             d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED' &&
             d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null,
@@ -506,7 +516,7 @@ export default function DxfViewer({
         width: '100%',
         flex: 1,
         minHeight: '480px',
-        background: '#161719',
+          background: '#101A22',
         overflow: 'hidden',
         userSelect: 'none',
         ...style,
@@ -538,12 +548,12 @@ export default function DxfViewer({
           position: 'absolute', inset: 0, zIndex: 10,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(22,23,25,0.85)', backdropFilter: 'blur(4px)',
+          background: 'rgba(16,26,34,0.88)', backdropFilter: 'blur(4px)',
           gap: '12px',
         }}>
           <div style={{
             width: 40, height: 40,
-            border: '3px solid rgba(255,255,255,0.1)',
+            border: '3px solid rgba(125,211,252,0.16)',
             borderTopColor: '#3b82f6',
             borderRadius: '50%',
             animation: 'spin 0.8s linear infinite',
@@ -563,7 +573,7 @@ export default function DxfViewer({
           position: 'absolute', inset: 0, zIndex: 10,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(22,23,25,0.9)',
+          background: 'rgba(16,26,34,0.92)',
           padding: 24, textAlign: 'center',
         }}>
           <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{error}</p>
@@ -571,7 +581,7 @@ export default function DxfViewer({
             onClick={() => window.location.reload()}
             style={{
               padding: '6px 14px', borderRadius: 6,
-              background: '#2563eb', color: '#fff',
+              background: '#22D3EE', color: '#07131A',
               fontSize: 12, fontWeight: 500,
               cursor: 'pointer', border: 'none',
             }}
@@ -586,9 +596,9 @@ export default function DxfViewer({
         <div style={{
           position: 'absolute', top: 12, right: 12, zIndex: 5,
           display: 'flex', gap: 6,
-          background: 'rgba(24,27,31,0.85)', backdropFilter: 'blur(8px)',
+            background: 'rgba(24,40,50,0.88)', backdropFilter: 'blur(8px)',
           padding: '4px 6px', borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid #30424E',
           boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
         }}>
           <button type="button" onClick={handleFitView} title="Fit to Screen"
@@ -615,7 +625,7 @@ export default function DxfViewer({
               title="CAD Layers"
               style={{
                 padding: '6px 10px', border: 'none', borderRadius: 5,
-                background: showLayerPanel ? 'rgba(59,130,246,0.3)' : 'transparent',
+                background: showLayerPanel ? 'rgba(34,211,238,0.16)' : 'transparent',
                 color: showLayerPanel ? '#60a5fa' : '#e5e7eb',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12,
               }}
@@ -630,9 +640,9 @@ export default function DxfViewer({
       {!loading && !error && activeDetections.length === 0 && (
         <div style={{
           position: 'absolute', top: 12, left: 12, zIndex: 5,
-          background: 'rgba(24,27,31,0.85)', backdropFilter: 'blur(8px)',
+          background: 'rgba(24,40,50,0.88)', backdropFilter: 'blur(8px)',
           padding: '3px 10px', borderRadius: 20,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid #30424E',
           fontSize: 11, color: '#9ca3af',
         }}>
           Tidak ada deteksi untuk tampilan ini
@@ -644,9 +654,9 @@ export default function DxfViewer({
       {!loading && !error && activeDetections.length > 0 && (
         <div style={{
           position: 'absolute', top: 12, left: 12, zIndex: 5,
-          background: 'rgba(24,27,31,0.85)', backdropFilter: 'blur(8px)',
+          background: 'rgba(24,40,50,0.90)', backdropFilter: 'blur(8px)',
           padding: '3px 10px', borderRadius: 20,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid #30424E',
           fontSize: 11, color: '#9ca3af',
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
@@ -669,8 +679,8 @@ export default function DxfViewer({
         <div style={{
           position: 'absolute', top: 52, right: 12, zIndex: 6,
           width: 240, maxHeight: 320,
-          background: 'rgba(24,27,31,0.95)', backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255,255,255,0.12)',
+          background: 'rgba(28,46,58,0.97)', backdropFilter: 'blur(12px)',
+          border: '1px solid #46606D',
           borderRadius: 8, padding: 10,
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
@@ -731,10 +741,10 @@ export default function DxfViewer({
             { color: '#ff5252', label: 'Rejected' },
           ] as const).map(({ color, label }) => (
             <div key={label} style={{
-              background: 'rgba(20,22,25,0.75)', backdropFilter: 'blur(4px)',
+              background: 'rgba(24,40,50,0.92)', backdropFilter: 'blur(4px)',
               padding: '2px 7px', borderRadius: 4,
               fontSize: 10, color: '#9ca3af',
-              border: '1px solid rgba(255,255,255,0.05)',
+              border: '1px solid #30424E',
               display: 'flex', alignItems: 'center', gap: 4,
             }}>
               <span style={{

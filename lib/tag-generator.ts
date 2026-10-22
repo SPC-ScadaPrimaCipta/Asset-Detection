@@ -194,6 +194,7 @@ export interface AutoTagOptions {
   existingProjectTags: Set<string>;
   legendSymbols?: LegendSymbolTagPatternRef[];
   defaultDigits?: number;
+  allowGeneratedTags?: boolean;
 }
 
 /**
@@ -240,8 +241,10 @@ export function applyProjectAutoTagging<T extends AutoTaggableDetection>(
   detections: T[],
   options: AutoTagOptions,
 ): { generatedCount: number } {
-  const { existingProjectTags, legendSymbols = [], defaultDigits = 3 } = options;
+  const { existingProjectTags, legendSymbols = [], defaultDigits = 3, allowGeneratedTags = true } = options;
   let generatedCount = 0;
+
+  if (!allowGeneratedTags) return { generatedCount: 0 };
 
   // Step 1: Pre-register any non-empty detected tags in this batch into the set
   // to prevent collision if an OCR tag matches the prefix in this batch.

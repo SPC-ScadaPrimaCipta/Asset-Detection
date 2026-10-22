@@ -48,6 +48,7 @@ import type { DetectionJobInput } from '@/lib/ai-agent';
 import { applyNMS } from '@/lib/spatial';
 import { humanizeYoloLabel, sanitizeAssetType } from '@/lib/validation';
 import { isJunkAssetType } from '@/lib/detection/duplicate-detection';
+import { qualityGate } from '@/lib/mdo-pid-rules';
 
 // ── Verifier (lazy import — only used when AI_VERIFIER_ENABLED) ────────
 async function getVerifier() {
@@ -688,10 +689,23 @@ export async function runHybridPipeline(
 
     // UNKNOWN is never auto-valid — it always needs a human.
     if (finalAssetType === 'UNKNOWN') needsHumanReview = true;
+    if (finalAssetType === 'UNKNOWN' && !finalTag) {
+      // Untagged unresolved vision geometry is noise, not an asset record.
+      continue;
+    }
 
     const validationStatus: 'VALID' | 'NEEDS_REVIEW' | 'CONFLICT' =
       (needsHumanReview || finalConf < (env.DETECTION_REVIEW_THRESHOLD ?? 0.65)) ? 'NEEDS_REVIEW'
       : 'VALID';
+
+    const quality = qualityGate({
+      source: rule.source === 'VISION' ? 'VISION' : 'YOLO_GEO2',
+      assetTag: finalTag,
+      assetType: finalAssetType,
+      confidence: finalConf,
+      evidence,
+    });
+    if (quality === 'DROP') continue;
 
     processedBboxesNorm.push(finalBboxNorm);
 

@@ -6,37 +6,37 @@
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* ── Primary palette ── */
-  --background: #F7F8F1;
-  --surface: #FBFCF7;
-  --surface-muted: #F0F2E9;
+  /* ── Industrial control-room palette ── */
+  --background: #0F171E;
+  --surface: #18232D;
+  --surface-muted: #202F3A;
 
-  --foreground: #1F2A22;
-  --foreground-muted: #657066;
-  --foreground-subtle: #899189;
+  --foreground: #E8F0F3;
+  --foreground-muted: #9BAEB8;
+  --foreground-subtle: #71848F;
 
-  --primary: #002B4E;
-  --primary-hover: #001E38;
-  --primary-soft: #EAF3FA;
+  --primary: #22D3EE;
+  --primary-hover: #67E8F9;
+  --primary-soft: rgba(34, 211, 238, 0.14);
 
-  --accent: #0078B8;
-  --accent-hover: #005F94;
-  --accent-soft: #E8F6FC;
+  --accent: #22D3EE;
+  --accent-hover: #67E8F9;
+  --accent-soft: rgba(34, 211, 238, 0.14);
 
-  --border: #DDE2D8;
-  --border-strong: #C9D0C5;
+  --border: #30424E;
+  --border-strong: #46606D;
 
-  --success: #2D7A3A;
-  --success-soft: #E6F4E9;
+  --success: #35D07F;
+  --success-soft: rgba(53, 208, 127, 0.14);
 
-  --warning: #A68145;
-  --warning-soft: #F4EBDD;
+  --warning: #F5B942;
+  --warning-soft: rgba(245, 185, 66, 0.14);
 
-  --danger: #A65A55;
-  --danger-soft: #F5E5E3;
+  --danger: #F06A6A;
+  --danger-soft: rgba(240, 106, 106, 0.14);
 
-  --info: #617D91;
-  --info-soft: #E7EDF1;
+  --info: #7DD3FC;
+  --info-soft: rgba(125, 211, 252, 0.14);
 
   /* ── Sizing ── */
   --sidebar-width: 240px;
@@ -70,6 +70,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button, input, select, textarea {
+  color-scheme: dark;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
@@ -91,4 +95,24 @@ body {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .detection-viewer-row {
+    flex-direction: column !important;
+    min-height: 0 !important;
+  }
+
+  .detection-viewer-row > aside {
+    width: 100% !important;
+    height: min(520px, 70vh) !important;
+    max-height: 520px !important;
+    min-height: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .mdo-result-panel {
+    border-radius: var(--radius-md);
+  }
 }

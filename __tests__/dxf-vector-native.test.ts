@@ -9,7 +9,7 @@
  *   5. Bbox normalisation stays in whole-file 0-1000 space (viewer compat).
  */
 import { parseDxf, splitDxfRegions } from '@/lib/dxf-parser';
-import { runDxfDetection, UNKNOWN_ASSET_TYPE } from '@/lib/dxf-detection';
+import { runDxfDetection, UNKNOWN_ASSET_TYPE, shouldExpandBboxWithDescription } from '@/lib/dxf-detection';
 
 function textEntity(tag: string, layer: string, x: number, y: number): string {
   return [
@@ -80,6 +80,13 @@ describe('splitDxfRegions', () => {
 });
 
 describe('runDxfDetection (vector-native Lap 1)', () => {
+  test('does not expand symbol bbox toward distant description text', () => {
+    expect(shouldExpandBboxWithDescription(
+      { x: 100, y: 100, width: 40, height: 40 },
+      { x: 700, y: 700 },
+      { minX: 0, minY: 0, maxX: 1000, maxY: 1000, width: 1000, height: 1000 },
+    )).toBe(false);
+  });
   it('assigns pidPage per sheet region', () => {
     const res = runDxfDetection(twoSheetDxf(), []);
     const pages = new Set(res.detections.map((d) => d.pidPage));

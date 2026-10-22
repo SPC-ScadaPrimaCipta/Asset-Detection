@@ -96,6 +96,16 @@ describe('Smart Tag Abbreviation & Project Tag Allocator', () => {
   });
 
   describe('applyProjectAutoTagging', () => {
+    it('preserves missing tags when generation is disabled', () => {
+      const detections = [{ assetTag: null, assetType: 'Pump', evidence: [] }];
+      const result = applyProjectAutoTagging(detections, {
+        existingProjectTags: new Set(),
+        legendSymbols: [],
+        allowGeneratedTags: false,
+      });
+      expect(result.generatedCount).toBe(0);
+      expect(detections[0].assetTag).toBeNull();
+    });
     it('leaves existing OCR/detected tags untouched and uses them to avoid collision', () => {
       const existingProjectTags = new Set<string>();
       const detections = [

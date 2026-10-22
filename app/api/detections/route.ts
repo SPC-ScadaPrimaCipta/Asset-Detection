@@ -30,7 +30,20 @@ export async function GET(request: NextRequest) {
 
     const [rows, total] = await Promise.all([
       db.query(
-        `SELECT d.* FROM detections d ${where} ORDER BY d.confidence DESC, d.created_at DESC LIMIT $${i} OFFSET $${i + 1}`,
+        `SELECT d.*, m.equipment AS mdo_equipment, m.tag_no_proposed AS mdo_tag_no_proposed,
+                m.equipment_type AS mdo_equipment_type, m.from_value AS mdo_from,
+                m.to_value AS mdo_to, m.of_value AS mdo_of, m.at_value AS mdo_at,
+                m.description_proposed AS mdo_description_proposed,
+                m.alternative_description_old AS mdo_alternative_description_old,
+                m.alternative_description_acn AS mdo_alternative_description_acn,
+                m.description_len AS mdo_description_len, m.class AS mdo_class,
+                m.object_type AS mdo_object_type, m.weight AS mdo_weight,
+                m.uom AS mdo_uom, m.size_dimension AS mdo_size_dimension,
+                m.flow_direction AS mdo_flow_direction, m.bypass AS mdo_bypass,
+                m.relation_status AS mdo_relation_status,
+                m.relation_confidence AS mdo_relation_confidence
+         FROM detections d LEFT JOIN detection_mdo_records m ON m.detection_id=d.id
+         ${where} ORDER BY d.confidence DESC, d.created_at DESC LIMIT $${i} OFFSET $${i + 1}`,
         [...vals, limit, offset]
       ),
       db.query(`SELECT COUNT(*) FROM detections d ${where}`, vals),

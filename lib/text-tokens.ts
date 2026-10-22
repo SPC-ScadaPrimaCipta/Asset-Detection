@@ -21,7 +21,10 @@ export async function getDocumentTextTokens(documentId: string, pageNumber: numb
     const regions = splitDxfRegions(parsed);
     const region = regions.find((r) => r.index + 1 === pageNumber) ?? regions[0];
     if (!region) return [];
-    const { minX, minY, maxX, maxY } = region.extents;
+    // DxfViewer maps detection/text overlays against whole-file bounds. Use
+    // same coordinate frame; region-normalized tokens drift when sheets are
+    // laid out apart from global extents.
+    const { minX, minY, maxX, maxY } = parsed.extents;
     const width = maxX - minX || 1;
     const height = maxY - minY || 1;
 
@@ -33,7 +36,7 @@ export async function getDocumentTextTokens(documentId: string, pageNumber: numb
         text: e.text,
         x: ((e.position.x - minX) / width) * 1000,
         y: ((maxY - e.position.y) / height) * 1000,
-        w: 40, h: 18,
+        w: 40, h: Math.max(1, (e.height / (maxY - minY || 1)) * 1000),
       }));
   }
 

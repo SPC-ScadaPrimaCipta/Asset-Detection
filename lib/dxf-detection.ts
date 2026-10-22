@@ -42,6 +42,7 @@ import {
 } from '@/lib/dxf-clusters';
 import { parseLineSpecText } from '@/lib/piping-parser';
 import { env } from '@/lib/env';
+import { classifyDxfCandidate } from '@/lib/mdo-pid-rules';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -474,6 +475,19 @@ function expandBbox(
   return { x, y, width: Math.min(x2-x1, 1000-x), height: Math.min(y2-y1, 1000-y) };
 }
 
+/** Only merge descriptor text when it is spatially local to symbol bbox. */
+export function shouldExpandBboxWithDescription(
+  bbox: DxfDetection['bbox'],
+  point: DxfPoint,
+  extents: DxfParseResult['extents'],
+): boolean {
+  const p = dxfToNorm(point, extents);
+  const dx = Math.max(bbox.x - p.x, 0, p.x - (bbox.x + bbox.width));
+  const dy = Math.max(bbox.y - p.y, 0, p.y - (bbox.y + bbox.height));
+  const localLimit = Math.max(24, Math.max(bbox.width, bbox.height) * 2.5);
+  return Math.hypot(dx, dy) <= localLimit;
+}
+
 // ── XREF bbox proxy from nearby LINE/ARC/CIRCLE entities (#6) ────────────────
 
 /**
@@ -853,6 +867,21 @@ function capEstimatedConfidence(confidence: number, bboxFromGeometry: boolean): 
   return bboxFromGeometry ? confidence : Math.min(confidence, 0.55);
 }
 
+function isUsableTagCluster(
+  cluster: { minX: number; minY: number; maxX: number; maxY: number; members: number },
+  tag: DxfTextEntity,
+  medianTextHeight?: number,
+): boolean {
+  if (cluster.members < 3) return false;
+  if (!medianTextHeight || medianTextHeight <= 0) return true;
+  const width = cluster.maxX - cluster.minX;
+  const height = cluster.maxY - cluster.minY;
+  const tagHeight = Math.max(tag.height, medianTextHeight * 0.5);
+  // A cluster nearly identical to label height is usually tag glyph/pipe text,
+  // not equipment symbol geometry.
+  return Math.max(width, height) >= tagHeight * 1.8;
+}
+
 // ── Main detection ────────────────────────────────────────────────────────────
 
 export function runDxfDetection(
@@ -899,7 +928,8 @@ export function runDxfDetection(
   const tagLayerTexts = globalTexts.filter(t =>
     isTagLayer(t.layer, lookup) && (isTagText(t.text, legendTagRegexes) || DEST_LABEL_RE.test(t.text.trim()))
   );
-  const isXrefBound = !hasAttribs && (tagLayerTexts.length > 0 || globalInserts.length === 0);
+  const hasContinuationLabels = globalTexts.some((t) => /^(?:TO|FROM)\s+.+\b[A-Z]{1,6}[-_][0-9]{2,6}[A-Z]{0,2}\s*$/i.test(t.text.trim()));
+  const isXrefBound = !hasAttribs && (tagLayerTexts.length > 0 || hasContinuationLabels || globalInserts.length === 0);
 
   const allDetections: DxfDetection[] = [];
   const regionsInfo: DxfRegionInfo[] = [];
@@ -1069,10 +1099,13 @@ export function runDxfDetection(
 
       // Nearest INSERT for bbox — only non-skip blocks
       const skipSuffixesForBbox = /^(A\d+|Arrow|PAN\d*|Pan\d*|AnonymousCell|GAF\d*|R\d+|AROF|SLON|Model_Space|Paper_Space)/i;
+      const insertRadius = medTextH
+        ? Math.min(maxDist * 6, medTextH * 30)
+        : maxDist * 6;
       const nearestIns = inserts
         .filter(i => !skipSuffixesForBbox.test(stripXrefPrefix(i.blockName)))
         .map(i => ({ i, d: dist(i.position, pos) }))
-        .filter(({ d }) => d <= maxDist * 6)
+        .filter(({ d }) => d <= insertRadius)
         .sort((a, b) => a.d - b.d)[0]?.i ?? null;
 
       let bbox: DxfDetection['bbox'];
@@ -1081,7 +1114,15 @@ export function runDxfDetection(
 
       // Primary strategy: nearest symbol stroke cluster (exact hull).
       // Falls back to radius-grab proxy only when no cluster is near.
-      const tagCluster = nearestCluster(symbolClusters, pos, maxDist * 3);
+      // Cap association by local text scale. Sparse sheets can make adaptive
+      // spacing huge; a tag must not steal geometry from another area.
+      const symbolAssociationDist = medTextH
+        ? Math.min(maxDist * 3, medTextH * 16)
+        : maxDist * 3;
+      const candidateCluster = nearestCluster(symbolClusters, pos, symbolAssociationDist);
+      const tagCluster = candidateCluster && isUsableTagCluster(candidateCluster, tagTxt, medTextH)
+        ? candidateCluster
+        : null;
       if (tagCluster) {
         bbox = rawBboxToNorm(
           { minX: tagCluster.minX, minY: tagCluster.minY, maxX: tagCluster.maxX, maxY: tagCluster.maxY },
@@ -1093,8 +1134,11 @@ export function runDxfDetection(
           tagCluster.maxX - tagCluster.minX, tagCluster.maxY - tagCluster.minY, medTextH, unitsLabel,
         ));
       }
+      const proxyFraction = medTextH
+        ? Math.min(0.05, (medTextH * 16) / Math.max(extents.width, extents.height))
+        : 0.05;
       const proxyFromTag = !tagCluster
-        ? proxyBboxFromNearbyEntities(pos, entities, extents, 0.05, lookup, globalExtents, medTextH)
+        ? proxyBboxFromNearbyEntities(pos, entities, extents, proxyFraction, lookup, globalExtents, medTextH)
         : null;
       if (!tagCluster && proxyFromTag) {
         bbox = proxyFromTag;
@@ -1140,7 +1184,9 @@ export function runDxfDetection(
         }
       }
 
-      if (descMatch) bbox = expandBbox(bbox, descMatch.position, globalExtents);
+      if (descMatch && shouldExpandBboxWithDescription(bbox, descMatch.position, globalExtents)) {
+        bbox = expandBbox(bbox, descMatch.position, globalExtents);
+      }
 
       // Confidence fusion (#8)
       const layerPrio = tagLayerPriority(tagTxt.layer, lookup);
@@ -1273,6 +1319,15 @@ export function runDxfDetection(
 
       const needsAi = !tag && !legendMatch;
       if (needsAi) { aiCandidates++; }
+
+      if (classifyDxfCandidate({
+        source: 'CIRCLE',
+        assetTag: tag,
+        assetType,
+        evidence: tag ? [`Nearby tag text: ${tag}`] : ['CIRCLE entity detected', 'No legend match'],
+      }) === 'DROP') {
+        continue;
+      }
 
       detections.push({
         assetTag: tag,

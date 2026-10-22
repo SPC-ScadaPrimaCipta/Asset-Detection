@@ -91,6 +91,24 @@ interface Detection {
   legend_symbol_id: string | null;
   detection_source: string | null;
   validation_status: string | null;
+  mdo_equipment?: string | null;
+  mdo_tag_no_proposed?: string | null;
+  mdo_equipment_type?: string | null;
+  mdo_from?: string | null;
+  mdo_to?: string | null;
+  mdo_of?: string | null;
+  mdo_at?: string | null;
+  mdo_description_proposed?: string | null;
+  mdo_alternative_description_old?: string | null;
+  mdo_alternative_description_acn?: string | null;
+  mdo_description_len?: number | null;
+  mdo_class?: string | null;
+  mdo_object_type?: string | null;
+  mdo_weight?: number | null;
+  mdo_uom?: string | null;
+  mdo_size_dimension?: string | null;
+  mdo_flow_direction?: string | null;
+  mdo_bypass?: boolean | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -532,9 +550,9 @@ function ManualAddModal({
                     style={{ ...selectStyle, marginTop: "4px" }}
                   />
                 </label>
-              ))}
+               ))}
             </div>
-          </div>
+            </div>
 
           {/* Error */}
           {error && (
@@ -783,11 +801,11 @@ function JobProgress({
 // ─── PidViewer ───────────────────────────────────────────────────────────────
 
 // CAD canvas constants
-const CAD_BG = '#1e1e1e';
-const CAD_GRID_COLOR = 'rgba(255,255,255,0.06)';
-const CAD_GRID_MAJOR_COLOR = 'rgba(255,255,255,0.12)';
-const CAD_TOOLBAR_BG = '#141414';
-const CAD_TOOLBAR_BORDER = '#2a2a2a';
+const CAD_BG = '#101A22';
+const CAD_GRID_COLOR = 'rgba(125,211,252,0.055)';
+const CAD_GRID_MAJOR_COLOR = 'rgba(125,211,252,0.13)';
+const CAD_TOOLBAR_BG = '#182832';
+const CAD_TOOLBAR_BORDER = '#30424E';
 
 const cadToolBtn: React.CSSProperties = {
   padding: '5px 10px',
@@ -796,8 +814,8 @@ const cadToolBtn: React.CSSProperties = {
   fontWeight: '500',
   borderRadius: '3px',
   border: '1px solid #3a3a3a',
-  background: '#222',
-  color: '#c8c8c8',
+  background: '#202F3A',
+  color: '#D7E4E9',
   cursor: 'pointer',
   letterSpacing: '0.02em',
   transition: 'background 100ms, border-color 100ms, color 100ms',
@@ -810,9 +828,9 @@ const cadToolBtn: React.CSSProperties = {
 
 const cadToolBtnActive: React.CSSProperties = {
   ...cadToolBtn,
-  background: '#1a3a4a',
-  border: '1px solid #00bcd4',
-  color: '#00bcd4',
+  background: 'rgba(34,211,238,0.14)',
+  border: '1px solid #22D3EE',
+  color: '#67E8F9',
 };
 
 const cadSep: React.CSSProperties = {
@@ -847,6 +865,9 @@ function PidViewer({
   onDrawCancel,
   showAll,
   onShowAllChange,
+  showDetail,
+  onShowDetailChange,
+  fillHeight,
 }: {
   documentId: string;
   fileType?: string;
@@ -862,6 +883,9 @@ function PidViewer({
   onDrawCancel?: () => void;
   showAll?: boolean;
   onShowAllChange?: (v: boolean) => void;
+  showDetail?: boolean;
+  onShowDetailChange?: (v: boolean) => void;
+  fillHeight?: boolean;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -873,7 +897,9 @@ function PidViewer({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Text overlay — read every text token on the drawing (DXF TEXT or PDF text layer)
-  const [showText, setShowText] = useState(true);
+  // DXF WebGL engine already renders native TEXT/MTEXT. Overlay starts off for
+  // DXF to prevent duplicated/misaligned labels; PDF uses overlay by default.
+  const [showText, setShowText] = useState(fileType !== 'dxf');
   const [textTokens, setTextTokens] = useState<
     Array<{ text: string; x: number; y: number; w: number; h: number }>
   >([]);
@@ -913,6 +939,9 @@ function PidViewer({
   }, [showText, documentId, page]);
 
   const isDxf = fileType === 'dxf';
+  useEffect(() => {
+    setShowText(!isDxf);
+  }, [isDxf]);
   const dxfRawUrl = documentId && isDxf ? `/api/documents/${documentId}/raw` : null;
 
   // Sheet regions for DXF navigation (world-unit extents per sheet).
@@ -1336,6 +1365,16 @@ function PidViewer({
               <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
             </svg>
             {showAll ? "All ON" : "Show All"}
+          </button>
+        )}
+
+        {onShowDetailChange && (
+          <button
+            onClick={() => onShowDetailChange(!showDetail)}
+            style={showDetail ? cadToolBtnActive : cadToolBtn}
+            title={showDetail ? "Hide selected asset detail" : "Show selected asset detail"}
+          >
+            {showDetail ? "Hide Detail" : "Show Detail"}
           </button>
         )}
 
@@ -1787,9 +1826,9 @@ function PidViewer({
                   </p>
                 </div>
               </div>
-            )}
-          </div>
-        </div>
+              )}
+            </div>
+            </div>
       </div>
       )}
 
@@ -1875,7 +1914,7 @@ function PidViewer({
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        height: "640px",
+        height: fillHeight ? "auto" : "640px",
         minHeight: "480px",
       }}
     >
@@ -1968,7 +2007,8 @@ function AssetDetail({
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        overflow: "hidden",
+        boxSizing: "border-box",
+        minHeight: 0,
       }}
     >
       {/* Header */}
@@ -2032,7 +2072,7 @@ function AssetDetail({
       <div
         style={{
           flex: 1,
-          overflowY: "auto",
+          overflowY: "visible",
           padding: "16px",
           display: "flex",
           flexDirection: "column",
@@ -2771,9 +2811,26 @@ function DetectionsTable({
               >
                 No
               </th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Equipment</th>
               <SortHeader col="tag" label="Asset Tag" />
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Tag No Proposed</th>
               <SortHeader col="type" label="Asset Type" />
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Equipment Type</th>
               <SortHeader col="size" label="Size" />
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>From</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>To</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Of</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>At</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Description Proposed</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Object Type</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Tag Number</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>ACN Old</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>ACN</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Description Len</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Class</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Weight</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>UOM</th>
+              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Size/Dimension</th>
               <SortHeader col="page" label="Page" />
               <SortHeader col="conf" label="Conf." />
               <SortHeader col="status" label="Status" />
@@ -2783,7 +2840,7 @@ function DetectionsTable({
             {slice.length === 0 ? (
               <tr>
                 <td
-                  colSpan={onBulkAction ? 8 : 7}
+                  colSpan={onBulkAction ? 24 : 23}
                   style={{
                     padding: "48px 12px",
                     textAlign: "center",
@@ -2840,8 +2897,9 @@ function DetectionsTable({
                   <td
                     style={{ ...cellBase, color: "var(--foreground-subtle)" }}
                   >
-                    {(page - 1) * pageSize + i + 1}
+                   {(page - 1) * pageSize + i + 1}
                   </td>
+                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>{d.mdo_equipment || "—"}</td>
                   {/* M4: No-tag indicator */}
                   <td
                     style={{
@@ -2925,9 +2983,21 @@ function DetectionsTable({
                       <span style={{ color: "var(--foreground-subtle)" }}>—</span>
                     )}
                   </td>
+                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>{d.mdo_tag_no_proposed || "—"}</td>
+                  {[d.mdo_from, d.mdo_to, d.mdo_of, d.mdo_at, d.mdo_description_proposed, d.mdo_object_type].map((value, index) => (
+                    <td key={index} style={{ ...cellBase, color: value ? "var(--foreground)" : "var(--foreground-subtle)", whiteSpace: index === 4 ? "normal" : "nowrap", maxWidth: index === 4 ? 360 : undefined }}>
+                      {value || "—"}
+                    </td>
+                  ))}
+                  {[d.asset_tag, d.mdo_alternative_description_old, d.mdo_alternative_description_acn, d.mdo_description_len, d.mdo_class, d.mdo_weight, d.mdo_uom, d.mdo_size_dimension].map((value, index) => (
+                    <td key={`mdo-extra-${index}`} style={{ ...cellBase, color: value ? "var(--foreground)" : "var(--foreground-subtle)", whiteSpace: "nowrap" }}>
+                      {value ?? "—"}
+                    </td>
+                  ))}
                   <td style={{ ...cellBase, color: "var(--foreground-muted)" }}>
                     {d.pid_page ?? "—"}
                   </td>
+                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>{d.mdo_equipment_type || "—"}</td>
                   <td style={cellBase}>
                     <div
                       style={{
@@ -3119,6 +3189,9 @@ function DetectionWorkspace() {
   const [pendingDrawBbox, setPendingDrawBbox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [confirmingDraw, setConfirmingDraw] = useState(false);
   const [showAllBbox, setShowAllBbox] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [buildingMdo, setBuildingMdo] = useState(false);
+  const [mdoMessage, setMdoMessage] = useState<string | null>(null);
 
   const maxPage = detections.length
     ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
@@ -3126,6 +3199,23 @@ function DetectionWorkspace() {
 
   // Derive selected document object for file_type check
   const selectedDocument = documents.find((d) => d.id === documentId) ?? null;
+
+  const handleBuildMdo = async () => {
+    if (!documentId || selectedDocument?.file_type !== 'dxf') return;
+    setBuildingMdo(true);
+    setMdoMessage(null);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/mdo`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `MDO build failed (${res.status})`);
+      await loadDetections();
+      setMdoMessage(`MDO updated: ${body.count ?? 0} record(s)`);
+    } catch (error) {
+      setMdoMessage(error instanceof Error ? error.message : 'MDO build failed');
+    } finally {
+      setBuildingMdo(false);
+    }
+  };
 
   // Clamp pengaman: halaman basi (melebihi maxPage) paksa ke 1.
   // Terjadi saat localStorage menyimpan halaman dokumen lain.
@@ -3444,7 +3534,7 @@ function DetectionWorkspace() {
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
-              ))}
+                  ))}
             </select>
           </label>
 
@@ -3498,6 +3588,22 @@ function DetectionWorkspace() {
             {running ? "Starting…" : "Run Detection"}
           </button>
 
+          <button
+            onClick={handleBuildMdo}
+            disabled={!mounted || buildingMdo || selectedDocument?.file_type !== 'dxf'}
+            style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: '6px', opacity: (!mounted || buildingMdo || selectedDocument?.file_type !== 'dxf') ? 0.45 : 1 }}
+            title="Build MDO from existing DXF detections without rerunning detection"
+          >
+            {buildingMdo ? 'Building MDO…' : 'Build MDO'}
+          </button>
+          <button
+            onClick={() => { if (documentId) window.location.href = `/api/documents/${documentId}/mdo/export`; }}
+            disabled={!mounted || !documentId || selectedDocument?.file_type !== 'dxf'}
+            style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: '6px', opacity: (!mounted || !documentId || selectedDocument?.file_type !== 'dxf') ? 0.45 : 1 }}
+          >
+            Export MDO
+          </button>
+
           {/* Manual Add button — masuk draw mode di viewer (bukan langsung modal) */}
           <button
             onClick={() => {
@@ -3522,6 +3628,7 @@ function DetectionWorkspace() {
             {drawMode ? "✕ Cancel Drawing" : <><PlusCircle size={14} weight="bold" style={{ flexShrink: 0 }} /> Add Asset Manually</>}
           </button>
         </div>
+        {mdoMessage && <div style={{ padding: '0 20px 12px', fontSize: '12px', color: 'var(--foreground-muted)' }}>{mdoMessage}</div>}
       </div>
 
       {/* Run Detection error */}
@@ -3670,7 +3777,8 @@ function DetectionWorkspace() {
 
       {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
       {detections.length > 0 || currentJobId ? (
-        <div style={{ display: "flex", gap: "12px", flex: 1, minHeight: 700 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, minHeight: 700 }}>
+          <div className="detection-viewer-row" style={{ display: "flex", alignItems: "stretch", gap: "12px", flex: "0 0 auto", minHeight: 480 }}>
           {/* Left: Viewer — takes most of the width (~75%) */}
           <div
             style={{
@@ -3749,7 +3857,7 @@ function DetectionWorkspace() {
                 </span>
               </div>
             )}
-            <div style={{ flex: 1, minHeight: 640, height: 640 }}>
+            <div style={{ flex: 1, minHeight: 480, height: "auto" }}>
               <PidViewer
                 documentId={documentId}
                 fileType={selectedDocument?.file_type}
@@ -3759,7 +3867,10 @@ function DetectionWorkspace() {
                 selectedId={selectedId}
                 onSelect={(id) => {
                   const d = detections.find((x) => x.id === id);
-                  if (d) setSelectedDetection(d);
+                  if (d) {
+                    setSelectedDetection(d);
+                    setShowDetail(true);
+                  }
                 }}
                 page={safePage}
                 totalPages={maxPage}
@@ -3774,45 +3885,69 @@ function DetectionWorkspace() {
                 onDrawCancel={() => setDrawMode(false)}
                 showAll={showAllBbox}
                 onShowAllChange={setShowAllBbox}
+                showDetail={showDetail}
+                onShowDetailChange={setShowDetail}
               />
             </div>
           </div>
 
-          {/* Right panel: Detail on top (when selected) + Table below */}
-          <div
+          {/* Right panel: selected asset detail */}
+          <aside
+            className="detection-detail-panel"
             style={{
-              width: 320,
+              width: showDetail && selectedDetection ? 320 : 0,
+              flex: showDetail && selectedDetection ? "0 0 320px" : "0 0 0px",
+              height: "auto",
+              minHeight: 0,
+              maxHeight: "none",
+              boxSizing: "border-box",
+              alignSelf: "stretch",
               flexShrink: 0,
               display: "flex",
               flexDirection: "column",
               gap: "12px",
-              overflowY: "auto",
+              overflowY: showDetail && selectedDetection ? "auto" : "hidden",
+              opacity: showDetail && selectedDetection ? 1 : 0,
+              pointerEvents: showDetail && selectedDetection ? "auto" : "none",
+              transition: "width 180ms ease, opacity 180ms ease",
             }}
           >
             {selectedDetection && (
               <div style={{ flexShrink: 0 }}>
                 <AssetDetail
                   detection={selectedDetection}
-                  onClose={() => setSelectedDetection(null)}
+                  onClose={() => {
+                    setSelectedDetection(null);
+                    setShowDetail(false);
+                  }}
                   onConfirm={handleConfirm}
                   onReject={handleReject}
                   onEdit={handleEdit}
                 />
               </div>
             )}
-            <div style={{ flex: 1, minHeight: 300 }}>
+           </aside>
+           </div>
+           <section className="mdo-result-panel" style={{ ...cardStyle, minWidth: 0, overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+              <div>
+                <div style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.02em" }}>MDO Detection Result</div>
+                <div style={{ fontSize: "11px", color: "var(--foreground-muted)", marginTop: "3px" }}>Equipment register extracted from current document</div>
+              </div>
+              <span style={{ color: "var(--foreground-muted)", fontSize: "12px", fontFamily: "var(--font-geist-mono, monospace)" }}>{detections.length} records</span>
+            </div>
+            <div style={{ overflowX: "auto", padding: "0 8px 8px" }}>
               <DetectionsTable
                 detections={detections}
                 selectedId={selectedId}
                 onSelect={(d) => {
                   setSelectedDetection(d);
-                  // Jump viewer to the selected symbol's page so its bbox becomes visible
-                  if (d.pid_page !== null && d.pid_page !== safePage)
-                    setCurrentPage(d.pid_page);
+                  setShowDetail(true);
+                  if (d.pid_page !== null && d.pid_page !== safePage) setCurrentPage(d.pid_page);
                 }}
               />
             </div>
-          </div>
+          </section>
         </div>
       ) : (
         !currentJobId && (

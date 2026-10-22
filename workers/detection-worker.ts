@@ -24,6 +24,7 @@ import {
 } from "@/lib/detection/yolo/yolo-geo2-config";
 import { runHybridPipeline } from "@/lib/detection/hybrid-pipeline";
 import { runDxfDetection } from "@/lib/dxf-detection";
+import { qualityGate } from "@/lib/mdo-pid-rules";
 import type { LegendSymbolRef } from "@/lib/dxf-detection";
 import {
   loadProjectExistingTags,
@@ -672,6 +673,7 @@ export const worker = new Worker(
         applyProjectAutoTagging(dxfResult.detections, {
           existingProjectTags,
           legendSymbols: dxfLegendSymbols,
+          allowGeneratedTags: false,
         });
 
         const NULL_THR = tuningForDxf.detection.nullFieldConfidenceThreshold;
@@ -697,6 +699,11 @@ export const worker = new Worker(
             }
           }
 
+          // Untagged unresolved vector geometry is not an asset. Persisting it
+          // creates false positives such as standalone pipe circles and line-size marks.
+          if (atype === 'UNKNOWN' && !tag) continue;
+          if (qualityGate({ source: 'DXF', assetTag: tag, assetType: atype, confidence: det.confidence, evidence: det.evidence }) === 'DROP') continue;
+
           if (!resolved.matchedVocabulary && atype !== 'UNKNOWN') {
             det.evidence.push(`Type "${det.assetType}" has no exact standards match — kept for review`);
             fixedType++;
@@ -707,6 +714,16 @@ export const worker = new Worker(
           // UNKNOWN and non-standard types are never auto-valid: they must
           // reach the human review queue.
           const validationStatus = atype === 'UNKNOWN' || !resolved.matchedVocabulary ? 'NEEDS_REVIEW' : 'VALID';
+          const global = parsedDxf?.extents;
+          const region = dxfResult.regions.find((r) => r.pidPage === det.pidPage)?.extents ?? global;
+          const worldX = global ? global.minX + (det.bbox.x / 1000) * global.width : null;
+          const worldY = global ? global.maxY - ((det.bbox.y + det.bbox.height) / 1000) * global.height : null;
+          const worldW = global ? (det.bbox.width / 1000) * global.width : null;
+          const worldH = global ? (det.bbox.height / 1000) * global.height : null;
+          const sheetX = region && worldX !== null ? ((worldX - region.minX) / region.width) * 1000 : null;
+          const sheetY = region && worldY !== null ? ((region.maxY - worldY - (worldH ?? 0)) / region.height) * 1000 : null;
+          const sheetW = region && worldW !== null ? (worldW / region.width) * 1000 : null;
+          const sheetH = region && worldH !== null ? (worldH / region.height) * 1000 : null;
           dxfInserts.push([
             uuidv4(),
             jobId,
@@ -727,6 +744,10 @@ export const worker = new Worker(
             effectiveLegendId ?? null,
             det.size ?? null,
             validationStatus,
+            'GLOBAL_NORMALIZED', worldX, worldY, worldW, worldH,
+            sheetX, sheetY, sheetW, sheetH,
+            det.confidence, tag ? 0.9 : 0, det.evidence.some((e) => /bbox from .*geometry/i.test(e)) ? 0.9 : 0.55,
+            atype !== 'UNKNOWN' ? 0.85 : 0, 0, 0,
           ]);
         }
 
@@ -739,8 +760,13 @@ export const worker = new Worker(
                   asset_tag, asset_type, confidence,
                   bbox_x, bbox_y, bbox_w, bbox_h,
                   evidence, detection_status, review_status,
-                  detection_source, pid_page, legend_id, size, validation_status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+                   detection_source, pid_page, legend_id, size, validation_status,
+                   bbox_frame, world_bbox_x, world_bbox_y, world_bbox_w, world_bbox_h,
+                   sheet_bbox_x, sheet_bbox_y, sheet_bbox_w, sheet_bbox_h,
+                   asset_confidence, tag_confidence, bbox_confidence, legend_confidence,
+                   flow_confidence, relation_confidence)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+                         $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
               row
             );
           }
@@ -999,10 +1025,11 @@ export const worker = new Worker(
 
         // Automatic Fallback Tag Generator:
         // Allocates unique project-level incremental tags for symbols lacking an OCR tag.
-        const { generatedCount: autoTaggedCount } = applyProjectAutoTagging(deduped, {
-          existingProjectTags,
-          legendSymbols: cappedSymbols,
-        });
+          const { generatedCount: autoTaggedCount } = applyProjectAutoTagging(deduped, {
+            existingProjectTags,
+            legendSymbols: cappedSymbols,
+            allowGeneratedTags: false,
+          });
         if (autoTaggedCount > 0) {
           log(`page ${page} auto-tagged ${autoTaggedCount} detection(s) without OCR tags`, {
             page,

@@ -309,6 +309,28 @@ async function migrate() {
       console.warn('  013 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 014: MDO enrichment records and P&ID relations
+    try {
+      const mdosql = join(__dirname, '..', 'sql', 'migrate-mdo-records.sql');
+      if (existsSync(mdosql)) {
+        await p.query(readFileSync(mdosql, 'utf-8'));
+        console.log('  014: detection_mdo_records OK');
+      }
+    } catch (e) {
+      console.warn('  014 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 015: DXF coordinate frames, confidence breakdown, and graph relations
+    try {
+      const qualitySql = join(__dirname, '..', 'sql', 'migrate-dxf-quality-v2.sql');
+      if (existsSync(qualitySql)) {
+        await p.query(readFileSync(qualitySql, 'utf-8'));
+        console.log('  015: DXF quality v2 columns OK');
+      }
+    } catch (e) {
+      console.warn('  015 migration warning (non-fatal):', e.message);
+    }
+
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

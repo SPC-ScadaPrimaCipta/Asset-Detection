@@ -44,9 +44,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             display: "flex",
             flexDirection: "column",
             flexShrink: 0,
-            borderRight: "1px solid rgba(255,255,255,0.06)",
+            borderRight: "1px solid var(--border)",
             background:
-              "linear-gradient(180deg, #001E38 0%, #002B4E 55%, #003B63 100%)",
+              "linear-gradient(180deg, #121D26 0%, #182832 58%, #14212A 100%)",
             position: "relative",
             overflow: "hidden",
           }}
@@ -55,7 +55,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <div
             style={{
               padding: "14px 16px",
-              borderBottom: "1px solid rgba(255,255,255,0.07)",
+              borderBottom: "1px solid var(--border)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
