@@ -100,12 +100,9 @@ export default function DxfViewer({
     const sheetDetections = activeSheet === null || activeSheet === undefined
       ? detections
       : detections.filter((d) => d.pid_page === null || d.pid_page === activeSheet);
-    const candidateFiltered = sheetDetections.filter((d) =>
-      showReviewCandidates || d.id === selectedId || d.candidate_status !== 'REVIEW_CANDIDATE',
-    );
     const list = showAll
-      ? candidateFiltered
-      : candidateFiltered.filter((d) => d.id === selectedId);
+      ? sheetDetections
+      : sheetDetections.filter((d) => d.id === selectedId);
     return list.filter(
       (d) =>
         d.detection_status !== 'REJECTED' &&
@@ -113,7 +110,7 @@ export default function DxfViewer({
         d.bbox_x !== null && d.bbox_y !== null &&
         d.bbox_w !== null && d.bbox_h !== null,
     );
-  }, [detections, selectedId, showAll, showReviewCandidates, activeSheet]);
+  }, [detections, selectedId, showAll, activeSheet]);
 
   // ── Draw overlay ─────────────────────────────────────────────────────────────
   const drawOverlay = useCallback(() => {
@@ -156,7 +153,8 @@ export default function DxfViewer({
 
     for (const d of sorted) {
       const isSelected = d.id === selectedId;
-      const color = bboxColor(d);
+      const isReviewCandidate = d.candidate_status === 'REVIEW_CANDIDATE';
+      const color = isReviewCandidate ? '#f5b942' : bboxColor(d);
 
       // 0-1000 → DXF world
       const wx1 = bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
@@ -185,9 +183,9 @@ export default function DxfViewer({
 
       // Border
       ctx.strokeStyle = color;
-      ctx.lineWidth   = isSelected ? 2.5 : 1.5;
-      ctx.globalAlpha = isSelected ? 1.0 : 0.82;
-      if (!isSelected) ctx.setLineDash([8, 4]);
+      ctx.lineWidth   = isSelected ? 2.5 : isReviewCandidate ? 1 : 1.5;
+      ctx.globalAlpha = isSelected ? 1.0 : isReviewCandidate ? 0.55 : 0.82;
+      if (!isSelected) ctx.setLineDash(isReviewCandidate ? [4, 4] : [8, 4]);
       ctx.beginPath();
       ctx.roundRect(rx, ry, rw, rh, 3);
       ctx.stroke();
@@ -195,7 +193,9 @@ export default function DxfViewer({
 
       // Label
       const label    = (d.asset_tag ?? d.asset_type).slice(0, 18);
-      const fontSize = isSelected ? 13 : 11;
+      const showLabel = !isReviewCandidate || showReviewCandidates || isSelected;
+      if (!showLabel) { ctx.restore(); continue; }
+      const fontSize = isSelected ? 13 : isReviewCandidate ? 9 : 11;
       ctx.font       = `${isSelected ? 700 : 500} ${fontSize}px ui-monospace, monospace`;
       const textW    = ctx.measureText(label).width + 8;
       const textH    = fontSize + 6;
