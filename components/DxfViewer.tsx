@@ -262,7 +262,7 @@ export default function DxfViewer({
     try {
       viewer = new DxfViewerEngine(containerRef.current, {
         autoResize:       true,
-        clearColor:       new THREE.Color(0x161719),
+        clearColor:       new THREE.Color(0x111C27),
         colorCorrection:  true,
         antialias:        true,
       });
@@ -523,7 +523,7 @@ export default function DxfViewer({
         width: '100%',
         flex: 1,
         minHeight: '480px',
-          background: '#101A22',
+          background: '#111C27',
         overflow: 'hidden',
         userSelect: 'none',
         ...style,

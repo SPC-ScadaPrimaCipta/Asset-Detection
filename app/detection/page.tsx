@@ -826,7 +826,7 @@ function JobProgress({
 // ─── PidViewer ───────────────────────────────────────────────────────────────
 
 // CAD canvas constants
-const CAD_BG = "#101A22";
+const CAD_BG = "#111C27";
 const CAD_GRID_COLOR = "rgba(125,211,252,0.055)";
 const CAD_GRID_MAJOR_COLOR = "rgba(125,211,252,0.13)";
 const CAD_TOOLBAR_BG = "#182832";
