@@ -31,6 +31,10 @@ export interface DxfViewerProps {
     world_bbox_y?: number | null;
     world_bbox_w?: number | null;
     world_bbox_h?: number | null;
+    sheet_bbox_x?: number | null;
+    sheet_bbox_y?: number | null;
+    sheet_bbox_w?: number | null;
+    sheet_bbox_h?: number | null;
     detection_status: string;
     review_status: string;
     candidate_status?: string | null;
@@ -180,11 +184,13 @@ export default function DxfViewer({
       const color = isReviewCandidate ? '#f5b942' : bboxColor(d);
 
       // 0-1000 → DXF world
+      const activeRegion = activeSheet == null ? null : regions.find((r) => r.pidPage === activeSheet);
+      const hasSheetBox = activeRegion && d.sheet_bbox_x != null && d.sheet_bbox_y != null && d.sheet_bbox_w != null && d.sheet_bbox_h != null && d.pid_page === activeSheet;
       const hasWorldBox = d.world_bbox_x != null && d.world_bbox_y != null && d.world_bbox_w != null && d.world_bbox_h != null;
-      const wx1 = hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
-      const wy1 = hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
-      const wx2 = hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
-      const wy2 = hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
+      const wx1 = hasSheetBox ? activeRegion!.extents.minX + (d.sheet_bbox_x! / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
+      const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
+      const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
+      const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
 
       const tl = worldToCanvas(wx1, wy1, cw, ch);
       const br = worldToCanvas(wx2, wy2, cw, ch);
@@ -356,11 +362,13 @@ export default function DxfViewer({
 
         for (let i = visible.length - 1; i >= 0; i--) {
           const d = visible[i];
+          const activeRegion = activeSheet == null ? null : regions.find((r) => r.pidPage === activeSheet);
+          const hasSheetBox = activeRegion && d.sheet_bbox_x != null && d.sheet_bbox_y != null && d.sheet_bbox_w != null && d.sheet_bbox_h != null && d.pid_page === activeSheet;
           const hasWorldBox = d.world_bbox_x != null && d.world_bbox_y != null && d.world_bbox_w != null && d.world_bbox_h != null;
-          const wx1 = hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
-          const wy1 = hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
-          const wx2 = hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
-          const wy2 = hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
+          const wx1 = hasSheetBox ? activeRegion!.extents.minX + (d.sheet_bbox_x! / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
+          const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
+          const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
+          const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
           const tl = wts(wx1, wy1);
           const br = wts(wx2, wy2);
           const rx = Math.min(tl.x, br.x), ry = Math.min(tl.y, br.y);

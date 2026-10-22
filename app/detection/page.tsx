@@ -89,6 +89,10 @@ interface Detection {
   world_bbox_y?: number | null;
   world_bbox_w?: number | null;
   world_bbox_h?: number | null;
+  sheet_bbox_x?: number | null;
+  sheet_bbox_y?: number | null;
+  sheet_bbox_w?: number | null;
+  sheet_bbox_h?: number | null;
   symbol_bbox_x: number | null;
   symbol_bbox_y: number | null;
   symbol_bbox_w: number | null;
