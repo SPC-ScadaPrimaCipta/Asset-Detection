@@ -714,6 +714,9 @@ export const worker = new Worker(
           // UNKNOWN and non-standard types are never auto-valid: they must
           // reach the human review queue.
           const validationStatus = atype === 'UNKNOWN' || !resolved.matchedVocabulary ? 'NEEDS_REVIEW' : 'VALID';
+          const candidateStatus = det.source === 'VISION' || det.needsAiClassification || det.needsGeminiClassification
+            ? 'REVIEW_CANDIDATE'
+            : 'FINAL';
           const global = parsedDxf?.extents;
           const region = dxfResult.regions.find((r) => r.pidPage === det.pidPage)?.extents ?? global;
           const worldX = global ? global.minX + (det.bbox.x / 1000) * global.width : null;
@@ -748,7 +751,7 @@ export const worker = new Worker(
             sheetX, sheetY, sheetW, sheetH,
             det.confidence, tag ? 0.9 : 0, det.evidence.some((e) => /bbox from .*geometry/i.test(e)) ? 0.9 : 0.55,
             atype !== 'UNKNOWN' ? 0.85 : 0, 0, 0,
-            'FINAL', 'DXF',
+            candidateStatus, 'DXF',
           ]);
         }
 
@@ -765,9 +768,9 @@ export const worker = new Worker(
                    bbox_frame, world_bbox_x, world_bbox_y, world_bbox_w, world_bbox_h,
                    sheet_bbox_x, sheet_bbox_y, sheet_bbox_w, sheet_bbox_h,
                    asset_confidence, tag_confidence, bbox_confidence, legend_confidence,
-                   flow_confidence, relation_confidence)
+                   flow_confidence, relation_confidence, candidate_status, candidate_source)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-                         $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
+                         $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
               row
             );
           }
