@@ -29,10 +29,12 @@ export interface DxfViewerProps {
     pid_page?: number | null;
     detection_status: string;
     review_status: string;
+    candidate_status?: string | null;
   }>;
   selectedId?: string | null;
   onSelectAsset?: (id: string) => void;
   showAll?: boolean;
+  showReviewCandidates?: boolean;
   textTokens?: Array<{ text: string; x: number; y: number; w: number; h: number }>;
   showText?: boolean;
   /** Sheet regions (world units) for sheet navigation. Omit = whole-file view. */
@@ -53,6 +55,7 @@ export default function DxfViewer({
   selectedId = null,
   onSelectAsset,
   showAll = true,
+  showReviewCandidates = false,
   textTokens = [],
   showText = true,
   regions = [],
@@ -97,9 +100,12 @@ export default function DxfViewer({
     const sheetDetections = activeSheet === null || activeSheet === undefined
       ? detections
       : detections.filter((d) => d.pid_page === null || d.pid_page === activeSheet);
+    const candidateFiltered = sheetDetections.filter((d) =>
+      showReviewCandidates || d.id === selectedId || d.candidate_status !== 'REVIEW_CANDIDATE',
+    );
     const list = showAll
-      ? sheetDetections
-      : sheetDetections.filter((d) => d.id === selectedId);
+      ? candidateFiltered
+      : candidateFiltered.filter((d) => d.id === selectedId);
     return list.filter(
       (d) =>
         d.detection_status !== 'REJECTED' &&
@@ -107,7 +113,7 @@ export default function DxfViewer({
         d.bbox_x !== null && d.bbox_y !== null &&
         d.bbox_w !== null && d.bbox_h !== null,
     );
-  }, [detections, selectedId, showAll, activeSheet]);
+  }, [detections, selectedId, showAll, showReviewCandidates, activeSheet]);
 
   // ── Draw overlay ─────────────────────────────────────────────────────────────
   const drawOverlay = useCallback(() => {
@@ -228,7 +234,7 @@ export default function DxfViewer({
       }
       ctx.restore();
     }
-  }, [detections, selectedId, showAll, textTokens, showText, loading, worldToCanvas, getVisible]);
+  }, [detections, selectedId, showAll, showReviewCandidates, textTokens, showText, loading, worldToCanvas, getVisible]);
 
   // Selalu tunjuk ke implementasi terbaru (lawan closure basi).
   useEffect(() => {
@@ -314,7 +320,8 @@ export default function DxfViewer({
         const sheetDetections = activeSheet === null || activeSheet === undefined
           ? detections
           : detections.filter(d => d.pid_page === null || d.pid_page === activeSheet);
-        const visible = (showAll ? sheetDetections : sheetDetections.filter(d => d.id === selectedId))
+        const candidateFiltered = sheetDetections.filter(d => showReviewCandidates || d.id === selectedId || d.candidate_status !== 'REVIEW_CANDIDATE');
+        const visible = (showAll ? candidateFiltered : candidateFiltered.filter(d => d.id === selectedId))
           .filter(d =>
             d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED' &&
             d.bbox_x !== null && d.bbox_y !== null && d.bbox_w !== null && d.bbox_h !== null,

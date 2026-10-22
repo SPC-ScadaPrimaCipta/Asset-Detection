@@ -933,6 +933,7 @@ function PidViewer({
   // DXF WebGL engine already renders native TEXT/MTEXT. Overlay starts off for
   // DXF to prevent duplicated/misaligned labels; PDF uses overlay by default.
   const [showText, setShowText] = useState(fileType !== "dxf");
+  const [showReviewCandidates, setShowReviewCandidates] = useState(false);
   const [textTokens, setTextTokens] = useState<
     Array<{ text: string; x: number; y: number; w: number; h: number }>
   >([]);
@@ -1600,6 +1601,15 @@ function PidViewer({
           </svg>
           Text
         </button>
+        {isDxf && (
+          <button
+            onClick={() => setShowReviewCandidates((value) => !value)}
+            style={showReviewCandidates ? cadToolBtnActive : cadToolBtn}
+            title="Show or hide AI review candidates"
+          >
+            {showReviewCandidates ? "AI Candidates ON" : "AI Candidates"}
+          </button>
+        )}
 
         {/* Status hints */}
         {bboxSavedFlash && selectedId && (
@@ -1708,6 +1718,7 @@ function PidViewer({
           detections={detections}
           textTokens={textTokens}
           showText={showText}
+          showReviewCandidates={showReviewCandidates}
           selectedId={selectedId}
           onSelectAsset={onSelect}
           showAll={showAll}
