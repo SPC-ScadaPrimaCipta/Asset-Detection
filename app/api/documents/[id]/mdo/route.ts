@@ -16,7 +16,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const regions = splitDxfRegions(parsed);
     const detections = (await db.query(
       `SELECT id, asset_tag, asset_type, description, size, pid_page, bbox_x, bbox_y, bbox_w, bbox_h
-       FROM detections WHERE document_id=$1 AND detection_status != 'REJECTED'`,
+       FROM detections WHERE document_id=$1 AND detection_status != 'REJECTED'
+         AND candidate_status IN ('FINAL','APPROVED')`,
       [documentId],
     )).rows;
     let count = 0;

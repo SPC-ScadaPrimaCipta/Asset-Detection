@@ -62,11 +62,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             }}
           >
             <img
-              src="/lg.png"
+              src="/spc.png"
               alt="Asset Detection"
               style={{
                 width: "100%",
-                maxWidth: "180px",
+                maxWidth: "160px",
                 height: "auto",
                 objectFit: "contain",
               }}

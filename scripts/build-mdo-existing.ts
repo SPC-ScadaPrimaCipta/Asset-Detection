@@ -21,7 +21,8 @@ async function main() {
     removed += bad.rowCount ?? 0;
     const detections = (await db.query(
       `SELECT id, asset_tag, asset_type, description, size, pid_page, bbox_x, bbox_y FROM detections
-       WHERE document_id=$1 AND detection_status != 'REJECTED'`, [doc.id],
+       WHERE document_id=$1 AND detection_status != 'REJECTED'
+         AND candidate_status IN ('FINAL','APPROVED')`, [doc.id],
     )).rows;
     for (const d of detections) {
       const region = regions.find((r) => r.index + 1 === (d.pid_page ?? 1)) ?? regions[0];

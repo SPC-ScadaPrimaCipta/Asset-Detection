@@ -748,6 +748,7 @@ export const worker = new Worker(
             sheetX, sheetY, sheetW, sheetH,
             det.confidence, tag ? 0.9 : 0, det.evidence.some((e) => /bbox from .*geometry/i.test(e)) ? 0.9 : 0.55,
             atype !== 'UNKNOWN' ? 0.85 : 0, 0, 0,
+            'FINAL', 'DXF',
           ]);
         }
 

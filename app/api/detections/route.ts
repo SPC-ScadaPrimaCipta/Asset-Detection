@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
                 m.uom AS mdo_uom, m.size_dimension AS mdo_size_dimension,
                 m.flow_direction AS mdo_flow_direction, m.bypass AS mdo_bypass,
                 m.relation_status AS mdo_relation_status,
-                m.relation_confidence AS mdo_relation_confidence
+                m.relation_confidence AS mdo_relation_confidence,
+                d.candidate_status, d.candidate_source
          FROM detections d LEFT JOIN detection_mdo_records m ON m.detection_id=d.id
          ${where} ORDER BY d.confidence DESC, d.created_at DESC LIMIT $${i} OFFSET $${i + 1}`,
         [...vals, limit, offset]

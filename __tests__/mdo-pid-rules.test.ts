@@ -1,4 +1,4 @@
-import { classifyDxfCandidate, extractPidRelations, qualityGate } from '@/lib/mdo-pid-rules';
+import { classifyDxfCandidate, extractPidRelations, qualityGate, classifyHybridCandidate } from '@/lib/mdo-pid-rules';
 import { buildMdoRecord } from '@/lib/mdo-enrichment';
 
 describe('MDO P&ID rules', () => {
@@ -38,6 +38,14 @@ describe('MDO P&ID rules', () => {
 
   test('drops synthetic tags even when type is valid', () => {
     expect(qualityGate({ source: 'VISION', assetTag: 'PV-004', assetType: 'Plug Valve', confidence: 0.9, evidence: ['[Auto-Tag] Generated unique project tag PV-004'] })).toBe('DROP');
+  });
+
+  test('keeps AI-only legend candidate as review candidate', () => {
+    expect(classifyHybridCandidate({ source: 'VISION', assetTag: null, assetType: 'Gate Valve', confidence: 0.7, evidence: ['Legend match: Gate Valve'] })).toBe('REVIEW_CANDIDATE');
+  });
+
+  test('keeps vector asset as final candidate', () => {
+    expect(classifyHybridCandidate({ source: 'DXF', assetTag: 'V-101', assetType: 'Vessel', confidence: 0.8, evidence: ['Legend match: Vessel'] })).toBe('FINAL');
   });
 
   test('builds MDO description from resolved relations', () => {

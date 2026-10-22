@@ -27,7 +27,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
     if (!d) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await db.query(
-      "UPDATE detections SET detection_status='CONFIRMED', review_status='APPROVED', updated_at=NOW() WHERE id=$1",
+      "UPDATE detections SET detection_status='CONFIRMED', review_status='APPROVED', candidate_status='APPROVED', candidate_reviewed_at=NOW(), updated_at=NOW() WHERE id=$1",
       [id]
     );
 

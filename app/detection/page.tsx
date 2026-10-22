@@ -109,6 +109,8 @@ interface Detection {
   mdo_size_dimension?: string | null;
   mdo_flow_direction?: string | null;
   mdo_bypass?: boolean | null;
+  candidate_status?: string | null;
+  candidate_source?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -2957,6 +2959,9 @@ function DetectionsTable({
                     >
                       <span>{normalizeType(d.asset_type)}</span>
                       {sourceBadge(d.detection_source)}
+                      {d.candidate_status === 'REVIEW_CANDIDATE' && (
+                        <span style={{ ...badgeBase, fontSize: "10px", background: "var(--warning-soft)", color: "var(--warning)" }}>AI Review</span>
+                      )}
                     </div>
                   </td>
                   <td
@@ -3934,7 +3939,11 @@ function DetectionWorkspace() {
                 <div style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.02em" }}>MDO Detection Result</div>
                 <div style={{ fontSize: "11px", color: "var(--foreground-muted)", marginTop: "3px" }}>Equipment register extracted from current document</div>
               </div>
-              <span style={{ color: "var(--foreground-muted)", fontSize: "12px", fontFamily: "var(--font-geist-mono, monospace)" }}>{detections.length} records</span>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <span style={{ color: "var(--success)", fontSize: "11px" }}>Final {detections.filter((d) => d.candidate_status === 'FINAL' || d.candidate_status === 'APPROVED').length}</span>
+                <span style={{ color: "var(--warning)", fontSize: "11px" }}>Review {detections.filter((d) => d.candidate_status === 'REVIEW_CANDIDATE').length}</span>
+                <span style={{ color: "var(--foreground-muted)", fontSize: "12px", fontFamily: "var(--font-geist-mono, monospace)" }}>{detections.length} records</span>
+              </div>
             </div>
             <div style={{ overflowX: "auto", padding: "0 8px 8px" }}>
               <DetectionsTable

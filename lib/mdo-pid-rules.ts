@@ -25,6 +25,21 @@ export interface DxfCandidateQuality {
 
 export type QualityGateResult = 'KEEP' | 'REVIEW' | 'DROP';
 
+export type HybridCandidateResult = 'FINAL' | 'REVIEW_CANDIDATE' | 'DROP';
+
+export function classifyHybridCandidate(candidate: {
+  source: 'DXF' | 'VISION' | 'YOLO_GEO2';
+  assetTag: string | null;
+  assetType: string | null;
+  confidence: number;
+  evidence: string[];
+}): HybridCandidateResult {
+  const quality = qualityGate(candidate);
+  if (quality === 'DROP') return 'DROP';
+  if (candidate.source === 'VISION' || candidate.source === 'YOLO_GEO2') return 'REVIEW_CANDIDATE';
+  return 'FINAL';
+}
+
 export function qualityGate(candidate: {
   source: string;
   assetTag: string | null;

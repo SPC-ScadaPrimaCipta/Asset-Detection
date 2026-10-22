@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const correctAssetType = (body.correct_asset_type as string | undefined) ?? null;
 
     await db.query(
-      "UPDATE detections SET detection_status='REJECTED', review_status='REJECTED', updated_at=NOW() WHERE id=$1",
+      "UPDATE detections SET detection_status='REJECTED', review_status='REJECTED', candidate_status='NOISE', candidate_reviewed_at=NOW(), updated_at=NOW() WHERE id=$1",
       [id]
     );
     await db.query("DELETE FROM assets WHERE detection_id=$1", [id]);

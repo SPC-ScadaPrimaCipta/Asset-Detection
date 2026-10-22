@@ -331,6 +331,17 @@ async function migrate() {
       console.warn('  015 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 016: hybrid AI review candidates
+    try {
+      const candidateSql = join(__dirname, '..', 'sql', 'migrate-hybrid-review-candidates.sql');
+      if (existsSync(candidateSql)) {
+        await p.query(readFileSync(candidateSql, 'utf-8'));
+        console.log('  016: hybrid review candidates OK');
+      }
+    } catch (e) {
+      console.warn('  016 migration warning (non-fatal):', e.message);
+    }
+
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

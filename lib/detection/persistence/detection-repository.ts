@@ -13,6 +13,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { detectionConfig } from '@/lib/detection/config';
 import { formatLegendAssetType, isSpecificAssetType } from '@/lib/rule-validator';
+import { classifyHybridCandidate } from '@/lib/mdo-pid-rules';
 
 /** Minimal query surface — keeps the repository testable without a live DB. */
 export interface DbLike {
@@ -65,6 +66,7 @@ export interface PersistableDetection {
   pageDims?: { pageWidth: number; pageHeight: number } | null;
   /** Deterministic evidence passthrough (legend def id, matchFrom, scores). */
   detEvidence?: Record<string, unknown> | null;
+  candidate_status?: 'FINAL' | 'REVIEW_CANDIDATE' | 'NOISE';
 }
 
 export interface LegendSymbolRef {
@@ -224,8 +226,9 @@ const INSERT_SQL = `INSERT INTO detections
     legend_id, legend_symbol_id, confidence,
     bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status,
     detection_source, canonical_features, crop_hash, embedding, confidence_breakdown,
-    validation_status, main_equipment, field_confidence, field_provenance, size)
- VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING',$22,$23,$24,$25::vector,$26,$27,$28,$29,$30,$31)`;
+     validation_status, main_equipment, field_confidence, field_provenance, size,
+     candidate_status, candidate_source)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING',$22,$23,$24,$25::vector,$26,$27,$28,$29,$30,$31,$32,$33)`;
 
 /** Column list for the V2 dual-write (canonical symbol bbox). */
 const DUAL_WRITE_SQL = `UPDATE detections
@@ -278,6 +281,13 @@ export async function persistDetections(
     const imageHash = d.image_hash ?? null;
     const confidenceBreakdown = d.confidence_breakdown ?? null;
     const validationStatus = d.validation_status ?? 'VALID';
+    const candidateStatus = d.candidate_status ?? classifyHybridCandidate({
+      source: String(detectionSource).includes('VISION') ? 'VISION' : 'YOLO_GEO2',
+      assetTag: d.assetTag,
+      assetType: finalAssetType,
+      confidence: d.confidence,
+      evidence: d.evidence,
+    });
     const fieldConfidence = d.field_confidence ?? null;
     const fieldProvenance = d.field_provenance ?? null;
 
@@ -334,6 +344,8 @@ export async function persistDetections(
       fieldConfidence ? JSON.stringify(fieldConfidence) : null,
       fieldProvenance ? JSON.stringify(fieldProvenance) : null,
       d.size ?? null,
+      candidateStatus,
+      detectionSource,
     ]);
 
     // V2 dual-write: pixel boxes when supplied (local wiring), else legacy
