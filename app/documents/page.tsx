@@ -139,7 +139,7 @@ export default function DocumentsPage() {
   const canUpload = !!selectedProjectId && !!selectedFile && !uploading;
 
   return (
-    <div style={{ maxWidth: 1440, display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div>
         <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Documents</h1>

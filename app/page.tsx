@@ -81,8 +81,6 @@ export default function Dashboard() {
     <div
       style={{
         width: '100%',
-        maxWidth: 1440,
-        margin: '0 auto',
         display: 'flex',
         flexDirection: 'column',
         gap: 24,

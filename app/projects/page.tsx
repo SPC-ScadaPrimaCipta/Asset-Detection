@@ -78,7 +78,7 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div style={{ maxWidth: '1440px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div>
         <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '8px' }}>Projects</h1>

@@ -436,7 +436,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: '800px' }}>
+    <div style={{ width: '100%', maxWidth: '1280px' }}>
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '8px' }}>Settings</h1>
         <p style={{ fontSize: '14px', color: 'var(--foreground-muted)' }}>Manage AI provider and API keys</p>

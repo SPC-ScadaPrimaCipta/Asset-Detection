@@ -54,7 +54,7 @@ export default function LegendsPage() {
   };
 
   return (
-    <div style={{ maxWidth: 1440, display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
         <div>

@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       className={plusJakartaSans.variable}
-      style={{ height: "100%" }}
+      style={{ height: "100%", width: "100%" }}
       suppressHydrationWarning
     >
       <head>
@@ -33,79 +33,67 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body
         style={{
-          minHeight: "100%",
+          minHeight: "100vh",
+          width: "100%",
           margin: 0,
           padding: 0,
-          background: "var(--bg-page)",
+          background: "var(--bg-app)",
           color: "var(--foreground)",
           fontFamily:
             'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "stretch",
           boxSizing: "border-box",
         }}
       >
         <ThemeProvider>
-          {/* Outer Frame Wrapper matching 1440px desktop reference */}
+          {/* Full-width App Frame Container */}
           <div
             style={{
               width: "100%",
-              maxWidth: 1440,
               minHeight: "100vh",
-              padding: "16px",
               display: "flex",
+              background: "var(--bg-app)",
               boxSizing: "border-box",
             }}
           >
-            {/* Dashboard App Frame Container */}
-            <div
+            {/* Full-height Docked Royal Blue Sidebar */}
+            <aside
               style={{
-                width: "100%",
-                background: "var(--bg-app)",
-                borderRadius: "var(--radius-frame, 28px)",
-                boxShadow: "var(--shadow-frame)",
+                width: "var(--sidebar-width, 240px)",
                 display: "flex",
-                overflow: "hidden",
-                border: "1px solid var(--border)",
-                minHeight: "calc(100vh - 32px)",
+                flexDirection: "column",
+                flexShrink: 0,
+                background: "var(--sidebar-bg)",
+                height: "100vh",
+                position: "sticky",
+                top: 0,
+                overflowY: "auto",
+                boxShadow: "2px 0 16px rgba(0, 0, 0, 0.08)",
+                zIndex: 20,
               }}
             >
-              {/* Rounded Royal Blue Sidebar */}
-              <aside
-                style={{
-                  width: "var(--sidebar-width, 240px)",
-                  display: "flex",
-                  flexDirection: "column",
-                  flexShrink: 0,
-                  background: "var(--sidebar-bg)",
-                  borderRadius: "var(--radius-sidebar, 24px)",
-                  margin: "12px 0 12px 12px",
-                  overflow: "hidden",
-                  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.15)",
-                }}
-              >
-                <SidebarNav />
-              </aside>
+              <SidebarNav />
+            </aside>
 
-              {/* Main Content Area with Header */}
-              <main
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  overflowY: "auto",
-                  padding: "24px 28px",
-                  minWidth: 0,
-                }}
-              >
-                {/* Neuro Top Header */}
-                <Header operatorName="Operator" />
+            {/* Main Content Area with Header */}
+            <main
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: "100vh",
+                overflowY: "auto",
+                padding: "24px 32px",
+                minWidth: 0,
+                background: "var(--bg-app)",
+                boxSizing: "border-box",
+              }}
+            >
+              {/* Neuro Top Header */}
+              <Header operatorName="Operator" />
 
-                {/* Main Content Body */}
-                <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-              </main>
-            </div>
+              {/* Main Content Body */}
+              <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{children}</div>
+            </main>
           </div>
         </ThemeProvider>
       </body>
