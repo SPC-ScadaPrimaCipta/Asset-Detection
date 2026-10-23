@@ -1,28 +1,24 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import SidebarNav from "./sidebar-nav";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Asset Detection",
-  description: "Automatic P&ID Asset Detection",
+  title: "Neuro. — Asset Detection",
+  description: "Automatic Industrial P&ID Asset Detection",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={plusJakartaSans.variable}
       style={{ height: "100%" }}
       suppressHydrationWarning
     >
@@ -32,10 +28,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           height: "100%",
           margin: 0,
           padding: 0,
-          background: "var(--background)",
+          background: "var(--bg-page)",
           color: "var(--foreground)",
           fontFamily:
-            'var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+            'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
         }}
       >
         <aside

@@ -2,7 +2,7 @@
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Design Tokens, CSS Variables & Typography Setup (`app/globals.css`, `app/layout.tsx`) | PENDING |
+| TASK-01 | Design Tokens, CSS Variables & Typography Setup (`app/globals.css`, `app/layout.tsx`) | COMPLETED |
 | TASK-02 | Theme Switcher Component & Theme Management (`components/ThemeToggle.tsx`, `components/ThemeProvider.tsx`) | PENDING |
 | TASK-03 | Standardize Reusable UI Components Library (`components/ui/*`) | PENDING |
 | TASK-04 | App Shell Layout, Rounded Sidebar & Top Header (`app/layout.tsx`, `app/sidebar-nav.tsx`, `components/Header.tsx`) | PENDING |
