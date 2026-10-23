@@ -2,6 +2,7 @@
 import React from 'react';
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
+type Variant = Tone | 'available' | 'pending';
 
 const tones: Record<Tone, React.CSSProperties> = {
   neutral: { background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' },
@@ -12,15 +13,27 @@ const tones: Record<Tone, React.CSSProperties> = {
   primary: { background: 'var(--primary-soft)', color: 'var(--primary)' },
 };
 
+function resolveTone(tone?: Tone, variant?: Variant): Tone {
+  if (variant) {
+    if (variant === 'available') return 'success';
+    if (variant === 'pending') return 'warning';
+    return variant as Tone;
+  }
+  return tone || 'neutral';
+}
+
 export function Badge({
-  tone = 'neutral',
+  tone,
+  variant,
   children,
   style,
 }: {
   tone?: Tone;
+  variant?: Variant;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
+  const resolvedTone = resolveTone(tone, variant);
   return (
     <span
       style={{
@@ -33,7 +46,7 @@ export function Badge({
         fontWeight: 600,
         lineHeight: 1.4,
         whiteSpace: 'nowrap',
-        ...tones[tone],
+        ...tones[resolvedTone],
         ...style,
       }}
     >
