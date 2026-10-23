@@ -140,6 +140,42 @@ function DetectionContent() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Reset zoom & pan when page or document changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [page, documentId]);
+
+  // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
+  useEffect(() => {
+    const container = viewerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      // Zoom factor: 1.15 on wheel up (zoom in), 0.87 on wheel down (zoom out)
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left - rect.width / 2;
+      const mouseY = e.clientY - rect.top - rect.height / 2;
+
+      setZoom((prevZoom) => {
+        const nextZoom = Math.min(8, Math.max(0.2, Number((prevZoom * zoomFactor).toFixed(3))));
+        const scaleRatio = nextZoom / prevZoom;
+        setPan((prevPan) => ({
+          x: Number((mouseX - (mouseX - prevPan.x) * scaleRatio).toFixed(1)),
+          y: Number((mouseY - (mouseY - prevPan.y) * scaleRatio).toFixed(1)),
+        }));
+        return nextZoom;
+      });
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
   // 1. Load initial documents list
   useEffect(() => {
     fetch('/api/documents')
@@ -474,8 +510,8 @@ function DetectionContent() {
   const selectedItem = detections.find((d) => d.id === selectedId) ?? null;
 
   // Zoom handlers
-  const handleZoomIn = () => setZoom((z) => Math.min(3, Number((z + 0.2).toFixed(1))));
-  const handleZoomOut = () => setZoom((z) => Math.max(0.4, Number((z - 0.2).toFixed(1))));
+  const handleZoomIn = () => setZoom((z) => Math.min(8, Number((z * 1.25).toFixed(2))));
+  const handleZoomOut = () => setZoom((z) => Math.max(0.2, Number((z * 0.8).toFixed(2))));
   const handleResetZoom = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -910,7 +946,7 @@ function DetectionContent() {
           <div
             ref={viewerRef}
             onMouseDown={(e) => {
-              if (e.button === 0) {
+              if (e.button === 0 || e.button === 1) {
                 setDragging(true);
                 setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
               }
@@ -927,11 +963,12 @@ function DetectionContent() {
               flex: 1,
               minHeight: 0,
               overflow: 'hidden',
-              background: '#1a1b1e',
+              background: '#14161b',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: dragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
             }}
           >
             {isDxf ? (
@@ -951,9 +988,11 @@ function DetectionContent() {
               <div
                 style={{
                   position: 'relative',
-                  transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${zoom})`,
                   transformOrigin: 'center center',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                  transition: dragging ? 'none' : 'transform 75ms cubic-bezier(0.2, 0, 0, 1)',
+                  willChange: 'transform',
                 }}
               >
                 <img
@@ -964,7 +1003,13 @@ function DetectionContent() {
                     const img = e.currentTarget;
                     setImgNatural({ w: img.naturalWidth || 2000, h: img.naturalHeight || 1400 });
                   }}
-                  style={{ display: 'block', maxWidth: '85vw', maxHeight: 'calc(100vh - 160px)', userSelect: 'none' }}
+                  style={{
+                    display: 'block',
+                    maxWidth: '85vw',
+                    maxHeight: 'calc(100vh - 160px)',
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                  }}
                   draggable={false}
                 />
 
