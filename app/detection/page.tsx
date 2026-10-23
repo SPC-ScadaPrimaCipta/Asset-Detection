@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -140,10 +140,53 @@ function DetectionContent() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Container viewport size observer for high-DPI scaling
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 900, h: 650 });
+
+  useEffect(() => {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerSize({ w: rect.width, h: rect.height });
+      }
+    };
+
+    updateSize();
+
+    const ro = new ResizeObserver(() => {
+      updateSize();
+    });
+    ro.observe(el);
+
+    return () => ro.disconnect();
+  }, []);
+
+  // Compute base drawing dimension that fits the viewport container comfortably at zoom=1
+  const baseSize = useMemo(() => {
+    if (!imgNatural || !containerSize.w || !containerSize.h) return null;
+    const aspect = imgNatural.w / imgNatural.h;
+    const availW = Math.max(100, containerSize.w - 32);
+    const availH = Math.max(100, containerSize.h - 32);
+
+    if (availW / availH > aspect) {
+      const h = availH;
+      const w = Math.round(h * aspect);
+      return { w, h };
+    } else {
+      const w = availW;
+      const h = Math.round(w / aspect);
+      return { w, h };
+    }
+  }, [imgNatural, containerSize]);
+
   // Reset zoom & pan when page or document changes
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setImgNatural(null);
   }, [page, documentId]);
 
   // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
@@ -520,7 +563,7 @@ function DetectionContent() {
   const imgSrc = documentId && !isDxf ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 20px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
@@ -988,11 +1031,17 @@ function DetectionContent() {
               <div
                 style={{
                   position: 'relative',
-                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${zoom})`,
-                  transformOrigin: 'center center',
+                  width: baseSize ? Math.round(baseSize.w * zoom) : 'auto',
+                  height: baseSize ? Math.round(baseSize.h * zoom) : 'auto',
+                  maxWidth: baseSize ? undefined : '100%',
+                  maxHeight: baseSize ? undefined : '100%',
+                  flexShrink: 0,
+                  transform: `translate(${pan.x}px, ${pan.y}px)`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-                  transition: dragging ? 'none' : 'transform 75ms cubic-bezier(0.2, 0, 0, 1)',
-                  willChange: 'transform',
+                  transition: dragging ? 'none' : 'transform 40ms ease-out',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
                 <img
@@ -1004,11 +1053,13 @@ function DetectionContent() {
                     setImgNatural({ w: img.naturalWidth || 2000, h: img.naturalHeight || 1400 });
                   }}
                   style={{
+                    width: '100%',
+                    height: '100%',
                     display: 'block',
-                    maxWidth: '85vw',
-                    maxHeight: 'calc(100vh - 160px)',
+                    objectFit: 'contain',
                     userSelect: 'none',
                     pointerEvents: 'none',
+                    imageRendering: '-webkit-optimize-contrast',
                   }}
                   draggable={false}
                 />
@@ -1052,6 +1103,7 @@ function DetectionContent() {
                               fillOpacity={isSel ? 0.25 : 0.12}
                               stroke={color}
                               strokeWidth={isSel ? 2.5 : 1.2}
+                              vectorEffect="non-scaling-stroke"
                               strokeDasharray={isSel ? undefined : '4 2'}
                               rx={1}
                             />
