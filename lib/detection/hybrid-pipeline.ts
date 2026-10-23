@@ -22,6 +22,7 @@ import { createHash } from 'crypto';
 import { env } from '@/lib/env';
 import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
 import { runYoloGeo2Page } from '@/lib/detection/yolo/yolo-geo2-runner';
+import { extractTextFromRegion } from '@/lib/ocr-engine';
 import {
   cropBBoxFromBuffer,
   cropAdaptiveTagRegionFromBuffer,
@@ -99,6 +100,7 @@ export interface YoloOcrDetection {
   ocrText: string | null;
   ocrConfidence: number;
   isTag: boolean;
+  ocrDescription: string | null;
   cropB64: string | null;
   imageHash: string | null;
 }
@@ -145,6 +147,14 @@ async function runYoloWithOcr(
       // 2. Adaptive expanded crop for OCR reading of tags in surrounding context
       if (ocrEnabled) {
         try {
+          // New: Deep OCR for component name/description
+          const descText = await extractTextFromRegion(pngBuffer, {
+            left: Math.max(0, symbolBboxPx.x - 50),
+            top: Math.max(0, symbolBboxPx.y + symbolBboxPx.height),
+            width: symbolBboxPx.width + 100,
+            height: 100,
+          });
+
           const { buffer: tagCropBuffer } = await cropAdaptiveTagRegionFromBuffer(
             pngBuffer,
             symbolBboxPx,
@@ -182,18 +192,20 @@ async function runYoloWithOcr(
         }
       }
 
-      results.push({
-        classId: 0,
-        rawLabel: det.legendSymbol ?? det.assetType ?? '',
-        yoloScore: det.confidence,
-        bboxPx: symbolBboxPx,
-        bboxNorm: det.bbox,
-        ocrText: ocrText,
-        ocrConfidence: ocrConf,
-        isTag,
-        cropB64,
-        imageHash,
-      });
+        results.push({
+          classId: 0,
+          rawLabel: det.legendSymbol ?? det.assetType ?? '',
+          yoloScore: det.confidence,
+          bboxPx: symbolBboxPx,
+          bboxNorm: det.bbox,
+          ocrText: ocrText,
+          ocrConfidence: ocrConf,
+          isTag,
+          ocrDescription: descText,
+          cropB64,
+          imageHash,
+        });
+
     }));
   }
 
