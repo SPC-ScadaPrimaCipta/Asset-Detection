@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               boxSizing: "border-box",
             }}
           >
-            {/* Full-height Docked Royal Blue Sidebar */}
+            {/* Floating Rounded Royal Blue Sidebar - Not Touching Edges */}
             <aside
               style={{
                 width: "var(--sidebar-width, 240px)",
@@ -63,11 +63,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 flexDirection: "column",
                 flexShrink: 0,
                 background: "var(--sidebar-bg)",
-                height: "100vh",
+                height: "calc(100vh - 32px)",
                 position: "sticky",
-                top: 0,
-                overflowY: "auto",
-                boxShadow: "2px 0 16px rgba(0, 0, 0, 0.08)",
+                top: "16px",
+                margin: "16px 0 16px 16px",
+                borderRadius: "var(--radius-sidebar, 24px)",
+                overflow: "hidden",
+                boxShadow: "0 10px 30px rgba(52, 81, 209, 0.18)",
                 zIndex: 20,
               }}
             >
@@ -82,7 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 flexDirection: "column",
                 minHeight: "100vh",
                 overflowY: "auto",
-                padding: "24px 32px",
+                padding: "20px 32px 24px 24px",
                 minWidth: 0,
                 background: "var(--bg-app)",
                 boxSizing: "border-box",
