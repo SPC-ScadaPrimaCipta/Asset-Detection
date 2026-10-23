@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import SidebarNav from "./sidebar-nav";
+import Header from "@/components/Header";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -11,8 +12,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Neuro. — Asset Detection",
-  description: "Automatic Industrial P&ID Asset Detection",
+  title: "Neuro. — Automatic Asset Detection",
+  description: "AI-Powered Industrial P&ID Asset & Symbol Detection Platform",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,64 +33,80 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body
         style={{
-          display: "flex",
-          height: "100%",
+          minHeight: "100%",
           margin: 0,
           padding: 0,
           background: "var(--bg-page)",
           color: "var(--foreground)",
           fontFamily:
             'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "stretch",
+          boxSizing: "border-box",
         }}
       >
         <ThemeProvider>
-          <aside
+          {/* Outer Frame Wrapper matching 1440px desktop reference */}
+          <div
             style={{
-              width: "var(--sidebar-width)",
+              width: "100%",
+              maxWidth: 1440,
+              minHeight: "100vh",
+              padding: "16px",
               display: "flex",
-              flexDirection: "column",
-              flexShrink: 0,
-              borderRight: "1px solid var(--border)",
-              background: "var(--sidebar-bg)",
-              position: "relative",
-              overflow: "hidden",
+              boxSizing: "border-box",
             }}
           >
-            {/* Brand */}
+            {/* Dashboard App Frame Container */}
             <div
               style={{
-                padding: "16px 20px",
-                borderBottom: "1px solid rgba(255,255,255,0.1)",
+                width: "100%",
+                background: "var(--bg-app)",
+                borderRadius: "var(--radius-frame, 28px)",
+                boxShadow: "var(--shadow-frame)",
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                overflow: "hidden",
+                border: "1px solid var(--border)",
+                minHeight: "calc(100vh - 32px)",
               }}
             >
-              <img
-                src="/ptm.png"
-                alt="Asset Detection"
+              {/* Rounded Royal Blue Sidebar */}
+              <aside
                 style={{
-                  width: "100%",
-                  maxWidth: "160px",
-                  height: "auto",
-                  objectFit: "contain",
+                  width: "var(--sidebar-width, 240px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  flexShrink: 0,
+                  background: "var(--sidebar-bg)",
+                  borderRadius: "var(--radius-sidebar, 24px)",
+                  margin: "12px 0 12px 12px",
+                  overflow: "hidden",
+                  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.15)",
                 }}
-              />
+              >
+                <SidebarNav />
+              </aside>
+
+              {/* Main Content Area with Header */}
+              <main
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflowY: "auto",
+                  padding: "24px 28px",
+                  minWidth: 0,
+                }}
+              >
+                {/* Neuro Top Header */}
+                <Header operatorName="Operator" />
+
+                {/* Main Content Body */}
+                <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+              </main>
             </div>
-
-            {/* Navigation */}
-            <SidebarNav />
-          </aside>
-
-          <main
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              background: "var(--background)",
-            }}
-          >
-            <div style={{ padding: "32px" }}>{children}</div>
-          </main>
+          </div>
         </ThemeProvider>
       </body>
     </html>
