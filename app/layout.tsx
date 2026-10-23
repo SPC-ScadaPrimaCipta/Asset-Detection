@@ -45,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }}
       >
         <ThemeProvider>
-          {/* Full-width App Frame Container */}
+          {/* Full-width App Container with Outer Padding for Floating Sidebar */}
           <div
             style={{
               width: "100%",
@@ -53,9 +53,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               display: "flex",
               background: "var(--bg-app)",
               boxSizing: "border-box",
+              padding: "16px",
+              gap: "20px",
             }}
           >
-            {/* Floating Rounded Royal Blue Sidebar - Not Touching Edges */}
+            {/* Floating Rounded Royal Blue Sidebar - Completely isolated from edges */}
             <aside
               style={{
                 width: "var(--sidebar-width, 240px)",
@@ -66,10 +68,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 height: "calc(100vh - 32px)",
                 position: "sticky",
                 top: "16px",
-                margin: "16px 0 16px 16px",
                 borderRadius: "var(--radius-sidebar, 24px)",
                 overflow: "hidden",
-                boxShadow: "0 10px 30px rgba(52, 81, 209, 0.18)",
+                boxShadow: "0 12px 36px rgba(0, 0, 0, 0.22)",
+                border: "1px solid var(--border)",
                 zIndex: 20,
               }}
             >
@@ -82,18 +84,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 flex: 1,
                 display: "flex",
                 flexDirection: "column",
-                minHeight: "100vh",
+                minHeight: "calc(100vh - 32px)",
                 overflowY: "auto",
-                padding: "20px 32px 24px 24px",
+                padding: "8px 12px 16px 0",
                 minWidth: 0,
-                background: "var(--bg-app)",
+                background: "transparent",
                 boxSizing: "border-box",
               }}
             >
               {/* Neuro Top Header */}
               <Header operatorName="Operator" />
 
-              {/* Main Content Body */}
+              {/* Main Content Body - Full Width */}
               <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{children}</div>
             </main>
           </div>
