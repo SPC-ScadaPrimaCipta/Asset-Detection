@@ -34,8 +34,9 @@ interface SettingsResponse extends Settings {
 const cardStyle: React.CSSProperties = {
   background: 'var(--surface)',
   border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-md)',
-  padding: '20px',
+  borderRadius: 'var(--radius-card, 20px)',
+  boxShadow: 'var(--shadow-card)',
+  padding: '24px',
 };
 
 const labelStyle: React.CSSProperties = {
@@ -50,27 +51,31 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 12px',
-  borderRadius: 'var(--radius-sm)',
+  height: '42px',
+  padding: '0 12px',
+  borderRadius: 'var(--radius-input, 10px)',
   border: '1px solid var(--border)',
-  background: 'var(--background)',
+  background: 'var(--surface-2)',
   color: 'var(--foreground)',
   fontSize: '14px',
   fontFamily: 'inherit',
+  outline: 'none',
 };
 
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
+  cursor: 'pointer',
 };
 
 const buttonStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  borderRadius: 'var(--radius-sm)',
+  height: '38px',
+  padding: '0 16px',
+  borderRadius: 'var(--radius-button, 10px)',
   border: '1px solid var(--border)',
-  background: 'var(--surface)',
+  background: 'var(--surface-2)',
   color: 'var(--foreground)',
   fontSize: '13px',
-  fontWeight: '500',
+  fontWeight: '600',
   cursor: 'pointer',
   transition: 'all 150ms ease-out',
 };
@@ -78,7 +83,7 @@ const buttonStyle: React.CSSProperties = {
 const primaryButtonStyle: React.CSSProperties = {
   ...buttonStyle,
   background: 'var(--primary)',
-  color: 'var(--surface)',
+  color: '#FFFFFF',
   border: '1px solid var(--primary)',
 };
 

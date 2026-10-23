@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle } from '@phosphor-icons/react';
+import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle, FileText, FileCode } from '@phosphor-icons/react';
+import { Card, CardHeader, Button, Badge } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,105 +22,18 @@ interface Document {
   file_type?: string;
 }
 
-// ─── Style Constants ──────────────────────────────────────────────────────────
-
-const cardStyle: React.CSSProperties = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-md)',
-};
-
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: '11px',
-  fontWeight: '600',
-  color: 'var(--foreground-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-};
-
-const selectStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--border)',
-  background: 'var(--background)',
-  color: 'var(--foreground)',
-  fontSize: '14px',
-  fontFamily: 'inherit',
-  outline: 'none',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--primary)',
-  background: 'var(--primary)',
-  color: 'var(--surface)',
-  fontSize: '13px',
-  fontWeight: '500',
-  cursor: 'pointer',
-  transition: 'all 150ms ease-out',
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '12px 16px',
-  fontSize: '12px',
-  fontWeight: '600',
-  color: 'var(--foreground-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-};
-
-const tdBase: React.CSSProperties = { padding: '12px 16px' };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const badgeBase: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '2px 8px',
-  borderRadius: '999px',
-  fontSize: '12px',
-  fontWeight: '500',
-};
-
-function statusBadge(status: string) {
-  switch (status?.toUpperCase()) {
-    case 'UPLOADED':
-      return (
-        <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
-          Uploaded
-        </span>
-      );
-    case 'PROCESSING':
-      return (
-        <span style={{ ...badgeBase, background: 'var(--info-soft)', color: 'var(--info)' }}>
-          Processing
-        </span>
-      );
-    case 'DONE':
-      return (
-        <span style={{ ...badgeBase, background: 'var(--success-soft)', color: 'var(--success)' }}>
-          Done
-        </span>
-      );
-    default:
-      return (
-        <span style={{ ...badgeBase, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
-          {status ?? '—'}
-        </span>
-      );
+function StatusIndicator({ status }: { status: string }) {
+  const s = status?.toUpperCase() || 'UPLOADED';
+  if (s === 'DONE' || s === 'READY') {
+    return <Badge tone="success">Ready</Badge>;
   }
-}
-
-function Spinner() {
-  return (
-    <svg style={{ width: 20, height: 20, color: 'var(--foreground-muted)', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-    </svg>
-  );
+  if (s === 'PROCESSING') {
+    return <Badge tone="info">Processing</Badge>;
+  }
+  if (s === 'FAILED') {
+    return <Badge tone="danger">Failed</Badge>;
+  }
+  return <Badge tone="neutral">{s}</Badge>;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -181,7 +95,6 @@ export default function DocumentsPage() {
     formData.append('project_id', selectedProjectId);
 
     try {
-      // Fake progress while uploading (XHR would give real progress; fetch doesn't)
       const progressTimer = setInterval(() => {
         setUploadProgress(p => Math.min(p + 10, 90));
       }, 200);
@@ -195,7 +108,6 @@ export default function DocumentsPage() {
       }
 
       setUploadProgress(100);
-      // Reset form
       setSelectedFile(null);
       setSelectedProjectId('');
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -224,34 +136,44 @@ export default function DocumentsPage() {
   };
 
   const projectName = (id: string) => projects.find(p => p.id === id)?.name ?? id;
-
   const canUpload = !!selectedProjectId && !!selectedFile && !uploading;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ maxWidth: 1440, display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div>
         <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Documents</h1>
         <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>
-          Upload P&amp;ID documents and run asset detection.
+          Upload PDF drawings and DXF vector sheets to run multimodal asset detection.
         </p>
       </div>
 
       {/* Upload card */}
-      <div style={{ ...cardStyle, padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>Upload Document</h2>
+      <Card>
+        <CardHeader title="Upload P&ID Document" subtitle="Supported formats: Vector / Scanned PDF (multi-page) or AutoCAD DXF (up to 50MB)" />
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: 12 }}>
           {/* Project dropdown */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={fieldLabelStyle}>
-              Project <span style={{ color: 'var(--danger)' }}>*</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Target Project <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <select
               value={selectedProjectId}
               onChange={e => setSelectedProjectId(e.target.value)}
               disabled={uploading}
-              style={{ ...selectStyle, opacity: uploading ? 0.5 : 1 }}
+              style={{
+                height: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--radius-input, 10px)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-2)',
+                color: 'var(--foreground)',
+                fontSize: '14px',
+                outline: 'none',
+                cursor: 'pointer',
+                opacity: uploading ? 0.5 : 1,
+              }}
             >
               <option value="">Select a project…</option>
               {projects.map(p => (
@@ -261,23 +183,36 @@ export default function DocumentsPage() {
           </div>
 
           {/* File input */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={fieldLabelStyle}>
-              PDF / DXF File <span style={{ color: 'var(--danger)' }}>*</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Select File <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf,.dxf"
-              onChange={handleFileChange}
-              disabled={uploading}
-              style={{ width: '100%', fontSize: '14px', color: 'var(--foreground)', opacity: uploading ? 0.5 : 1 }}
-            />
+            <div
+              style={{
+                height: 44,
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 12px',
+                borderRadius: 'var(--radius-input, 10px)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-2)',
+                overflow: 'hidden',
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf,.dxf"
+                onChange={handleFileChange}
+                disabled={uploading}
+                style={{ width: '100%', fontSize: '13px', color: 'var(--foreground)', cursor: 'pointer' }}
+              />
+            </div>
             {selectedFile && (
-              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
-                {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                 {selectedFile.name.toLowerCase().endsWith('.dxf') && (
-                  <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '4px', background: 'var(--info-soft, #dbeafe)', color: 'var(--info, #1d4ed8)', fontSize: '10px', fontWeight: 600 }}>DXF</span>
+                  <Badge tone="info">DXF</Badge>
                 )}
               </p>
             )}
@@ -286,136 +221,218 @@ export default function DocumentsPage() {
 
         {/* Progress bar */}
         {uploading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'var(--border)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: 16 }}>
+            <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: 'var(--border)', overflow: 'hidden' }}>
               <div
-                style={{ height: '6px', borderRadius: '3px', background: 'var(--info)', width: `${uploadProgress}%`, transition: 'width 300ms ease-out' }}
+                style={{
+                  height: '6px',
+                  borderRadius: '999px',
+                  background: 'var(--primary)',
+                  width: `${uploadProgress}%`,
+                  transition: 'width 300ms ease-out',
+                }}
               />
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>Uploading… {uploadProgress}%</p>
+            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>Processing upload… {uploadProgress}%</p>
           </div>
         )}
 
-        {/* Error */}
+        {/* Error message */}
         {uploadError && (
-          <p style={{ fontSize: '12px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', margin: 0 }}>
+          <p style={{ fontSize: '13px', color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: '8px', padding: '10px 14px', margin: '14px 0 0' }}>
             {uploadError}
           </p>
         )}
 
-        {/* Upload button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
+        {/* Upload button action */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: 18 }}>
+          <Button
             onClick={handleUpload}
             disabled={!canUpload}
-            style={{ ...primaryButtonStyle, opacity: !canUpload ? 0.4 : 1, cursor: !canUpload ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', opacity: !canUpload ? 0.5 : 1 }}
           >
-            {uploading ? <><span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />Uploading…</> : <><UploadSimple size={15} weight="bold" />Upload Dokumen</>}
-          </button>
+            {uploading ? (
+              <>
+                <span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
+                <span>Uploading…</span>
+              </>
+            ) : (
+              <>
+                <UploadSimple size={16} weight="bold" />
+                <span>Upload Document</span>
+              </>
+            )}
+          </Button>
           {uploadProgress === 100 && !uploading && (
-            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={14} weight="fill" /> Upload successful</span>
+            <span style={{ fontSize: '13px', color: 'var(--success)', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <CheckCircle size={16} weight="fill" /> Upload successful
+            </span>
           )}
         </div>
-      </div>
+      </Card>
 
-      {/* Document table */}
-      <div style={{ ...cardStyle, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>All Documents</h2>
-          <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>{documents.length} document{documents.length !== 1 ? 's' : ''}</span>
+      {/* Document table card */}
+      <Card padding={0} style={{ overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <CardHeader title="All Uploaded Documents" subtitle={`${documents.length} document${documents.length !== 1 ? 's' : ''} in repository`} />
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)' }}>
-            <Spinner />
-            <span style={{ marginLeft: '8px', fontSize: '14px' }}>Loading…</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)', gap: 8 }}>
+            <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ fontSize: '14px' }}>Loading documents…</span>
           </div>
         ) : documents.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center' }}>
-            <svg style={{ width: 40, height: 40, color: 'var(--border-strong)', marginBottom: '12px' }} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-            </svg>
-            <p style={{ fontSize: '14px', color: 'var(--foreground-muted)', margin: 0 }}>No documents yet. Upload a PDF above.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
+            <FileText size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
+            <p style={{ fontSize: '14px', margin: 0 }}>No documents uploaded yet. Choose a project and upload a file above.</p>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
-              <thead style={{ background: 'var(--surface-muted)', borderBottom: '1px solid var(--border)' }}>
-                <tr>
-                  <th style={thStyle}>Filename</th>
-                  <th style={thStyle}>Pages</th>
-                  <th style={thStyle}>Project</th>
-                  <th style={thStyle}>Upload Date</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+          <div style={{ width: '100%', overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Filename</th>
+                  <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pages</th>
+                  <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Project</th>
+                  <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Upload Date</th>
+                  <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
+                  <th style={{ textAlign: 'right', padding: '14px 24px', fontSize: '12px', fontWeight: '600', color: 'var(--foreground-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {documents.slice((docPage - 1) * docPageSize, docPage * docPageSize).map(doc => (
-                  <tr key={doc.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 150ms ease-out' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0, 43, 78, 0.04)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                    <td style={tdBase}>
-                      <span style={{ fontWeight: '500', color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: 320 }} title={doc.filename}>
-                        {doc.filename}
-                      </span>
-                      {doc.file_type === 'dxf' && (
-                        <span style={{ padding: '1px 6px', borderRadius: '4px', background: 'var(--info-soft, #dbeafe)', color: 'var(--info, #1d4ed8)', fontSize: '10px', fontWeight: 600, marginTop: '2px', display: 'inline-block' }}>DXF</span>
-                      )}
-                    </td>
-                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
-                      {doc.page_count ?? '—'}
-                    </td>
-                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
-                      {projectName(doc.project_id)}
-                    </td>
-                    <td style={{ ...tdBase, color: 'var(--foreground-muted)' }}>
-                      {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '—'}
-                    </td>
-                    <td style={tdBase}>
-                      {statusBadge(doc.status ?? 'UPLOADED')}
-                    </td>
-                    <td style={tdBase}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                        <Link
-                          href={`/detection?project_id=${doc.project_id}`}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #2D7A3A', background: '#2D7A3A', textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all 150ms ease-out' }}
-                        >
-                          <Lightning size={13} weight="fill" /> Run Detection
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(doc)}
-                          disabled={deletingId === doc.id}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px', fontWeight: '500', color: '#fff', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid #A65A55', background: '#A65A55', cursor: 'pointer', opacity: deletingId === doc.id ? 0.4 : 1, transition: 'all 150ms ease-out' }}
-                        >
-                          <Trash size={13} weight="bold" />
-                          {deletingId === doc.id ? 'Deleting…' : 'Delete'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {documents.slice((docPage - 1) * docPageSize, docPage * docPageSize).map(doc => {
+                  const isDxf = doc.filename.toLowerCase().endsWith('.dxf');
+                  return (
+                    <tr
+                      key={doc.id}
+                      style={{
+                        borderBottom: '1px solid var(--border)',
+                        transition: 'background-color 150ms ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <td style={{ padding: '14px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ color: 'var(--primary)', flexShrink: 0 }}>
+                            {isDxf ? <FileCode size={18} /> : <FileText size={18} />}
+                          </span>
+                          <div>
+                            <span style={{ fontWeight: '600', color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: 320 }} title={doc.filename}>
+                              {doc.filename}
+                            </span>
+                            {isDxf && (
+                              <Badge tone="info" style={{ marginTop: 2 }}>DXF Vector</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 24px', color: 'var(--foreground-muted)' }}>
+                        {isDxf ? 'Drawing' : `${doc.page_count ?? '—'} page(s)`}
+                      </td>
+                      <td style={{ padding: '14px 24px', color: 'var(--foreground-muted)' }}>
+                        {projectName(doc.project_id)}
+                      </td>
+                      <td style={{ padding: '14px 24px', color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
+                        {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td style={{ padding: '14px 24px' }}>
+                        <StatusIndicator status={doc.status} />
+                      </td>
+                      <td style={{ padding: '14px 24px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <Link href={`/detection?project_id=${doc.project_id}`} style={{ textDecoration: 'none' }}>
+                            <Button style={{ height: 34, padding: '0 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Lightning size={14} weight="fill" /> Run Detection
+                            </Button>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(doc)}
+                            disabled={deletingId === doc.id}
+                            style={{
+                              height: 34,
+                              padding: '0 12px',
+                              borderRadius: 'var(--radius-button, 10px)',
+                              border: '1px solid var(--danger-soft, #FFE4E4)',
+                              background: 'var(--danger-soft, #FFE4E4)',
+                              color: 'var(--danger, #D13451)',
+                              cursor: deletingId === doc.id ? 'not-allowed' : 'pointer',
+                              opacity: deletingId === doc.id ? 0.5 : 1,
+                              fontWeight: 600,
+                              fontSize: '12px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              transition: 'all 150ms ease-out',
+                            }}
+                          >
+                            <Trash size={14} weight="bold" /> {deletingId === doc.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-        {/* Pagination — always visible */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
-          <button onClick={() => setDocPage(p => Math.max(1, p - 1))} disabled={docPage === 1} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage === 1 ? 'not-allowed' : 'pointer', opacity: docPage === 1 ? 0.4 : 1, color: 'var(--foreground-muted)' }}><CaretLeft size={12} weight="bold" /> Prev</button>
+
+        {/* Pagination */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 24px',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--surface-2)',
+          }}
+        >
+          <Button
+            variant="secondary"
+            onClick={() => setDocPage(p => Math.max(1, p - 1))}
+            disabled={docPage === 1}
+            style={{ height: 32, padding: '0 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <CaretLeft size={12} weight="bold" /> Prev
+          </Button>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Show</span>
             <select
               value={docPageSize}
               onChange={e => { setDocPageSize(Number(e.target.value)); setDocPage(1); }}
-              style={{ padding: '2px 6px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', cursor: 'pointer' }}
+              style={{
+                height: 28,
+                padding: '2px 8px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                color: 'var(--foreground)',
+                cursor: 'pointer',
+              }}
             >
               {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
             </select>
-            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>Page <strong>{docPage}</strong> of <strong>{Math.max(1, Math.ceil(documents.length / docPageSize))}</strong> · {documents.length} total</span>
+            <span style={{ fontSize: '12px', color: 'var(--foreground-muted)' }}>
+              Page <strong>{docPage}</strong> of <strong>{Math.max(1, Math.ceil(documents.length / docPageSize))}</strong> · {documents.length} total
+            </span>
           </div>
-          <button onClick={() => setDocPage(p => Math.min(Math.ceil(documents.length / docPageSize), p + 1))} disabled={docPage >= Math.ceil(documents.length / docPageSize)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', fontSize: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: docPage >= Math.ceil(documents.length / docPageSize) ? 'not-allowed' : 'pointer', opacity: docPage >= Math.ceil(documents.length / docPageSize) ? 0.4 : 1, color: 'var(--foreground-muted)' }}>Next <CaretRight size={12} weight="bold" /></button>
+
+          <Button
+            variant="secondary"
+            onClick={() => setDocPage(p => Math.min(Math.ceil(documents.length / docPageSize), p + 1))}
+            disabled={docPage >= Math.ceil(documents.length / docPageSize)}
+            style={{ height: 32, padding: '0 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            Next <CaretRight size={12} weight="bold" />
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

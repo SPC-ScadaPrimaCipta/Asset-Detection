@@ -7,5 +7,5 @@
 | TASK-03 | Standardize Reusable UI Components Library (`components/ui/*`) | COMPLETED |
 | TASK-04 | App Shell Layout, Rounded Sidebar & Top Header (`app/layout.tsx`, `app/sidebar-nav.tsx`, `components/Header.tsx`) | COMPLETED |
 | TASK-05 | Main Dashboard Redesign 12-Column Grid (`app/page.tsx`, `components/dashboard/*`) | COMPLETED |
-| TASK-06 | Visual Alignment of Secondary Pages (`/projects`, `/documents`, `/detection`, `/legends`, `/assets`, `/settings`, `/mdo`) | IN_PROGRESS |
-| TASK-07 | Build, End-to-End Verification & Quality Gate (`npm run build`, functional check) | PENDING |
+| TASK-06 | Visual Alignment of Secondary Pages (`/projects`, `/documents`, `/detection`, `/legends`, `/assets`, `/settings`, `/mdo`) | COMPLETED |
+| TASK-07 | Build, End-to-End Verification & Quality Gate (`npm run build`, functional check) | IN_PROGRESS |
