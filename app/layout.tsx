@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import SidebarNav from "./sidebar-nav";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
   description: "Automatic Industrial P&ID Asset Detection",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
@@ -22,6 +23,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       style={{ height: "100%" }}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('neuro-theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         style={{
           display: "flex",
@@ -34,54 +42,55 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
         }}
       >
-        <aside
-          style={{
-            width: "var(--sidebar-width)",
-            display: "flex",
-            flexDirection: "column",
-            flexShrink: 0,
-            borderRight: "1px solid var(--border)",
-            background:
-              "linear-gradient(180deg, #121D26 0%, #182832 58%, #14212A 100%)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Brand */}
-          <div
+        <ThemeProvider>
+          <aside
             style={{
-              padding: "14px 16px",
-              borderBottom: "1px solid var(--border)",
+              width: "var(--sidebar-width)",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              flexDirection: "column",
+              flexShrink: 0,
+              borderRight: "1px solid var(--border)",
+              background: "var(--sidebar-bg)",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            <img
-              src="/ptm.png"
-              alt="Asset Detection"
+            {/* Brand */}
+            <div
               style={{
-                width: "100%",
-                maxWidth: "160px",
-                height: "auto",
-                objectFit: "contain",
+                padding: "16px 20px",
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
-          </div>
+            >
+              <img
+                src="/ptm.png"
+                alt="Asset Detection"
+                style={{
+                  width: "100%",
+                  maxWidth: "160px",
+                  height: "auto",
+                  objectFit: "contain",
+                }}
+              />
+            </div>
 
-          {/* Navigation */}
-          <SidebarNav />
-        </aside>
+            {/* Navigation */}
+            <SidebarNav />
+          </aside>
 
-        <main
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            background: "var(--background)",
-          }}
-        >
-          <div style={{ padding: "32px" }}>{children}</div>
-        </main>
+          <main
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              background: "var(--background)",
+            }}
+          >
+            <div style={{ padding: "32px" }}>{children}</div>
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   );
