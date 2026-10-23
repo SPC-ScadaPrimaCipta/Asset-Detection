@@ -4,25 +4,34 @@ import React from 'react';
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
 
 const tones: Record<Tone, React.CSSProperties> = {
-  neutral: { background: 'var(--surface-muted)', color: 'var(--foreground-muted)' },
+  neutral: { background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' },
   success: { background: 'var(--success-soft)', color: 'var(--success)' },
   warning: { background: 'var(--warning-soft)', color: 'var(--warning)' },
-  danger: { background: 'var(--danger-soft)', color: 'var(--danger)' },
-  info: { background: 'var(--info-soft)', color: 'var(--info)' },
+  danger:  { background: 'var(--danger-soft)', color: 'var(--danger)' },
+  info:    { background: 'var(--info-soft)', color: 'var(--info)' },
   primary: { background: 'var(--primary-soft)', color: 'var(--primary)' },
 };
 
-export function Badge({ tone = 'neutral', children, style }: { tone?: Tone; children: React.ReactNode; style?: React.CSSProperties }) {
+export function Badge({
+  tone = 'neutral',
+  children,
+  style,
+}: {
+  tone?: Tone;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
   return (
     <span
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        padding: '2px 8px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 500,
-        lineHeight: 1.5,
+        gap: 4,
+        padding: '3px 8px',
+        borderRadius: 'var(--radius-chip, 6px)',
+        fontSize: 11,
+        fontWeight: 600,
+        lineHeight: 1.4,
         whiteSpace: 'nowrap',
         ...tones[tone],
         ...style,
@@ -34,10 +43,14 @@ export function Badge({ tone = 'neutral', children, style }: { tone?: Tone; chil
 }
 
 export function ConfidenceBadge({ confidence }: { confidence: number | null | undefined }) {
-  if (confidence == null) return <span style={{ fontSize: 12, color: 'var(--foreground-subtle)' }}>—</span>;
+  if (confidence == null) return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
   const pct = Math.round(confidence * 100);
   const tone: Tone = confidence >= 0.9 ? 'success' : confidence >= 0.7 ? 'warning' : 'danger';
-  return <Badge tone={tone}>{pct}%</Badge>;
+  return (
+    <Badge tone={tone}>
+      <span className="tabular-nums">{pct}%</span>
+    </Badge>
+  );
 }
 
 export function StatusBadge({ status, reviewStatus }: { status?: string; reviewStatus?: string }) {
