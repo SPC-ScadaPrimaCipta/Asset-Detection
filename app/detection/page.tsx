@@ -41,6 +41,12 @@ interface Document {
   page_count: number;
   status: string;
   file_type?: string;
+  project_id?: string | null;
+}
+
+interface Project {
+  id: string;
+  name: string;
 }
 
 interface Detection {
@@ -100,6 +106,8 @@ function DetectionContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [documentId, setDocumentId] = useState<string>('');
   const [selectedLegendId, setSelectedLegendId] = useState<string | null>(null);
@@ -231,7 +239,17 @@ function DetectionContent() {
     };
   }, []);
 
-  // 1. Load initial documents list
+  // 1a. Load projects list
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setProjects(data);
+      })
+      .catch((err) => console.error('[detection] load projects failed:', err));
+  }, []);
+
+  // 1b. Load initial documents list (Default: KOSONG / tidak auto-select)
   useEffect(() => {
     fetch('/api/documents')
       .then((r) => r.json())
@@ -239,14 +257,29 @@ function DetectionContent() {
         const docs = Array.isArray(data) ? data : data.documents || [];
         setDocuments(docs);
         const queryDocId = searchParams.get('document_id');
+        const queryProjectId = searchParams.get('project_id');
+
+        if (queryProjectId) {
+          setSelectedProjectId(queryProjectId);
+        }
+
         if (queryDocId && docs.some((d: Document) => d.id === queryDocId)) {
           setDocumentId(queryDocId);
-        } else if (docs.length > 0) {
-          setDocumentId(docs[0].id);
+          const found = docs.find((d: Document) => d.id === queryDocId);
+          if (found?.project_id) {
+            setSelectedProjectId(found.project_id);
+          }
         }
+        // Default tetap kosongan (documentId = '') sesuai instruksi pengguna
       })
       .catch((err) => console.error('[detection] load docs failed:', err));
   }, [searchParams]);
+
+  // Filter documents by selected project
+  const filteredDocuments = useMemo(() => {
+    if (!selectedProjectId) return documents;
+    return documents.filter((d) => d.project_id === selectedProjectId);
+  }, [documents, selectedProjectId]);
 
   // Sync active document
   const activeDoc = documents.find((d) => d.id === documentId) ?? null;
@@ -579,41 +612,94 @@ function DetectionContent() {
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-          <select
-            value={documentId}
-            onChange={(e) => setDocumentId(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border)',
-              background: 'var(--surface)',
-              color: 'var(--foreground)',
-              fontSize: 13,
-              fontWeight: 600,
-              maxWidth: 240,
-            }}
-          >
-            {documents.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.filename}
-              </option>
-            ))}
-          </select>
+          {/* 1. Project Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground-muted)' }}>Project:</span>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => {
+                const pId = e.target.value;
+                setSelectedProjectId(pId);
+                // Reset documentId jika dokumen aktif tidak berada di project yang dipilih
+                if (documentId) {
+                  const curDoc = documents.find((d) => d.id === documentId);
+                  if (pId && curDoc && curDoc.project_id !== pId) {
+                    setDocumentId('');
+                  }
+                }
+              }}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                color: 'var(--foreground)',
+                fontSize: 12,
+                fontWeight: 600,
+                maxWidth: 180,
+              }}
+            >
+              <option value="">Semua Project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  📁 {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <LegendSelector
-            value={selectedLegendId}
-            onChange={(val) => {
-              if (typeof val === 'string') setSelectedLegendId(val);
-              else if (Array.isArray(val)) setSelectedLegendId(val[0] ?? null);
-              else setSelectedLegendId(null);
-            }}
-            multiValues={selectedLegendIds}
-            onMultiChange={(ids) => {
-              setSelectedLegendIds(ids);
-              setSelectedLegendId(ids[0] ?? null);
-            }}
-            placeholder="Select Legend standard…"
-          />
+          {/* 2. Document P&ID Selector (Default: Kosong / -- Pilih Dokumen P&ID --) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground-muted)' }}>P&ID:</span>
+            <select
+              value={documentId}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setDocumentId(newId);
+                if (newId) {
+                  const doc = documents.find((d) => d.id === newId);
+                  if (doc?.project_id && (!selectedProjectId || selectedProjectId !== doc.project_id)) {
+                    setSelectedProjectId(doc.project_id);
+                  }
+                }
+              }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: `1px solid ${!documentId ? 'var(--primary)' : 'var(--border)'}`,
+                background: 'var(--surface)',
+                color: documentId ? 'var(--foreground)' : 'var(--foreground-muted)',
+                fontSize: 12,
+                fontWeight: 600,
+                maxWidth: 240,
+              }}
+            >
+              <option value="">-- Pilih Dokumen P&ID --</option>
+              {filteredDocuments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  📄 {d.filename}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground-muted)' }}>Legend:</span>
+            <LegendSelector
+              value={selectedLegendId}
+              onChange={(val) => {
+                if (typeof val === 'string') setSelectedLegendId(val);
+                else if (Array.isArray(val)) setSelectedLegendId(val[0] ?? null);
+                else setSelectedLegendId(null);
+              }}
+              multiValues={selectedLegendIds}
+              onMultiChange={(ids) => {
+                setSelectedLegendIds(ids);
+                setSelectedLegendId(ids[0] ?? null);
+              }}
+              placeholder="Pilih Legend standard…"
+            />
+          </div>
 
           <button
             onClick={handleRunDetection}
@@ -626,8 +712,8 @@ function DetectionContent() {
               color: '#fff',
               fontSize: 12,
               fontWeight: 600,
-              cursor: running ? 'not-allowed' : 'pointer',
-              opacity: running ? 0.8 : 1,
+              cursor: running || !documentId ? 'not-allowed' : 'pointer',
+              opacity: running || !documentId ? 0.6 : 1,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
@@ -661,24 +747,47 @@ function DetectionContent() {
             </span>
           </div>
 
-          <Link
-            href={`/mdo?document_id=${documentId}`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 14px',
-              borderRadius: 'var(--radius-sm)',
-              background: '#2563eb',
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 600,
-              textDecoration: 'none',
-              boxShadow: '0 2px 4px rgba(37,99,235,0.2)',
-            }}
-          >
-            Proceed to MDO <ArrowRight size={14} weight="bold" />
-          </Link>
+          {documentId ? (
+            <Link
+              href={`/mdo?document_id=${documentId}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: '#2563eb',
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 600,
+                textDecoration: 'none',
+                boxShadow: '0 2px 4px rgba(37,99,235,0.2)',
+              }}
+            >
+              Proceed to MDO <ArrowRight size={14} weight="bold" />
+            </Link>
+          ) : (
+            <button
+              disabled
+              title="Pilih dokumen P&ID terlebih dahulu"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--surface-muted)',
+                color: 'var(--foreground-muted)',
+                fontSize: 12,
+                fontWeight: 600,
+                border: '1px solid var(--border)',
+                cursor: 'not-allowed',
+                opacity: 0.6,
+              }}
+            >
+              Proceed to MDO <ArrowRight size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1293,7 +1402,64 @@ function DetectionContent() {
                 )}
               </div>
             ) : (
-              <div style={{ color: 'var(--foreground-muted)', fontSize: 13 }}>Pilih dokumen P&ID untuk ditampilkan</div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 32,
+                  textAlign: 'center',
+                  maxWidth: 520,
+                  margin: 'auto',
+                }}
+              >
+                <div
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: '50%',
+                    background: 'rgba(37, 99, 235, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                    border: '1px solid rgba(37, 99, 235, 0.25)',
+                  }}
+                >
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                </div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 8px 0', color: '#f8fafc' }}>
+                  Belum Ada Dokumen P&ID yang Dipilih
+                </h3>
+                <p style={{ fontSize: 12, color: 'var(--foreground-muted)', margin: '0 0 20px 0', lineHeight: 1.6 }}>
+                  Silakan pilih <strong>Project</strong> dan <strong>Dokumen P&ID</strong> pada bilah navigasi di atas, lalu tentukan standar <strong>Legend</strong> untuk menampilkan gambar dan mendeteksi aset.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', textAlign: 'left' }}>
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', marginBottom: 3 }}>1. Pilih Project</div>
+                    <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>Saring daftar file berdasarkan proyek aktif Anda.</div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', marginBottom: 3 }}>2. Pilih Dokumen P&ID</div>
+                    <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>Pilih file gambar berformat PDF atau CAD DXF.</div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', marginBottom: 3 }}>3. Pilih Legend</div>
+                    <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>Gunakan pustaka acuan simbol plant yang tepat.</div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', marginBottom: 3 }}>4. Jalankan Deteksi</div>
+                    <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>Klik tombol Run Detection atau seleksi aset manual.</div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1496,6 +1662,15 @@ function DetectionContent() {
               <p style={{ fontSize: 11, color: 'var(--foreground-muted)', textAlign: 'center', padding: 20 }}>
                 Loading detections…
               </p>
+            ) : !documentId ? (
+              <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--foreground-muted)' }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
+                  Belum Ada Dokumen Dipilih
+                </p>
+                <p style={{ margin: '6px 0 0 0', fontSize: 11, lineHeight: 1.5 }}>
+                  Daftar peralatan yang terdeteksi akan muncul di sini setelah dokumen dipilih.
+                </p>
+              </div>
             ) : filteredDetections.length === 0 ? (
               <p style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 24 }}>
                 No assets found on this page.
