@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const fromValue = body.from_value !== undefined ? body.from_value : existing.from_value;
     const toValue = body.to_value !== undefined ? body.to_value : existing.to_value;
     const ofValue = body.of_value !== undefined ? body.of_value : existing.of_value;
+    const atValue = body.at_value !== undefined ? body.at_value : existing.at_value;
     const locationPrefix = body.location_prefix !== undefined ? body.location_prefix : existing.location_prefix;
 
     // Recalculate description using rule engine, unless manually overridden
@@ -54,6 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ofValue,
           fromValue,
           toValue,
+          atValue,
         });
 
     const res = await db.query(
@@ -65,10 +67,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
            from_value=$5,
            to_value=$6,
            of_value=$7,
-           description=$8,
-           location_prefix=$9,
+           at_value=$8,
+           description=$9,
+           location_prefix=$10,
            updated_at=NOW()
-       WHERE id=$10
+       WHERE id=$11
        RETURNING *`,
       [
         tagNoProposed,
@@ -78,6 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         fromValue,
         toValue,
         ofValue,
+        atValue,
         description,
         locationPrefix,
         id,

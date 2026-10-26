@@ -40,6 +40,7 @@ interface MdoRecord {
   from_value: string | null;
   to_value: string | null;
   of_value: string | null;
+  at_value: string | null;
   description: string | null;
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED';
   approved_at: string | null;
@@ -114,6 +115,7 @@ function MdoContent() {
     from_value: '',
     to_value: '',
     of_value: '',
+    at_value: '',
     description: '',
     manualDescriptionOverride: false,
   });
@@ -137,11 +139,13 @@ function MdoContent() {
   }, [searchParams]);
 
   // 2. Load MDO Records for active document
-  const loadMdoRecords = useCallback(async () => {
+  const loadMdoRecords = useCallback(async (silent = false) => {
     if (!documentId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/documents/${documentId}/mdo`);
+      const res = await fetch(`/api/documents/${documentId}/mdo?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       const body = await res.json();
       const list: MdoRecord[] = Array.isArray(body?.records) ? body.records : [];
       setRecords(list);
@@ -154,15 +158,32 @@ function MdoContent() {
     } catch (err) {
       console.error('[mdo] load records failed:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [documentId]);
 
+  // Auto-sync when page loads, window gains focus, or periodic interval
   useEffect(() => {
-    if (documentId) {
-      loadMdoRecords();
-    }
-  }, [documentId, loadMdoRecords]);
+    if (!documentId) return;
+    loadMdoRecords();
+
+    const handleFocus = () => {
+      loadMdoRecords(true);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Subtle background sync every 8 seconds if user is not actively editing
+    const interval = setInterval(() => {
+      if (!editingRecord && !enriching) {
+        loadMdoRecords(true);
+      }
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [documentId, loadMdoRecords, editingRecord, enriching]);
 
   // 3. Trigger Vision AI Process Flow Enrichment & Build MDO
   const handleBuildMdo = async () => {
@@ -184,6 +205,7 @@ function MdoContent() {
       alert('Gagal membuat MDO: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setEnriching(false);
+      await loadMdoRecords(true);
     }
   };
 
@@ -235,7 +257,7 @@ function MdoContent() {
     }
   };
 
-  // 6. Export MDO Excel (8 Columns Accenture Rule)
+  // 6. Export MDO Excel (9 Columns Accenture Rule)
   const handleExport = () => {
     if (!documentId) return;
     window.location.href = `/api/documents/${documentId}/mdo/export`;
@@ -253,6 +275,7 @@ function MdoContent() {
       from_value: rec.from_value || '',
       to_value: rec.to_value || '',
       of_value: rec.of_value || '',
+      at_value: rec.at_value || '',
       description: rec.description || '',
       manualDescriptionOverride: false,
     });
@@ -270,6 +293,7 @@ function MdoContent() {
       ofValue: editForm.of_value,
       fromValue: editForm.from_value,
       toValue: editForm.to_value,
+      atValue: editForm.at_value,
     });
   }, [
     editForm.manualDescriptionOverride,
@@ -280,6 +304,7 @@ function MdoContent() {
     editForm.of_value,
     editForm.from_value,
     editForm.to_value,
+    editForm.at_value,
   ]);
 
   // Save Edit
@@ -300,6 +325,7 @@ function MdoContent() {
         from_value: editForm.from_value.trim() || null,
         to_value: editForm.to_value.trim() || null,
         of_value: editForm.of_value.trim() || null,
+        at_value: editForm.at_value.trim() || null,
         description: finalDescription,
       };
 
@@ -363,6 +389,7 @@ function MdoContent() {
           (r.from_value || '').toLowerCase().includes(q) ||
           (r.to_value || '').toLowerCase().includes(q) ||
           (r.of_value || '').toLowerCase().includes(q) ||
+          (r.at_value || '').toLowerCase().includes(q) ||
           (r.description || '').toLowerCase().includes(q);
         if (!matches) return false;
       }
@@ -402,6 +429,28 @@ function MdoContent() {
           >
             <ArrowLeft size={13} /> Back to Detection
           </Link>
+
+          {/* Quick Refresh Button */}
+          <button
+            onClick={() => loadMdoRecords()}
+            disabled={loading}
+            title="Refresh Data MDO"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--foreground)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <ArrowClockwise size={13} /> Refresh
+          </button>
 
           {/* Document Selector */}
           <select
@@ -656,6 +705,7 @@ function MdoContent() {
                 <th style={{ padding: '8px 10px', width: 120 }}>From</th>
                 <th style={{ padding: '8px 10px', width: 140 }}>To</th>
                 <th style={{ padding: '8px 10px', width: 130 }}>Of</th>
+                <th style={{ padding: '8px 10px', width: 110 }}>At</th>
                 <th style={{ padding: '8px 10px' }}>Description (Accenture Rule)</th>
                 <th style={{ padding: '8px 10px', width: 90, textAlign: 'center' }}>Status</th>
                 <th style={{ padding: '8px 10px', width: 100, textAlign: 'center' }}>Actions</th>
@@ -664,19 +714,19 @@ function MdoContent() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: 40, textAlign: 'center', color: 'var(--foreground-muted)' }}>
+                  <td colSpan={12} style={{ padding: 40, textAlign: 'center', color: 'var(--foreground-muted)' }}>
                     Loading Master Data Object records…
                   </td>
                 </tr>
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: 48, textAlign: 'center' }}>
+                  <td colSpan={12} style={{ padding: 48, textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                       <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--foreground)' }}>
                         Belum ada data MDO untuk dokumen ini.
                       </p>
                       <p style={{ margin: 0, fontSize: 12, color: 'var(--foreground-muted)', maxWidth: 520, lineHeight: 1.5 }}>
-                        Hanya aset yang telah <strong>disetujui / di-approve</strong> (atau ditambahkan manual) di halaman Detection yang akan diproses ke MDO. Aset yang di-reject atau berstatus pending tidak dimasukkan. Klik tombol <strong>Analyze Process Flow & Build MDO</strong> di atas untuk merakit deskripsi 8 kolom.
+                        Hanya aset yang telah <strong>disetujui / di-approve</strong> (atau ditambahkan manual) di halaman Detection yang akan diproses ke MDO. Aset yang di-reject atau berstatus pending tidak dimasukkan. Klik tombol <strong>Analyze Process Flow & Build MDO</strong> di atas untuk merakit deskripsi 9 kolom.
                       </p>
                       <button
                         onClick={handleBuildMdo}
@@ -700,7 +750,7 @@ function MdoContent() {
                 </tr>
               ) : filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: 32, textAlign: 'center', color: 'var(--foreground-muted)' }}>
+                  <td colSpan={12} style={{ padding: 32, textAlign: 'center', color: 'var(--foreground-muted)' }}>
                     Tidak ada aset yang cocok dengan filter / pencarian.
                   </td>
                 </tr>
@@ -772,7 +822,12 @@ function MdoContent() {
                         {r.of_value || '-'}
                       </td>
 
-                      {/* 8. Description */}
+                      {/* 8. At */}
+                      <td style={{ padding: '7px 10px', color: 'var(--foreground-muted)', fontSize: 11 }}>
+                        {r.at_value || '-'}
+                      </td>
+
+                      {/* 9. Description */}
                       <td style={{ padding: '7px 10px' }}>
                         <span
                           style={{
@@ -989,11 +1044,23 @@ function MdoContent() {
                 </label>
               </div>
 
-              {/* 8. Description & Formula Preview */}
+              {/* 8. At (Location / Installation Point) */}
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)' }}>At (Location / Point)</span>
+                <input
+                  type="text"
+                  value={editForm.at_value}
+                  onChange={(e) => setEditForm((p) => ({ ...p, at_value: e.target.value }))}
+                  placeholder="e.g. WELLHEAD, TOP TOWER, DISCHARGE NOZZLE"
+                  style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 12 }}
+                />
+              </label>
+
+              {/* 9. Description & Formula Preview */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground)' }}>
-                    8. Formulated Description:
+                    9. Formulated Description:
                   </span>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer', color: 'var(--foreground-muted)' }}>
                     <input
@@ -1044,7 +1111,7 @@ function MdoContent() {
                   </div>
                 )}
                 <span style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>
-                  Rule: [Prefix-] + Eqp + Size + [OF] + [FROM] + [TO]
+                  Rule: [Prefix-] + Eqp + Size + [OF] + [FROM] + [TO] + [AT]
                 </span>
               </div>
 

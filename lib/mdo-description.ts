@@ -2,7 +2,7 @@
  * MDO Description Assembly Engine
  *
  * Implements the Alternative Description Rule by PT Accenture Indonesia:
- * OUTPUT = [Prefix-] + Equipment Type + [Size] + [OF ...] + [FROM ...] + [TO ...]
+ * OUTPUT = [Prefix-] + Equipment Type + [Size] + [OF ...] + [FROM ...] + [TO ...] + [AT ...]
  *
  * Key principle: Clean Omission (bagian yang kosong tidak dipaksakan masuk).
  */
@@ -14,6 +14,7 @@ export interface AssembleDescriptionParams {
   ofValue?: string | null;         // e.g. "HEADER LINE"
   fromValue?: string | null;       // e.g. "SDV-1012"
   toValue?: string | null;         // e.g. "PRESSURE TRANSMITTER A"
+  atValue?: string | null;         // e.g. "WELLHEAD" or "DISCHARGE NOZZLE"
 }
 
 /**
@@ -94,6 +95,12 @@ export function assembleMdoDescription(params: AssembleDescriptionParams): strin
   const toClean = cleanMdoFieldValue(params.toValue);
   if (toClean) {
     parts.push(`TO ${toClean.toUpperCase()}`);
+  }
+
+  // 6. AT (Location / Specific Installation Point)
+  const atClean = cleanMdoFieldValue(params.atValue);
+  if (atClean) {
+    parts.push(`AT ${atClean.toUpperCase()}`);
   }
 
   return parts.join(' ').replace(/\s+/g, ' ').trim();

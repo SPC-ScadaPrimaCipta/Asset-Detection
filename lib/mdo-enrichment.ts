@@ -54,11 +54,56 @@ function upper(value: string | null | undefined): string {
   return value?.trim().toUpperCase() ?? '';
 }
 
+const KNOWN_EQUIPMENT_NAMES: Record<string, string> = {
+  PT: 'Pressure Transmitter',
+  TT: 'Temperature Transmitter',
+  FT: 'Flow Transmitter',
+  LT: 'Level Transmitter',
+  PI: 'Pressure Indicator',
+  TI: 'Temperature Indicator',
+  FI: 'Flow Indicator',
+  LI: 'Level Indicator',
+  PG: 'Pressure Gauge',
+  TG: 'Temperature Gauge',
+  LG: 'Level Gauge',
+  PSV: 'Pressure Safety Valve',
+  PRV: 'Pressure Relief Valve',
+  SDV: 'Shutdown Valve',
+  BDV: 'Blowdown Valve',
+  XV: 'Actuated Valve',
+  BV: 'Ball Valve',
+  GV: 'Gate Valve',
+  GLV: 'Globe Valve',
+  CKV: 'Check Valve',
+  CV: 'Control Valve',
+  FV: 'Flow Control Valve',
+  PV: 'Pressure Control Valve',
+  LV: 'Level Control Valve',
+  TV: 'Temperature Control Valve',
+  P: 'Pump',
+  PUMP: 'Centrifugal Pump',
+  V: 'Vessel',
+  VSL: 'Pressure Vessel',
+  TK: 'Storage Tank',
+  TANK: 'Storage Tank',
+  E: 'Heat Exchanger',
+  HX: 'Heat Exchanger',
+  C: 'Compressor',
+  K: 'Compressor',
+  FL: 'Filter / Strainer',
+  STR: 'Strainer',
+  PIPE: 'Piping Segment',
+};
+
 /**
  * Derives Short for Equipment Type (e.g. PT, BV, CKV, PIPE)
  * and Equipment Name (e.g. Pressure Transmitter, Ball Valve).
  */
-export function deriveEquipmentNaming(assetType: string, assetTag?: string | null): {
+export function deriveEquipmentNaming(
+  assetType: string,
+  assetTag?: string | null,
+  customDescription?: string | null,
+): {
   shortType: string;
   equipmentName: string;
 } {
@@ -77,9 +122,21 @@ export function deriveEquipmentNaming(assetType: string, assetTag?: string | nul
     }
   }
 
+  const upperShort = shortCode.toUpperCase();
+  let equipmentName = KNOWN_EQUIPMENT_NAMES[upperShort] || KNOWN_EQUIPMENT_NAMES[normType.toUpperCase()] || normType;
+
+  // If custom description exists and is longer/more informative, prefer it if appropriate
+  if (customDescription && customDescription.trim().length > 2 && customDescription.trim() !== assetType) {
+    // Only override if not generic noise
+    const cleanDesc = customDescription.trim();
+    if (!cleanDesc.match(/^[0-9\-_.]+$/)) {
+      equipmentName = cleanDesc;
+    }
+  }
+
   return {
-    shortType: shortCode.toUpperCase(),
-    equipmentName: normType,
+    shortType: upperShort,
+    equipmentName,
   };
 }
 
@@ -103,7 +160,11 @@ export function buildMdoRecord(
     relations.evidence.push(`Flow arrow geometry: ${detection.arrowDirection}`);
   }
 
-  const { shortType, equipmentName } = deriveEquipmentNaming(detection.assetType, detection.assetTag);
+  const { shortType, equipmentName } = deriveEquipmentNaming(
+    detection.assetType,
+    detection.assetTag,
+    detection.description,
+  );
   const size = detection.size?.trim() || null;
   const locationPrefix = detection.locationPrefix ?? null;
 
@@ -114,6 +175,7 @@ export function buildMdoRecord(
     ofValue: relations.of,
     fromValue: relations.from,
     toValue: relations.to,
+    atValue: relations.at,
   });
 
   return {
@@ -148,10 +210,23 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
   // 2. Fusion: AI relation takes precedence when available, spatial fills gaps
   const from = aiRelation?.from ?? spatialRelations.from ?? null;
   const to = aiRelation?.to ?? spatialRelations.to ?? null;
-  const of = aiRelation?.of ?? spatialRelations.of ?? null;
+  let of = aiRelation?.of ?? spatialRelations.of ?? null;
+  const at = aiRelation?.at ?? spatialRelations.at ?? null;
   const size = detection.size?.trim() || aiRelation?.size?.trim() || null;
 
-  const { shortType, equipmentName } = deriveEquipmentNaming(detection.assetType, detection.assetTag);
+  // Fallback: If 'of' is still null but detection description mentions a service or line (e.g. "HEADER LINE")
+  if (!of && detection.description && detection.description.trim().length > 0) {
+    const desc = detection.description.trim();
+    if (desc.toUpperCase().includes('LINE') || desc.toUpperCase().includes('HEADER') || desc.toUpperCase().includes('SYSTEM')) {
+      of = desc;
+    }
+  }
+
+  const { shortType, equipmentName } = deriveEquipmentNaming(
+    detection.assetType,
+    detection.assetTag,
+    detection.description,
+  );
 
   const description = assembleMdoDescription({
     locationPrefix,
@@ -160,6 +235,7 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     ofValue: of,
     fromValue: from,
     toValue: to,
+    atValue: at,
   });
 
   return {
@@ -174,6 +250,6 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     locationPrefix,
     equipmentType: upper(detection.assetType),
     componentName: detection.description?.trim() || null,
-    at: spatialRelations.at ?? null,
+    at,
   };
 }

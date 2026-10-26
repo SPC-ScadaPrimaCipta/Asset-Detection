@@ -14,6 +14,7 @@ export interface MdoFlowRelation {
   from: string | null;
   to: string | null;
   of: string | null;
+  at: string | null;
   size: string | null;
   direction: 'INLET' | 'OUTLET' | 'UNKNOWN';
   confidence?: number;
@@ -41,9 +42,12 @@ function normalizeDirection(dir: string | null | undefined): 'INLET' | 'OUTLET' 
   return 'UNKNOWN';
 }
 
+const BATCH_SIZE = 15;
+
 /**
  * Analyzes the process flow for detected assets on a single P&ID page.
  * Returns a Map keyed by assetTag (uppercase) -> MdoFlowRelation.
+ * Processes assets in batches of 15 to prevent token truncation.
  */
 export async function analyzePdfProcessFlowWithAi(
   params: AnalyzePdfProcessFlowParams,
@@ -60,71 +64,87 @@ export async function analyzePdfProcessFlowWithAi(
   try {
     const provider = customProvider || (await getVisionProvider());
 
-    const assetsSummary = validAssets
-      .map((a, i) => {
-        const box = a.bboxNorm
-          ? `[x:${a.bboxNorm.x}, y:${a.bboxNorm.y}, w:${a.bboxNorm.width}, h:${a.bboxNorm.height}]`
-          : 'unknown location';
-        return `${i + 1}. Tag: "${a.assetTag}" | Type: ${a.assetType}${a.description ? ` (${a.description})` : ''} | Position: ${box}`;
-      })
-      .join('\n');
+    // Chunk into batches of BATCH_SIZE
+    const batches: Array<typeof validAssets> = [];
+    for (let i = 0; i < validAssets.length; i += BATCH_SIZE) {
+      batches.push(validAssets.slice(i, i + BATCH_SIZE));
+    }
 
-    const prompt = `You are an expert industrial Piping and Instrumentation Diagram (P&ID) process engineer.
-Analyze the provided high-resolution P&ID page image and trace the physical piping lines, process connections, and flow arrows for the following equipment/assets:
+    for (let bIdx = 0; bIdx < batches.length; bIdx++) {
+      const batch = batches[bIdx];
+      const assetsSummary = batch
+        .map((a, i) => {
+          const box = a.bboxNorm
+            ? `[x:${a.bboxNorm.x}, y:${a.bboxNorm.y}, w:${a.bboxNorm.width}, h:${a.bboxNorm.height}]`
+            : 'unknown location';
+          return `${i + 1}. Tag: "${a.assetTag}" | Type: ${a.assetType}${a.description ? ` (${a.description})` : ''} | Position: ${box}`;
+        })
+        .join('\n');
 
-TARGET ASSETS ON THIS PAGE:
+      const prompt = `You are an expert industrial Piping and Instrumentation Diagram (P&ID) process engineer.
+Analyze the provided high-resolution P&ID page image and trace physical piping lines, process connections, and flow arrows for the following equipment/assets according to PT Accenture Indonesia Description Rules:
+
+TARGET ASSETS ON THIS PAGE (Batch ${bIdx + 1} of ${batches.length}):
 ${assetsSummary}
 
 INSTRUCTIONS:
 1. For each target asset, visually trace the connecting process piping lines and arrowheads on the drawing:
-   - "from": Identify the upstream source equipment tag, supply line, or off-page connector (e.g., "TK-101", "SDV-1012", "HEADER-A", "FROM GRS").
-   - "to": Identify the downstream destination equipment tag, discharge line, or off-page connector (e.g., "E-101", "PRESSURE TRANSMITTER A", "VENT", "SUMP TANK").
-   - "of": Identify the parent header line, subsystem, or unit group it belongs to if labeled (e.g., "HEADER LINE", "METERING B", "SLUG CATCHER", or null).
-   - "size": Identify the nominal pipe/valve size if labeled nearby (e.g., "1/2\"", "2\"", "4\"", or null).
+   - "from": Identify the upstream source equipment tag, supply line, or origin (e.g. "TK-101", "SDV-1012", "GRS", "HEADER-A", or null).
+   - "to": Identify the downstream destination equipment tag, discharge line, or receiver (e.g. "PRESSURE TRANSMITTER A", "VENT", "SUMP TANK", "E-101", or null).
+   - "of": Identify the parent header line, pipeline name, or system context (e.g. "HEADER LINE", "METERING B", "SLUG CATCHER", or null).
+   - "at": Identify specific location or connection point if labeled (e.g. "WELLHEAD", "DISCHARGE NOZZLE", "TOP TOWER", or null).
+   - "size": Identify the nominal pipe or valve size if labeled nearby (e.g. "1/2\"", "2\"", "4\"", or null).
    - "direction": Determine the primary flow direction ("INLET", "OUTLET", or "UNKNOWN").
-2. Do NOT invent equipment tags that are not visible. If an inlet or outlet line leads off-page or has no label, indicate the line label or off-page text.
-3. Return ONLY a single valid JSON object matching the following structure:
+2. Clean Omission: If any relation cannot be clearly determined from the drawing, return null. Do NOT invent fake tags.
+3. Return ONLY a single valid JSON object matching this structure:
 {
   "relations": [
     {
       "assetTag": "EXACT_ASSET_TAG",
-      "from": "SOURCE_TAG_OR_NULL",
-      "to": "DEST_TAG_OR_NULL",
+      "from": "SOURCE_OR_NULL",
+      "to": "DEST_OR_NULL",
       "of": "PARENT_LINE_OR_NULL",
+      "at": "LOCATION_OR_NULL",
       "size": "SIZE_OR_NULL",
       "direction": "INLET" | "OUTLET" | "UNKNOWN"
     }
   ]
 }`;
 
-    const completion = await provider.generateVisionCompletion({
-      prompt,
-      imageBase64: pageImageBase64,
-      mimeType: 'image/png',
-      responseFormat: 'json',
-      temperature: 0.1,
-      maxTokens: 4096,
-    });
+      try {
+        const completion = await provider.generateVisionCompletion({
+          prompt,
+          imageBase64: pageImageBase64,
+          mimeType: 'image/png',
+          responseFormat: 'json',
+          temperature: 0.1,
+          maxTokens: 4096,
+        });
 
-    const parsed = JSON.parse(completion.text.trim());
-    const rawList = Array.isArray(parsed?.relations)
-      ? parsed.relations
-      : Array.isArray(parsed)
-      ? parsed
-      : [];
+        const parsed = JSON.parse(completion.text.trim());
+        const rawList = Array.isArray(parsed?.relations)
+          ? parsed.relations
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
 
-    for (const item of rawList) {
-      if (!item || !item.assetTag) continue;
-      const tagKey = String(item.assetTag).trim().toUpperCase();
-      results.set(tagKey, {
-        assetTag: item.assetTag,
-        from: cleanMdoFieldValue(item.from),
-        to: cleanMdoFieldValue(item.to),
-        of: cleanMdoFieldValue(item.of),
-        size: cleanMdoFieldValue(item.size),
-        direction: normalizeDirection(item.direction),
-        confidence: typeof item.confidence === 'number' ? item.confidence : 0.85,
-      });
+        for (const item of rawList) {
+          if (!item || !item.assetTag) continue;
+          const tagKey = String(item.assetTag).trim().toUpperCase();
+          results.set(tagKey, {
+            assetTag: item.assetTag,
+            from: cleanMdoFieldValue(item.from),
+            to: cleanMdoFieldValue(item.to),
+            of: cleanMdoFieldValue(item.of),
+            at: cleanMdoFieldValue(item.at),
+            size: cleanMdoFieldValue(item.size),
+            direction: normalizeDirection(item.direction),
+            confidence: typeof item.confidence === 'number' ? item.confidence : 0.85,
+          });
+        }
+      } catch (batchErr) {
+        console.warn(`[mdo-ai-analyzer] Batch ${bIdx + 1} analysis failed:`, batchErr instanceof Error ? batchErr.message : batchErr);
+      }
     }
 
     return results;
