@@ -103,6 +103,11 @@ export async function POST(request: NextRequest) {
       ids
     );
 
+    await db.query(
+      `DELETE FROM detection_mdo_records WHERE detection_id IN (${placeholders})`,
+      ids
+    );
+
     for (const d of detections.rows) {
       await db.query(
         "INSERT INTO detection_audits (detection_id, action, old_values, new_values) VALUES ($1,'REJECT',$2,$3)",

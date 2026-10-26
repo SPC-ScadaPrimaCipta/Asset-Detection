@@ -18,6 +18,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       [id]
     );
     await db.query("DELETE FROM assets WHERE detection_id=$1", [id]);
+    await db.query("DELETE FROM detection_mdo_records WHERE detection_id=$1", [id]);
     await db.query(
       "INSERT INTO detection_audits (detection_id, action, old_values, new_values) VALUES ($1,'REJECT',$2,$3)",
       [

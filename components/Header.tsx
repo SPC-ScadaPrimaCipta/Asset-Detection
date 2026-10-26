@@ -22,7 +22,7 @@ export default function Header({
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      router.push(`/assets?q=${encodeURIComponent(searchQuery.trim())}`);
+      router.push(`/detection?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 

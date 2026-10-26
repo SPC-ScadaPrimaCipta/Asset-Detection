@@ -125,9 +125,9 @@ export default function VerificationStatusCard({
 
       {/* Full-Width Action Button */}
       <div style={{ marginTop: 'auto', marginBottom: 16 }}>
-        <Link href="/assets" style={{ textDecoration: 'none', display: 'block' }}>
+        <Link href="/detection" style={{ textDecoration: 'none', display: 'block' }}>
           <Button fullWidth style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <span>Review All Assets</span>
+            <span>Review In Detection</span>
             <ArrowUpRight size={16} />
           </Button>
         </Link>

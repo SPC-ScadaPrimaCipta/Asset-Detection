@@ -56,10 +56,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       bbox_h: number | null;
     }>(
       `SELECT id, asset_tag, asset_type, description, size, pid_page, bbox_x, bbox_y, bbox_w, bbox_h
-       FROM detections WHERE document_id=$1 AND detection_status != 'REJECTED'
+       FROM detections
+       WHERE document_id=$1
+         AND (review_status = 'APPROVED' OR detection_status IN ('CONFIRMED', 'MANUAL'))
+         AND detection_status != 'REJECTED'
+         AND review_status != 'REJECTED'
          AND (candidate_status IS NULL OR candidate_status != 'NOISE')`,
       [documentId],
     )).rows;
+
+    // Remove any stale MDO records whose detections are no longer approved or have been rejected
+    await db.query(
+      `DELETE FROM detection_mdo_records
+       WHERE document_id = $1
+         AND detection_id NOT IN (
+           SELECT id FROM detections
+           WHERE document_id = $1
+             AND (review_status = 'APPROVED' OR detection_status IN ('CONFIRMED', 'MANUAL'))
+             AND detection_status != 'REJECTED'
+             AND review_status != 'REJECTED'
+         )`,
+      [documentId]
+    );
 
     let count = 0;
     const buf = (await getFile(doc.file_path)) as Buffer;
@@ -205,6 +223,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
      FROM detection_mdo_records m
      JOIN detections d ON d.id = m.detection_id
      WHERE m.document_id=$1
+       AND (d.review_status = 'APPROVED' OR d.detection_status IN ('CONFIRMED', 'MANUAL'))
+       AND d.detection_status != 'REJECTED'
+       AND d.review_status != 'REJECTED'
      ORDER BY m.created_at, m.id`,
     [id],
   );

@@ -22,6 +22,7 @@ import {
   ArrowClockwise,
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
+import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
 
 const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
   ssr: false,
@@ -138,7 +139,15 @@ function DetectionContent() {
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
 
   const viewerRef = useRef<HTMLDivElement>(null);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Manual Asset Drawing State
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [drawingStart, setDrawingStart] = useState<{ x: number; y: number } | null>(null);
+  const [currentDrawRect, setCurrentDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [pendingBbox, setPendingBbox] = useState<BoundingBoxCoords>({ x: 500, y: 500, width: 50, height: 50 });
 
   // Container viewport size observer for high-DPI scaling
   const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 900, h: 650 });
@@ -187,6 +196,9 @@ function DetectionContent() {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setImgNatural(null);
+    setIsDrawingMode(false);
+    setDrawingStart(null);
+    setCurrentDrawRect(null);
   }, [page, documentId]);
 
   // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
@@ -982,25 +994,136 @@ function DetectionContent() {
               >
                 <SquaresFour size={12} /> {showAllBboxes ? 'All BBoxes' : 'Selected BBox'}
               </button>
+
+              <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDrawingMode((v) => !v);
+                  setDrawingStart(null);
+                  setCurrentDrawRect(null);
+                }}
+                disabled={!documentId || isDxf}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: 11,
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1px solid ${isDrawingMode ? '#22c55e' : 'var(--border)'}`,
+                  background: isDrawingMode ? 'rgba(34, 197, 94, 0.18)' : 'var(--surface)',
+                  color: isDrawingMode ? '#22c55e' : 'var(--foreground)',
+                  cursor: !documentId || isDxf ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  opacity: !documentId || isDxf ? 0.5 : 1,
+                  boxShadow: isDrawingMode ? '0 0 10px rgba(34,197,94,0.3)' : 'none',
+                }}
+                title={isDxf ? 'Manual add is available for PDF drawings' : 'Draw bounding box on PDF preview to add asset'}
+              >
+                <Plus size={12} weight="bold" />
+                {isDrawingMode ? 'Drawing Mode Active' : 'Add Asset Manual'}
+              </button>
             </div>
           </div>
+
+          {/* Drawing Mode Helper Banner */}
+          {isDrawingMode && (
+            <div
+              style={{
+                padding: '6px 12px',
+                background: 'rgba(34, 197, 94, 0.12)',
+                borderBottom: '1px solid rgba(34, 197, 94, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: 11,
+                color: '#22c55e',
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              <span>Mode Seleksi Aktif: Klik dan drag mouse pada gambar P&ID untuk menandai area simbol asset baru.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDrawingMode(false);
+                  setDrawingStart(null);
+                  setCurrentDrawRect(null);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#22c55e',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                Batalkan
+              </button>
+            </div>
+          )}
 
           {/* Canvas Viewport */}
           <div
             ref={viewerRef}
             onMouseDown={(e) => {
-              if (e.button === 0 || e.button === 1) {
+              if (isDrawingMode) {
+                if (!imageContainerRef.current) return;
+                const rect = imageContainerRef.current.getBoundingClientRect();
+                const normX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
+                const normY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
+                setDrawingStart({ x: normX, y: normY });
+                setCurrentDrawRect({ x: normX, y: normY, w: 0, h: 0 });
+              } else if (e.button === 0 || e.button === 1) {
                 setDragging(true);
                 setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
               }
             }}
             onMouseMove={(e) => {
-              if (dragging) {
+              if (isDrawingMode && drawingStart) {
+                if (!imageContainerRef.current) return;
+                const rect = imageContainerRef.current.getBoundingClientRect();
+                const currentX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
+                const currentY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
+                const rx = Math.min(drawingStart.x, currentX);
+                const ry = Math.min(drawingStart.y, currentY);
+                const rw = Math.abs(currentX - drawingStart.x);
+                const rh = Math.abs(currentY - drawingStart.y);
+                setCurrentDrawRect({ x: rx, y: ry, w: rw, h: rh });
+              } else if (dragging) {
                 setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
               }
             }}
-            onMouseUp={() => setDragging(false)}
-            onMouseLeave={() => setDragging(false)}
+            onMouseUp={() => {
+              if (isDrawingMode && drawingStart && currentDrawRect) {
+                if (currentDrawRect.w >= 8 && currentDrawRect.h >= 8) {
+                  setPendingBbox({
+                    x: Math.round(currentDrawRect.x),
+                    y: Math.round(currentDrawRect.y),
+                    width: Math.round(currentDrawRect.w),
+                    height: Math.round(currentDrawRect.h),
+                  });
+                  setManualModalOpen(true);
+                  setIsDrawingMode(false);
+                }
+                setDrawingStart(null);
+                setCurrentDrawRect(null);
+              } else if (dragging) {
+                setDragging(false);
+              }
+            }}
+            onMouseLeave={() => {
+              if (isDrawingMode) {
+                setDrawingStart(null);
+                setCurrentDrawRect(null);
+              } else {
+                setDragging(false);
+              }
+            }}
             style={{
               position: 'relative',
               flex: 1,
@@ -1010,7 +1133,7 @@ function DetectionContent() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: dragging ? 'grabbing' : 'grab',
+              cursor: isDrawingMode ? 'crosshair' : dragging ? 'grabbing' : 'grab',
               userSelect: 'none',
             }}
           >
@@ -1029,6 +1152,7 @@ function DetectionContent() {
               </div>
             ) : imgSrc ? (
               <div
+                ref={imageContainerRef}
                 style={{
                   position: 'relative',
                   width: baseSize ? Math.round(baseSize.w * zoom) : 'auto',
@@ -1038,7 +1162,7 @@ function DetectionContent() {
                   flexShrink: 0,
                   transform: `translate(${pan.x}px, ${pan.y}px)`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-                  transition: dragging ? 'none' : 'transform 40ms ease-out',
+                  transition: dragging || (isDrawingMode && drawingStart) ? 'none' : 'transform 40ms ease-out',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1130,6 +1254,41 @@ function DetectionContent() {
                           </g>
                         );
                       })}
+
+                    {/* Live Manual Selection Bounding Box */}
+                    {currentDrawRect && (
+                      <g>
+                        <rect
+                          x={currentDrawRect.x}
+                          y={currentDrawRect.y}
+                          width={currentDrawRect.w}
+                          height={currentDrawRect.h}
+                          fill="rgba(34, 197, 94, 0.25)"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          vectorEffect="non-scaling-stroke"
+                          strokeDasharray="4 2"
+                        />
+                        <rect
+                          x={currentDrawRect.x}
+                          y={Math.max(2, currentDrawRect.y - 14)}
+                          width={95}
+                          height={12}
+                          rx={2}
+                          fill="#22c55e"
+                        />
+                        <text
+                          x={currentDrawRect.x + 3}
+                          y={Math.max(2, currentDrawRect.y - 14) + 9}
+                          fill="#fff"
+                          fontSize={8}
+                          fontFamily="ui-monospace, monospace"
+                          fontWeight={700}
+                        >
+                          + NEW ASSET
+                        </text>
+                      </g>
+                    )}
                   </svg>
                 )}
               </div>
@@ -1561,6 +1720,18 @@ function DetectionContent() {
           </div>
         </div>
       )}
+      {/* ── Add Manual Asset Modal ────────────────────────────────────── */}
+      <AddManualAssetModal
+        isOpen={manualModalOpen}
+        documentId={documentId}
+        pidPage={page}
+        bbox={pendingBbox}
+        onClose={() => setManualModalOpen(false)}
+        onSuccess={(newDetection) => {
+          setDetections((prev) => [newDetection, ...prev]);
+          setSelectedId(newDetection.id);
+        }}
+      />
     </div>
   );
 }
