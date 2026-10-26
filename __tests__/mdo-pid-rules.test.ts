@@ -59,7 +59,8 @@ describe('MDO P&ID rules', () => {
       { text: 'TO SDV-1012', x: 90, y: 20 },
       { text: 'OF PI-1010', x: 50, y: 20 },
     ]);
-    expect(row.descriptionProposed).toBe('BALL VALVE 24" OF PI-1010 FROM CONOCO PHILLIPS TO SDV-1012');
-    expect(row.descriptionLen).toBe(row.descriptionProposed.length);
+    expect(row.description).toBe('BV 24" OF PI-1010 FROM CONOCO PHILLIPS TO SDV-1012');
+    expect(row.equipmentTypeShort).toBe('BV');
+    expect(row.equipmentName).toBe('Ball Valve');
   });
 });

@@ -353,6 +353,17 @@ async function migrate() {
       console.warn('  017 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 018: Accenture 8-column MDO fields
+    try {
+      const mdo8ColsSql = join(__dirname, '..', 'sql', 'migrate-mdo-accenture-8cols.sql');
+      if (existsSync(mdo8ColsSql)) {
+        await p.query(readFileSync(mdo8ColsSql, 'utf-8'));
+        console.log('  018: Accenture 8-column MDO fields OK');
+      }
+    } catch (e) {
+      console.warn('  018 migration warning (non-fatal):', e.message);
+    }
+
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));

@@ -13,12 +13,16 @@ describe('buildMdoRecord', () => {
     expect(record).toEqual({
       tagNoProposed: '30756-BV-1001',
       equipmentType: 'BV',
+      equipmentTypeShort: 'BV',
+      equipmentName: 'BV',
       componentName: 'BALL VALVE',
       from: null,
       to: null,
       of: null,
       at: null,
       size: '3/4',
+      description: 'BV 3/4"',
+      locationPrefix: null,
     });
   });
 

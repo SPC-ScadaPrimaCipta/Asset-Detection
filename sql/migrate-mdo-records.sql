@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS detection_mdo_records (
 );
 
 CREATE INDEX IF NOT EXISTS detection_mdo_document_idx ON detection_mdo_records(document_id);
-CREATE INDEX IF NOT EXISTS detection_mdo_relation_status_idx ON detection_mdo_records(relation_status);
+CREATE INDEX IF NOT EXISTS detection_mdo_approval_status_idx ON detection_mdo_records(approval_status);
