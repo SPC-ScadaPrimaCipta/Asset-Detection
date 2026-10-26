@@ -1,1753 +1,364 @@
-# Design System — Automatic Assets Detection
+# Design System — Neuro. Dashboard
 
-## 1. Design Overview
-
-**Product:** Automatic Assets Detection  
-**Interface type:** Industrial document intelligence / P&ID & PFD analysis platform  
-**Primary users:** Engineers, inspectors, asset integrity teams, reviewers, and administrators.
-
-The interface should use a **minimalist, calm, technical dashboard aesthetic** inspired by the Nature skin of Vona by CodeThemes, while remaining an original design rather than a direct copy.
-
-Reference:
-- Vona Nature skin: https://themes.coderthemes.com/vona-angular/layouts/skin-nature
-- Vona is currently positioned as a modern admin dashboard with responsive layouts, reusable UI components, charts, tables, forms, and light/dark support. The current Vona ecosystem also emphasizes minimal external dependencies and modular UI architecture.
-
-### Core design principles
-
-1. **Document-first** — PDF/P&ID content is the primary workspace.
-2. **Minimal visual noise** — avoid excessive gradients, shadows, floating cards, and decorative elements.
-3. **Engineering precision** — measurements, labels, symbols, coordinates, page numbers, and confidence values must be visually unambiguous.
-4. **Fast interaction** — PDF viewing, detection review, filtering, and table operations should feel immediate.
-5. **Consistent state language** — detected, reviewed, approved, rejected, uncertain, and processing states must always look consistent.
-6. **Dense when necessary, spacious when possible** — dashboards can breathe; detection/review workspaces can be information-dense.
-7. **Lightweight frontend** — avoid large all-in-one UI frameworks when a small composable component layer is sufficient.
+Dokumen ini mendeskripsikan design system untuk dashboard **Neuro.** (admin dashboard penjualan produk digital 3D). Mendukung **Light Mode** dan **Dark Mode**.
 
 ---
 
-# 2. Recommended Frontend UI Stack
+## 1. Prinsip Desain
 
-The UI should be built from small composable primitives instead of a large monolithic component framework.
-
-### Recommended
-
-> **Status (terverifikasi 2026-10-02).** Tabel ini adalah rekomendasi awal.
-> Yang benar-benar terpasang: **Tailwind CSS 4**, **Phosphor Icons**, **PDF.js**
-> (`pdfjs-dist` via canvas, bukan `react-pdf`), **ExcelJS**, dan komponen UI
-> buatan sendiri di `components/ui/` (`button`, `card`, `table`, `Modal`,
-> `badge`, `input`, `Spinner`, `EmptyState`, `page-header`, `LegendSelector`).
->
-> **Tidak terpasang:** shadcn/ui, Radix primitives, TanStack Table, Recharts,
-> React Hook Form, Zustand, `react-pdf`. Tabel data dan form memakai React
-> state + CSS biasa. Menambahkannya adalah keputusan terpisah, bukan default.
->
-> Detail ikon: §34.
-
-| Area | Technology | Purpose |
-|---|---|---|
-| Framework | Next.js / React | Application architecture |
-| Styling | Tailwind CSS | Utility-first styling |
-| UI primitives | shadcn/ui + Radix primitives | Accessible dialogs, dropdowns, tabs, popovers, menus, etc. |
-| Icons | Phosphor Icons (`@phosphor-icons/react`) | Lightweight consistent icons |
-| Data tables | TanStack Table | Sorting, filtering, pagination, column visibility |
-| PDF | react-pdf + PDF.js | PDF rendering and page interaction |
-| Charts | Recharts | Lightweight dashboard visualizations |
-| Forms | React Hook Form + Zod | Forms and validation |
-| State | Zustand or React state | Local UI/workspace state |
-| Animation | CSS transitions / Motion only where needed | Avoid unnecessary animation overhead |
-
-### Important performance rule
-
-Do **not** install a complete UI framework such as Material UI, Ant Design, PrimeNG, or another large component suite if the project only needs a small subset of components.
-
-The interface should primarily use:
-
-```text
-Tailwind CSS
-    +
-Phosphor Icons
-    +
-PDF.js
-    +
-components/ui primitives (button, card, table, Modal, badge, input, Spinner, EmptyState)
-```
-
-> shadcn/ui, Radix primitives, dan TanStack Table **tidak terpasang** — lihat catatan
-> status di §"Recommended" di atas.
-
-```text
-(Target, belum terpasang)
-Tailwind CSS
-    +
-shadcn/ui
-    +
-Radix primitives
-    +
-TanStack Table
-    +
-PDF.js
-```
-
-This keeps the visual system customizable and avoids shipping large amounts of unused UI code.
+- **Bersih & lapang**: banyak whitespace, kartu putih dengan sudut membulat besar.
+- **Satu warna dominan**: royal blue sebagai identitas (sidebar, tombol utama, ikon kartu).
+- **Soft & friendly**: sudut sangat membulat, bayangan halus, ilustrasi 3D.
+- **Data jelas**: angka besar dan tebal, label kecil berwarna abu-abu, tren memakai warna hijau/merah.
+- **Konsisten**: semua kartu memakai pola yang sama (ikon kotak biru + judul + menu `⋮`).
 
 ---
 
-# 3. Visual Direction
+## 2. Color Tokens
 
-## 3.1 Overall Character
+### 2.1 Brand & Semantic (sama di kedua mode, disesuaikan sedikit)
 
-The visual language should feel:
+| Token             | Light     | Dark      | Penggunaan                                           |
+| ----------------- | --------- | --------- | ---------------------------------------------------- |
+| `--primary`       | `#3451D1` | `#5B7BFF` | Sidebar, tombol utama, ikon judul kartu, garis chart |
+| `--primary-hover` | `#2B44B8` | `#7391FF` | Hover tombol utama                                   |
+| `--primary-soft`  | `#E8ECFC` | `#222A5C` | Background item aktif / badge lembut                 |
+| `--accent`        | `#6CC8F2` | `#4FB4E6` | Tombol "Contact Us", banner promo                    |
+| `--success`       | `#2FB584` | `#45D6A0` | Tren naik, label Available                           |
+| `--success-soft`  | `#E4F7EF` | `#12332A` | Background chip Available                            |
+| `--danger`        | `#E5677B` | `#FF7F93` | Tren turun, label Pending                            |
+| `--danger-soft`   | `#FCEBEE` | `#3A1E26` | Background chip Pending                              |
+| `--info`          | `#3B8FE8` | `#5AA5F5` | Tooltip chart                                        |
 
-- Minimal
-- Natural
-- Technical
-- Professional
-- Quiet
-- High precision
-- Enterprise-ready
-- Engineering-oriented
+### 2.2 Neutral / Surface
 
-Avoid:
+| Token               | Light                        | Dark                         | Penggunaan                        |
+| ------------------- | ---------------------------- | ---------------------------- | --------------------------------- |
+| `--bg-page`         | gradient `#DCE3F7 → #EEF1FB` | gradient `#0A0D1C → #11152B` | Background halaman luar           |
+| `--bg-app`          | `#F3F5FC`                    | `#0F1325`                    | Container utama (frame dashboard) |
+| `--surface`         | `#FFFFFF`                    | `#181D35`                    | Kartu                             |
+| `--surface-2`       | `#F6F8FD`                    | `#1F2542`                    | Input search, item list, hover    |
+| `--border`          | `#E6E9F4`                    | `#2A3158`                    | Garis pemisah, border input       |
+| `--text-primary`    | `#1E2347`                    | `#F1F3FC`                    | Judul, angka besar                |
+| `--text-secondary`  | `#6E7597`                    | `#A3AACB`                    | Subjudul, label                   |
+| `--text-muted`      | `#9AA0BC`                    | `#6F7699`                    | Placeholder, sumbu chart          |
+| `--text-on-primary` | `#FFFFFF`                    | `#FFFFFF`                    | Teks di atas biru                 |
 
-- Neon colors
-- Excessive glassmorphism
-- Large gradients
-- Heavy shadows
-- Excessive rounded cards
-- Oversized typography
-- Decorative illustrations in technical workflows
+### 2.3 Sidebar
 
-The Vona Nature reference uses a warm neutral canvas, dark green typography, thin borders, compact sidebar navigation, and restrained cards. This direction should be adapted to the Automatic Assets Detection domain.
+| Token                        | Light     | Dark      |
+| ---------------------------- | --------- | --------- |
+| `--sidebar-bg`               | `#3451D1` | `#1B2466` |
+| `--sidebar-item-text`        | `#DCE3FF` | `#B9C3F5` |
+| `--sidebar-item-active-bg`   | `#FFFFFF` | `#2B3786` |
+| `--sidebar-item-active-text` | `#1E2347` | `#FFFFFF` |
+| `--sidebar-support-bg`       | `#4A66DE` | `#26307F` |
 
----
+### 2.4 Banner Promo
 
-# 4. Color System
+| Mode  | Gradient                                            |
+| ----- | --------------------------------------------------- |
+| Light | `linear-gradient(135deg, #6FCBF3 0%, #8FDAF7 100%)` |
+| Dark  | `linear-gradient(135deg, #1E5E86 0%, #2A7FA8 100%)` |
 
-## 4.1 Primary Palette
+### 2.5 CSS Variables
 
 ```css
---background: #F7F8F1;
---surface: #FBFCF7;
---surface-muted: #F0F2E9;
-
---foreground: #1F2A22;
---foreground-muted: #657066;
---foreground-subtle: #899189;
-
---primary: #002B4E;
---primary-hover: #001E38;
---primary-soft: #EAF3FA;
-
---accent: #0078B8;
---accent-hover: #005F94;
---accent-soft: #E8F6FC;
-
---border: #DDE2D8;
---border-strong: #C9D0C5;
-
---success: #8BBE3F;
---success-soft: #F0F8E8;
-
---warning: #A68145;
---warning-soft: #F4EBDD;
-
---danger: #A65A55;
---danger-soft: #F5E5E3;
-
---info: #617D91;
---info-soft: #E7EDF1;
-```
-
-## 4.2 Usage
-
-| Color | Usage |
-|---|---|
-| `#F7F8F1` | Application background |
-| `#FBFCF7` | Cards, panels, PDF workspace |
-| `#002B4E` | Primary buttons, footer, dark bands, nav button |
-| `#0078B8` | Active nav, links, category labels, active tabs |
-| `#EAF3FA` | Soft CTA backgrounds, icon circles, pale bands |
-| `#E8F6FC` | Icon backgrounds, badges, selected filters |
-| `#8BBE3F` | Success checks, improvement indicators |
-| `#F0F8E8` | Success backgrounds |
-| `#DDE2D8` | Borders and separators |
-| `#A68145` | Uncertain/warning state |
-| `#A65A55` | Rejected/error state |
-| `#617D91` | Information state |
-
-### Color rule
-
-Green should communicate **brand/primary**, not automatically mean "approved".
-
-Detection status must have explicit labels in addition to color.
-
----
-
-# 5. Typography
-
-Use a clean sans-serif font.
-
-Recommended:
-
-```text
-Inter
-```
-
-Fallback:
-
-```text
-system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif
-```
-
-## Type scale
-
-| Element | Size | Weight |
-|---|---:|---:|
-| Page title | 24–28px | 600 |
-| Section title | 17–20px | 600 |
-| Card title | 13–15px | 600 |
-| Body | 13–14px | 400 |
-| Secondary text | 12–13px | 400 |
-| Table text | 12–13px | 400–500 |
-| Caption | 11–12px | 400 |
-| Metric | 28–36px | 600–700 |
-
-Technical values such as coordinates, IDs, confidence percentages, page numbers, and asset tags may use:
-
-```text
-JetBrains Mono
-```
-
----
-
-# 6. Layout
-
-## 6.1 Desktop
-
-Target:
-
-```text
-1440 × 900
-```
-
-Application structure:
-
-```text
-┌───────────────────────────────────────────────────────────────┐
-│ Sidebar │ Topbar                                              │
-│         ├─────────────────────────────────────────────────────┤
-│         │                                                     │
-│         │ Main Content                                        │
-│         │                                                     │
-│         │                                                     │
-│         │                                                     │
-└─────────┴─────────────────────────────────────────────────────┘
-```
-
-### Sidebar
-
-Width:
-
-```text
-240px expanded
-72px collapsed
-```
-
-Background:
-
-```text
-#F7F8F1
-```
-
-Border:
-
-```text
-1px solid #DDE2D8
-```
-
-The sidebar should resemble the supplied reference:
-
-- compact
-- vertically structured
-- icon + label navigation
-- subtle section labels
-- small active indicator
-- minimal separators
-
-### Main content
-
-Desktop horizontal padding:
-
-```text
-32px
-```
-
-Large desktop:
-
-```text
-40px
-```
-
-Content max width:
-
-```text
-1440px
-```
-
-Do not unnecessarily center narrow dashboard content.
-
----
-
-# 7. Sidebar Navigation
-
-Primary navigation:
-
-```text
-Dashboard
-
-Projects
-
-Detection
-
-Review
-
-Documents
-
-Legends
-
-Assets
-
-Settings
-```
-
-Recommended grouping:
-
-```text
-WORKSPACE
-├── Dashboard
-├── Projects
-├── Detection
-└── Review
-
-DOCUMENTS
-├── Documents
-└── Legends
-
-DATA
-└── Assets
-
-SYSTEM
-└── Settings
-```
-
-Each item:
-
-- 32–40px height
-- 8px horizontal padding
-- 8px icon-to-label gap
-- 6px radius
-- muted inactive state
-- dark green active state
-- subtle soft-green active background
-
-Active navigation:
-
-```text
-background: #EAF3FA
-color: #002B4E
-font-weight: 600
-```
-
----
-
-# 8. Topbar
-
-Topbar height:
-
-```text
-64px
-```
-
-Contents:
-
-```text
-Breadcrumb / Page title
-                    Search
-                    Notifications
-                    User menu
-```
-
-The topbar should remain visually quiet.
-
-Recommended:
-
-- no heavy shadow
-- bottom border only
-- sticky on document/review pages
-- compact search field
-- avatar dropdown
-
----
-
-# 9. Dashboard
-
-The Dashboard is an operational overview rather than a decorative analytics page.
-
-## Header
-
-```text
-Automatic Assets Detection
-Monitor projects, detection progress, review status, and asset extraction.
-```
-
-Actions:
-
-```text
-+ New Project
-Import Document
-```
-
-## KPI cards
-
-Use 4 cards:
-
-```text
-Projects
-24
-
-Documents
-186
-
-Detected Assets
-4,821
-
-Pending Review
-137
-```
-
-Each card contains:
-
-- label
-- large metric
-- small trend/status
-- optional icon
-- no excessive decoration
-
-## Dashboard layout
-
-```text
-┌────────────┬────────────┬────────────┬────────────┐
-│ Projects   │ Documents  │ Assets     │ Review     │
-├────────────┴────────────┴────────────┴────────────┤
-│ Detection Activity                                 │
-│                                                    │
-│ chart                                              │
-├───────────────────────────────┬────────────────────┤
-│ Recent Projects               │ Review Queue       │
-│                               │                    │
-├───────────────────────────────┴────────────────────┤
-│ Recent Documents / Detection Activity              │
-└────────────────────────────────────────────────────┘
-```
-
-### Charts
-
-Use simple line/bar charts.
-
-Avoid:
-
-- 3D charts
-- gradients
-- excessive legends
-- multiple unrelated colors
-
----
-
-# 10. Projects Page
-
-The Projects page is the primary project management view.
-
-## Project card
-
-Each card contains:
-
-```text
-Project Name
-Project ID
-Description
-
-Documents      12
-Assets         483
-Review         38
-Progress       76%
-
-Last updated
-[Open Project]
-```
-
-Actions dropdown:
-
-```text
-Open
-Rename
-Duplicate
-Archive
-Delete
-```
-
-## View modes
-
-Provide:
-
-```text
-Grid
-List
-```
-
-The default should be Grid.
-
-Cards should remain compact and consistent.
-
----
-
-# 11. Detection Page
-
-Detection is the core computer-vision/document-analysis workspace.
-
-## Recommended layout
-
-```text
-┌──────────────┬───────────────────────────────────────┐
-│ Detection    │                                       │
-│ Controls     │             PDF Viewer                │
-│              │                                       │
-│ Document     │                                       │
-│ Page         │      detected symbols / boxes        │
-│ Model        │                                       │
-│ Confidence   │                                       │
-│              │                                       │
-│ Filters      │                                       │
-└──────────────┴───────────────────────────────────────┘
-```
-
-### Left control panel
-
-```text
-Document
-Page
-Detection Model
-Confidence Threshold
-Asset Type
-Status
-Legend
-```
-
-Controls:
-
-- Select
-- Slider
-- Checkbox
-- Multi-select
-- Toggle
-- Dropdown
-
-### Detection overlay
-
-Detected objects should use precise overlays.
-
-Example:
-
-```text
-┌──────────────────────┐
-│ Pump P-101           │
-│ 96.2%                │
-└──────────────────────┘
-```
-
-Overlay requirements:
-
-- thin bounding box
-- small label
-- confidence value
-- asset type
-- hover state
-- selected state
-
-Avoid large opaque rectangles that hide the drawing.
-
----
-
-# 12. PDF Viewer Design
-
-The PDF viewer is a critical component and should receive priority over decorative UI.
-
-## Viewer structure
-
-```text
-┌─────────────────────────────────────────────────────┐
-│ Page 4 / 18   − 100% +   Fit   Rotate   Download  │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│                    PDF PAGE                         │
-│                                                     │
-│         detection overlays                         │
-│                                                     │
-├─────────────────────────────────────────────────────┤
-│ Thumbnail │ Thumbnail │ Thumbnail │ Thumbnail      │
-└─────────────────────────────────────────────────────┘
-```
-
-## Viewer toolbar
-
-Required:
-
-- Previous page
-- Next page
-- Page number
-- Zoom out
-- Zoom percentage
-- Zoom in
-- Fit width
-- Fit page
-- Rotate
-- Fullscreen
-- Search
-- Download
-
-Optional:
-
-- Print
-- Annotation mode
-- Detection overlay toggle
-- Legend toggle
-
-## Performance
-
-The PDF viewer must support:
-
-- lazy page rendering
-- virtualized thumbnails
-- progressive loading
-- rendering only visible pages
-- canvas-based PDF rendering
-- independent overlay layer
-
-Do not render every page at full resolution simultaneously.
-
----
-
-# 13. Detection Overlay Architecture
-
-The PDF page should conceptually have multiple layers:
-
-```text
-PDF Canvas
-    ↓
-Text / Coordinate Layer
-    ↓
-Detection Overlay
-    ↓
-Selection Layer
-    ↓
-Annotation Layer
-    ↓
-Interaction Layer
-```
-
-Each detection should retain:
-
-```text
-asset_id
-asset_type
-page_number
-x
-y
-width
-height
-confidence
-status
-source
-```
-
-This allows overlays to remain aligned when zooming.
-
-### Coordinate rule
-
-Detection coordinates must be stored in **PDF/document coordinates**, not raw browser pixels.
-
-Rendering should transform:
-
-```text
-PDF coordinates
-        ↓
-viewport scale
-        ↓
-screen coordinates
-```
-
-This is essential for accurate marks/highlights at different zoom levels.
-
----
-
-# 14. Review Page
-
-Review is the human validation workspace.
-
-Recommended layout:
-
-```text
-┌────────────────┬──────────────────────────────┐
-│ Detection List │ PDF / P&ID Viewer            │
-│                │                              │
-│ P-101          │       highlighted asset      │
-│ V-102          │                              │
-│ HX-201         │                              │
-│ ...            │                              │
-├────────────────┼──────────────────────────────┤
-│ Asset details  │ Review controls              │
-└────────────────┴──────────────────────────────┘
-```
-
-## Review states
-
-```text
-Pending
-Confirmed
-Rejected
-Needs Attention
-```
-
-Actions:
-
-```text
-Confirm
-Reject
-Edit
-Merge
-Split
-Move
-Add Asset
-```
-
-Keyboard shortcuts:
-
-```text
-Enter       Confirm
-R           Reject
-E           Edit
-N           Next
-P           Previous
-Esc         Cancel
-```
-
----
-
-# 15. Documents Page
-
-Documents should use a data-table-first design.
-
-Columns:
-
-```text
-Name
-Type
-Pages
-Project
-Processing Status
-Detection
-Uploaded
-Updated
-Actions
-```
-
-Example status:
-
-```text
-Processing
-Ready
-Failed
-Needs Review
-```
-
-Features:
-
-- search
-- column filters
-- sorting
-- pagination
-- bulk selection
-- column visibility
-- upload
-- drag-and-drop
-- action dropdown
-
----
-
-# 16. Data Table Design
-
-Use TanStack Table with a custom visual layer.
-
-The table should visually resemble the reference:
-
-- thin borders
-- warm neutral background
-- compact rows
-- subtle hover
-- no heavy zebra stripes
-
-Row height:
-
-```text
-44–52px
-```
-
-Header:
-
-```text
-12px
-font-weight: 600
-uppercase optional
-```
-
-Bulk toolbar appears only when rows are selected.
-
-```text
-3 selected
-
-[Review] [Export] [Delete]
-```
-
----
-
-# 17. Legends Page
-
-Legends explain detection symbols and annotation colors.
-
-Layout:
-
-```text
-Legend Library
-
-┌──────────────────────────────────────────────────┐
-│ Legend Set                                       │
-│                                                  │
-│ ○ Pump             P-101                         │
-│ ○ Valve            V-102                         │
-│ ○ Heat Exchanger   HX-201                        │
-│ ○ Vessel           V-301                         │
-└──────────────────────────────────────────────────┘
-```
-
-Each legend entry:
-
-- symbol preview
-- asset category
-- description
-- detection color
-- confidence rules
-- visibility toggle
-
-Support:
-
-```text
-Create Legend
-Import Legend PDF
-Edit Legend
-Duplicate
-Archive
-```
-
----
-
-# 18. Assets Page
-
-Assets are the normalized output of detection.
-
-## Asset table
-
-Columns:
-
-```text
-Asset Tag
-Asset Type
-Description
-Project
-Document
-Page
-Confidence
-Review Status
-Updated
-```
-
-## Asset details drawer
-
-Clicking an asset opens a right-side drawer:
-
-```text
-Asset Details
-
-P-101
-
-Type
-Pump
-
-Confidence
-96.2%
-
-Project
-Plant A
-
-Document
-P&ID-001
-
-Page
-4
-
-Coordinates
-X 1042
-Y 682
-
-Review
-Confirmed
-
-[Open in PDF]
-[Edit]
-```
-
-The PDF should automatically navigate to the asset's page and coordinates.
-
----
-
-# 19. Settings
-
-Settings should use a two-column layout:
-
-```text
-Settings navigation
-│
-├── General
-├── Detection
-├── PDF Viewer
-├── Review
-├── Notifications
-├── Appearance
-└── Users & Permissions
-```
-
-Use tabs only for closely related settings.
-
-Avoid giant settings forms.
-
----
-
-# 20. Cards
-
-Cards should be lightweight.
-
-Default:
-
-```text
-background: #FBFCF7
-border: 1px solid #DDE2D8
-border-radius: 8px
-box-shadow: none
-```
-
-Hover:
-
-```text
-border-color: #C9D0C5
-```
-
-Avoid:
-
-```text
-large shadows
-blur
-glassmorphism
-strong gradients
-```
-
----
-
-# 21. Buttons
-
-## Primary
-
-```text
-Dark green background
-White text
-```
-
-Example:
-
-```text
-+ New Project
-```
-
-## Secondary
-
-```text
-Transparent / surface background
-Dark green text
-Thin border
-```
-
-## Ghost
-
-Used for:
-
-- PDF toolbar
-- icon actions
-- table actions
-- secondary navigation
-
-## Destructive
-
-Only use red for destructive actions.
-
----
-
-# 22. Dropdowns
-
-Dropdown menus should be compact.
-
-Example:
-
-```text
-•••
-
-Open
-Edit
-Duplicate
-Export
-────────────
-Archive
-Delete
-```
-
-Use icons only when they improve recognition.
-
----
-
-# 23. Dialogs
-
-Dialog dimensions:
-
-```text
-Small: 360–420px
-Medium: 520–640px
-Large: 720–960px
-```
-
-Use dialogs for:
-
-- confirmation
-- create/edit
-- import
-- configuration
-
-Do not use dialogs for complex PDF workflows.
-
-Use drawers or dedicated pages instead.
-
----
-
-# 24. Drawers
-
-Drawers are preferred for contextual information.
-
-Example:
-
-```text
-┌─────────────────────────────┐
-│ Asset Details           X   │
-├─────────────────────────────┤
-│                             │
-│ P-101                       │
-│ Pump                        │
-│                             │
-│ Confidence       96.2%      │
-│ Page             4          │
-│                             │
-│ [Open in Viewer]            │
-└─────────────────────────────┘
-```
-
-Width:
-
-```text
-400–480px
-```
-
----
-
-# 25. Status System
-
-Use both icon/text and color.
-
-| Status | Color | Meaning |
-|---|---|---|
-| Processing | Info | Analysis running |
-| Ready | Success | Processing completed |
-| Pending Review | Warning | Human review required |
-| Confirmed | Success | Reviewer accepted |
-| Rejected | Danger | Reviewer rejected |
-| Failed | Danger | Processing failed |
-| Needs Attention | Warning | Ambiguous result |
-
-Never communicate a critical state using color alone.
-
----
-
-# 26. Detection Confidence
-
-Confidence should use a compact visual indicator.
-
-Example:
-
-```text
-96.2%  ━━━━━━━━━━
-```
-
-Suggested semantic ranges:
-
-```text
-90–100%  High
-70–89%   Medium
-<70%     Low
-```
-
-The exact thresholds should be configurable by the detection pipeline rather than hardcoded into the UI.
-
----
-
-# 27. Empty States
-
-Empty states should be functional.
-
-Example:
-
-```text
-No projects yet
-
-Create your first project to start detecting assets
-from P&ID and PFD documents.
-
-[+ Create Project]
-```
-
-Avoid oversized illustrations.
-
----
-
-# 28. Loading States
-
-Use skeletons rather than spinners for page content.
-
-Examples:
-
-```text
-Card skeleton
-Table row skeleton
-PDF page skeleton
-Asset detail skeleton
-```
-
-For long-running detection:
-
-```text
-Processing document...
-
-Page 12 / 48
-Detected 382 assets
-
-━━━━━━━━━━━━━━━━━━ 42%
-```
-
----
-
-# 29. Toast Notifications
-
-Toast style should be compact.
-
-Examples:
-
-```text
-✓ Detection completed
-Document P&ID-001 processed successfully.
-```
-
-```text
-! Review required
-12 detections have low confidence.
-```
-
-Avoid stacking many notifications.
-
----
-
-# 30. Responsive Design
-
-## Desktop ≥ 1280px
-
-Full sidebar + PDF workspace.
-
-## Tablet 768–1279px
-
-Sidebar collapses.
-
-PDF workspace becomes:
-
-```text
-Controls
-PDF
-Details
-```
-
-using drawers.
-
-## Mobile < 768px
-
-The application should remain usable but does not need to reproduce the desktop detection workspace exactly.
-
-Navigation becomes:
-
-```text
-Bottom navigation / mobile drawer
-```
-
-PDF controls become horizontally scrollable.
-
-Detection details open as a bottom sheet.
-
----
-
-# 31. PDF Viewer Responsive Behavior
-
-Desktop:
-
-```text
-Sidebar | PDF | Details
-```
-
-Tablet:
-
-```text
-PDF
-+
-collapsible panels
-```
-
-Mobile:
-
-```text
-PDF
-↓
-Asset details bottom sheet
-```
-
-Never squeeze three desktop columns into a mobile viewport.
-
----
-
-# 32. Spacing System
-
-Use a 4px base unit.
-
-```text
-4px
-8px
-12px
-16px
-20px
-24px
-32px
-40px
-48px
-64px
-```
-
-Typical card padding:
-
-```text
-16px
-```
-
-Dashboard section gap:
-
-```text
-24px
-```
-
-Major page section:
-
-```text
-32px
-```
-
----
-
-# 33. Border Radius
-
-Use restrained rounding.
-
-```text
-Buttons: 6px
-Inputs: 6px
-Cards: 8px
-Dialogs: 10px
-Large workspace panels: 10px
-Avatar: 50%
-```
-
-Avoid excessive pill-shaped components.
-
-Pills should be reserved for:
-
-- status badges
-- filters
-- compact tags
-
----
-
-# 34. Icons
-
-Use **Phosphor Icons** (`@phosphor-icons/react`).
-
-> **Koreksi fakta (terverifikasi 2026-10-02).** Section ini sebelumnya
-> menyebut "Lucide". Implementasi sebenarnya memakai `@phosphor-icons/react` di
-> **seluruh** halaman: `app/detection`, `app/review`, `app/assets`,
-> `app/projects`, `app/documents`, `app/legends/[id]/review`, dan
-> `components/ui/LegendSelector.tsx`. `lucide-react` terpasang di
-> `package.json` tetapi **tidak di-import di mana pun** — sisa dependensi.
->
-> Nama ikon di contoh bawah adalah nama Lucide. Padanannya di Phosphor:
-
-| Lucide (nama lama) | Phosphor (dipakai) |
-|---|---|
-| `LayoutDashboard` | `SquaresFour` |
-| `FolderKanban` | `FolderPlus` |
-| `CheckCircle2` | `CheckCircle` |
-| `AlertCircle` | `Warning` |
-| `ShieldCheck` | `SealCheck` |
-| `Loader2` | `SpinnerGap` |
-| `ChevronLeft` / `ChevronRight` | `CaretLeft` / `CaretRight` |
-| `Plus` / `Minus` | `Plus` / `Minus` |
-| `Pencil` | `PencilSimple` / `PencilLine` |
-| `Save` | `FloppyDisk` |
-| `Trash2` | `Trash` |
-| `X` / `XCircle` | `X` / `XCircle` |
-| `Undo2` | `ArrowCounterClockwise` |
-| `Search` | `MagnifyingGlass` |
-| `FileSpreadsheet` | `FileXls` |
-| `Upload` | `UploadSimple` |
-| `Zap` | `Lightning` |
-| `PlusCircle` | `PlusCircle` |
-| `Eye` | `Eye` |
-| `ChevronDown` | `CaretDown` |
-
-Examples:
-
-```text
-LayoutDashboard
-FolderKanban
-ScanSearch
-ClipboardCheck
-FileText
-BookOpen
-Boxes
-Settings
-Search
-Filter
-ZoomIn
-ZoomOut
-RotateCw
-Maximize
-MoreHorizontal
-Check
-X
-AlertTriangle
-```
-
-Icon size:
-
-```text
-16px standard
-18px navigation
-20px major actions
-```
-
-Do not mix multiple icon families.
-
----
-
-# 35. Animation
-
-Animation should be subtle.
-
-Use:
-
-```text
-150–200ms
-ease-out
-```
-
-Good use cases:
-
-- sidebar collapse
-- dropdown
-- drawer
-- modal
-- hover
-- selection
-
-Avoid:
-
-- animated dashboards
-- continuously moving PDF overlays
-- large page transitions
-- decorative motion
-
-Respect:
-
-```css
-prefers-reduced-motion
-```
-
----
-
-# 36. Accessibility
-
-Required:
-
-- WCAG-conscious contrast
-- keyboard navigation
-- visible focus states
-- semantic buttons
-- ARIA labels for icon-only actions
-- accessible dialogs
-- accessible dropdowns
-- keyboard PDF controls
-- no color-only status communication
-
-Focus ring:
-
-```text
-2px solid #0078B8
-```
-
----
-
-# 37. PDF / Detection Interaction Rules
-
-These rules are critical.
-
-### Rule 1 — Zoom independence
-
-Changing PDF zoom must not change detection coordinates.
-
-### Rule 2 — Overlay precision
-
-Detection boxes must remain aligned with the original symbol at:
-
-```text
-50%
-75%
-100%
-125%
-150%
-200%
-```
-
-### Rule 3 — Page independence
-
-Switching pages must immediately remove the previous page's overlay layer.
-
-### Rule 4 — Selection synchronization
-
-Selecting an asset in the table must:
-
-1. open its PDF page
-2. center the viewport on the asset
-3. highlight the detection
-4. open asset details
-
-### Rule 5 — PDF navigation synchronization
-
-Clicking a detection in the PDF must:
-
-1. select the asset
-2. highlight its table row
-3. update the details drawer
-
----
-
-# 38. Dashboard Density
-
-The Dashboard should visually resemble the supplied reference in density:
-
-```text
-Sidebar
-    ↓
-compact header
-    ↓
-4 KPI cards
-    ↓
-large primary chart
-    ↓
-secondary information panels
-```
-
-However, the content should be specific to Automatic Assets Detection.
-
-Example:
-
-```text
-Detected Assets
-4,821
-
-Documents Processed
-186
-
-Detection Accuracy
-94.3%
-
-Pending Review
-137
-```
-
----
-
-# 39. Design Tokens
-
-Recommended CSS variables:
-
-```css
-:root {
-  --background: 72 20% 96%;
-  --foreground: 140 16% 15%;
-
-  --surface: 72 25% 98%;
-  --surface-muted: 75 18% 93%;
-
-  --primary: 120 17% 24%;
-  --primary-foreground: 72 25% 98%;
-
-  --accent: 115 18% 61%;
-  --accent-soft: 110 22% 91%;
-
-  --border: 85 14% 87%;
-  --border-strong: 85 12% 79%;
-
-  --success: 128 18% 40%;
-  --warning: 39 42% 46%;
-  --danger: 5 34% 50%;
-  --info: 205 20% 48%;
-
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 72px;
-  --topbar-height: 64px;
+:root,
+[data-theme="light"] {
+  --primary: #3451d1;
+  --primary-hover: #2b44b8;
+  --primary-soft: #e8ecfc;
+  --accent: #6cc8f2;
+  --success: #2fb584;
+  --success-soft: #e4f7ef;
+  --danger: #e5677b;
+  --danger-soft: #fcebee;
+  --info: #3b8fe8;
+
+  --bg-page: linear-gradient(135deg, #dce3f7, #eef1fb);
+  --bg-app: #f3f5fc;
+  --surface: #ffffff;
+  --surface-2: #f6f8fd;
+  --border: #e6e9f4;
+  --text-primary: #1e2347;
+  --text-secondary: #6e7597;
+  --text-muted: #9aa0bc;
+
+  --sidebar-bg: #3451d1;
+  --sidebar-item-text: #dce3ff;
+  --sidebar-item-active-bg: #ffffff;
+  --sidebar-item-active-text: #1e2347;
+  --sidebar-support-bg: #4a66de;
+
+  --banner-bg: linear-gradient(135deg, #6fcbf3, #8fdaf7);
+  --shadow-card: 0 8px 24px rgba(52, 81, 209, 0.08);
+  --shadow-frame: 0 24px 60px rgba(52, 81, 209, 0.15);
+}
+
+[data-theme="dark"] {
+  --primary: #5b7bff;
+  --primary-hover: #7391ff;
+  --primary-soft: #222a5c;
+  --accent: #4fb4e6;
+  --success: #45d6a0;
+  --success-soft: #12332a;
+  --danger: #ff7f93;
+  --danger-soft: #3a1e26;
+  --info: #5aa5f5;
+
+  --bg-page: linear-gradient(135deg, #0a0d1c, #11152b);
+  --bg-app: #0f1325;
+  --surface: #181d35;
+  --surface-2: #1f2542;
+  --border: #2a3158;
+  --text-primary: #f1f3fc;
+  --text-secondary: #a3aacb;
+  --text-muted: #6f7699;
+
+  --sidebar-bg: #1b2466;
+  --sidebar-item-text: #b9c3f5;
+  --sidebar-item-active-bg: #2b3786;
+  --sidebar-item-active-text: #ffffff;
+  --sidebar-support-bg: #26307f;
+
+  --banner-bg: linear-gradient(135deg, #1e5e86, #2a7fa8);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-frame: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* salin token dark di sini untuk mode "system" */
+  }
 }
 ```
 
 ---
 
-# 40. Component Architecture
+## 3. Typography
 
-Recommended component hierarchy:
+**Font**: `Plus Jakarta Sans` (alternatif: `Poppins`, `Inter`). Fallback: `system-ui, -apple-system, "Segoe UI", sans-serif`.
 
-```text
-components/
-├── layout/
-│   ├── AppShell
-│   ├── Sidebar
-│   ├── Topbar
-│   ├── Breadcrumbs
-│   └── PageHeader
-│
-├── ui/
-│   ├── Button
-│   ├── Card
-│   ├── Badge
-│   ├── Dropdown
-│   ├── Dialog
-│   ├── Drawer
-│   ├── Tabs
-│   ├── Tooltip
-│   ├── Input
-│   ├── Select
-│   └── Command
-│
-├── dashboard/
-│   ├── MetricCard
-│   ├── DetectionActivityChart
-│   ├── RecentProjects
-│   └── ReviewQueue
-│
-├── pdf/
-│   ├── PdfViewer
-│   ├── PdfToolbar
-│   ├── PdfThumbnailPanel
-│   ├── PdfOverlayLayer
-│   ├── DetectionBox
-│   └── PdfSearch
-│
-├── detection/
-│   ├── DetectionPanel
-│   ├── DetectionFilters
-│   ├── DetectionList
-│   ├── DetectionDetails
-│   └── ConfidenceIndicator
-│
-├── review/
-│   ├── ReviewWorkspace
-│   ├── ReviewQueue
-│   ├── ReviewActions
-│   └── ReviewHistory
-│
-├── documents/
-│   ├── DocumentTable
-│   ├── DocumentUpload
-│   └── DocumentActions
-│
-├── assets/
-│   ├── AssetTable
-│   ├── AssetDetails
-│   └── AssetDrawer
-│
-└── legends/
-    ├── LegendTable
-    ├── LegendPreview
-    └── LegendEditor
-```
+| Style              | Size / Line | Weight  | Contoh                           |
+| ------------------ | ----------- | ------- | -------------------------------- |
+| Display / Stat     | 36 / 44     | 600     | `1,134`, `$4,231`, `$537`        |
+| H1 (greeting name) | 28 / 36     | 600     | "Lucy Lure"                      |
+| H2 (banner title)  | 20 / 28     | 600     | "Want some EXTRA Money?"         |
+| H3 (card title)    | 15 / 22     | 600     | "Total Product", "Top Products"  |
+| Body               | 14 / 22     | 400     | Teks umum                        |
+| Body-strong        | 14 / 22     | 600     | Nama produk, label menu          |
+| Caption            | 12 / 18     | 400–500 | "3D Illustrations", "this week"  |
+| Micro              | 10 / 14     | 500     | Label sumbu chart, "Admin Tools" |
+
+Aturan: angka statistik memakai `font-variant-numeric: tabular-nums`; letter-spacing normal; judul tidak uppercase.
 
 ---
 
-# 41. Page Structure
+## 4. Spacing, Radius, Shadow
 
-```text
-/app
-├── dashboard
-├── projects
-│   └── [projectId]
-├── detection
-│   └── [documentId]
-├── review
-│   └── [documentId]
-├── documents
-├── legends
-├── assets
-└── settings
-```
+**Spacing (basis 4px)**: `4 · 8 · 12 · 16 · 20 · 24 · 32 · 40`
 
-The Detection and Review routes should share the same PDF workspace infrastructure.
+| Token               | Nilai | Penggunaan             |
+| ------------------- | ----- | ---------------------- |
+| `--radius-frame`    | 28px  | Frame dashboard        |
+| `--radius-card`     | 20px  | Kartu                  |
+| `--radius-sidebar`  | 24px  | Sidebar                |
+| `--radius-button`   | 10px  | Tombol                 |
+| `--radius-input`    | 10px  | Search                 |
+| `--radius-icon-box` | 6px   | Kotak ikon kartu       |
+| `--radius-thumb`    | 12px  | Thumbnail produk       |
+| `--radius-chip`     | 6px   | Chip Available/Pending |
+
+**Shadow**: kartu memakai `--shadow-card` (lembut, bertint biru); frame memakai `--shadow-frame`. Di dark mode shadow lebih gelap dan dibantu `1px solid var(--border)`.
 
 ---
 
-# 42. Performance Requirements
+## 5. Layout
 
-Because the application contains PDF rendering and document analysis, UI performance is a first-class requirement.
+Ukuran acuan desktop **1440 × 1024**.
 
-### Required
+```
+┌────────────────────────────────────────────────────────────┐
+│ ┌────────┐  Header (greeting · Upload · Search · Bell)     │
+│ │        │ ┌──────────────────────────┐ ┌───────────────┐  │
+│ │Sidebar │ │ Banner Promo             │ │ Top Products  │  │
+│ │ 240px  │ └──────────────────────────┘ │ (5 item list) │  │
+│ │        │ ┌────────────┐┌────────────┐ │               │  │
+│ │        │ │Total Prod. ││Total Earn. │ │               │  │
+│ │        │ └────────────┘└────────────┘ └───────────────┘  │
+│ │        │ ┌──────────────────────────┐ ┌───────────────┐  │
+│ │        │ │ Latest Download (chart)  │ │ Balances      │  │
+│ └────────┘ └──────────────────────────┘ └───────────────┘  │
+└────────────────────────────────────────────────────────────┘
+```
 
-- lazy-load PDF viewer
-- dynamically import PDF.js components where appropriate
-- virtualize large asset tables
-- virtualize PDF thumbnails
-- avoid rendering invisible detection overlays
-- debounce search/filter input
-- memoize expensive PDF calculations
-- avoid unnecessary global state updates
-- keep charts isolated from PDF state
-- use server-side pagination for large datasets
+- Frame: padding 24px, gap antar kolom 24px.
+- **Sidebar**: lebar 240px, tinggi penuh frame.
+- **Konten utama**: grid 12 kolom → area kiri 8 kolom, kolom kanan 4 kolom (`Top Products` + `Balances`).
+- Gap antar kartu: 24px; padding dalam kartu: 24px.
+- `Total Product` dan `Total Earning`: masing-masing 4 dari 8 kolom (50/50).
 
-### Target
+### Breakpoint
 
-Normal dashboard navigation should feel instant.
-
-PDF interactions should remain responsive while detection results are loaded.
+| Breakpoint  | Perilaku                                                       |
+| ----------- | -------------------------------------------------------------- |
+| ≥ 1280px    | Layout penuh seperti di atas                                   |
+| 1024–1279px | Sidebar ringkas (ikon saja, 80px)                              |
+| 768–1023px  | Sidebar jadi drawer; grid 1 kolom + kolom kanan turun ke bawah |
+| < 768px     | Satu kolom, header menumpuk, tombol Upload jadi ikon           |
 
 ---
 
-# 43. Dark Mode
+## 6. Komponen
 
-Dark mode can be supported later, but the initial product should prioritize the light Nature-inspired theme.
+### 6.1 Sidebar
 
-Dark mode should not simply invert colors.
+- Background `--sidebar-bg`, radius 24px, padding 20px.
+- **Logo**: ikon kubus 3D + wordmark "Neuro." (24px, weight 700, putih).
+- Label grup "Admin Tools": micro, warna `--sidebar-item-text` opacity 70%.
+- **Menu item**: tinggi 44px, radius 10px, ikon 20px + label 14px/600, gap 12px.
+  - Default: teks `--sidebar-item-text`, transparan.
+  - Hover: `rgba(255,255,255,0.1)`.
+  - **Active** (Overview): background `--sidebar-item-active-bg`, teks `--sidebar-item-active-text`, ikon berwarna `--primary`.
+- Daftar menu: Overview, Products, Campaigns, Schedules, Payouts, Statements, Settings.
+- **Support box** (bawah): background `--sidebar-support-bg`, radius 14px, padding 16px; teks 11px putih; tombol "Contact Us" memakai `--accent` dengan teks putih.
 
-Future dark palette:
+### 6.2 Header
 
-```text
-Background: #151A16
-Surface: #1B211C
-Surface muted: #232A24
-Foreground: #E8EEE7
-Primary: #2E6FA6
-Border: #303930
-```
+- Kiri: "Welcome Back," (14px, `--text-secondary`) + nama user (H1).
+- Kanan (rata tengah vertikal, gap 16px): tombol **Upload Product**, **Search**, **Notification bell**.
 
-PDF content remains white/paper-like by default.
+### 6.3 Buttons
+
+| Varian                 | Style                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Primary**            | bg `--primary`, teks putih, tinggi 44px, padding 0 20px, radius 10px, ikon 18px di kiri. Hover `--primary-hover`. |
+| **Primary full-width** | Sama, lebar 100% (mis. "Withdraw Money"), tinggi 48px.                                                            |
+| **Secondary (putih)**  | bg `#FFFFFF` (dark: `--surface-2`), teks `--text-primary`, weight 600 (mis. "Referral Program").                  |
+| **Accent**             | bg `--accent`, teks putih (mis. "Contact Us").                                                                    |
+| **Icon button**        | 44×44, bg `--surface`, radius 14px, badge notifikasi bulat 16px `--primary` teks putih 10px.                      |
+
+Focus state: `outline: 2px solid var(--primary); outline-offset: 2px`. Disabled: opacity 50%.
+
+### 6.4 Search Input
+
+- Tinggi 44px, bg `--surface`, radius 10px, ikon search 18px `--text-muted` di kiri, placeholder "Search".
+- Focus: border `--primary` + ring `rgba(52,81,209,.2)`.
+
+### 6.5 Card (dasar)
+
+- bg `--surface`, radius 20px, padding 24px, `--shadow-card`.
+- **Header kartu**: kotak ikon 16×16 `--primary` (radius 4px) + judul H3 + menu `⋮` di kanan (ikon `--text-muted`).
+
+### 6.6 Banner Promo ("Want some EXTRA Money?")
+
+- bg `--banner-bg`, radius 20px, tinggi ±200px, padding 32px.
+- Judul putih H2, deskripsi 12px putih opacity 80%.
+- Tombol Secondary "Referral Program".
+- Kanan: ilustrasi 3D (monitor + keyboard biru), overflow sedikit keluar dari kartu untuk efek depth.
+
+### 6.7 Stat Card (Total Product / Total Earning)
+
+- Header kartu standar.
+- Angka: Display style; unit kecil ("Items") 12px `--text-secondary`.
+- Tren: caption berwarna — `+10% this week` (`--success`), `-22% this week` (`--danger`).
+- **Sparkline** di kanan: garis 2px, tanpa sumbu; area gradient di bawah garis (`color` 25% → 0%). Naik = hijau, turun = merah.
+
+### 6.8 Top Products (list)
+
+- Tiap item: tinggi 56px, thumbnail 44×44 radius 12px (background pastel berbeda), nama (14px/600), kategori (12px `--text-secondary`), chevron `›` di kanan.
+- Gap antar item 12px; hover: bg `--surface-2`, radius 12px.
+- Pastel thumbnail light: `#E3ECFF`, `#FFE9D6`, `#E3F7EE`, `#FFE4E4`, `#DDF4FA` — dark mode: pakai opacity 20% dari warna yang sama.
+
+### 6.9 Chart "Latest Download" (Line/Area)
+
+- Garis 2.5px `--primary`, kurva halus (monotone), area gradient `--primary` 18% → 0%.
+- Grid horizontal tipis `--border`, tanpa grid vertikal; sumbu Y: 0–400 (step 100); sumbu X: Mon–Sun, micro `--text-muted`.
+- **Titik aktif**: lingkaran 8px `--primary` + garis vertikal putus-putus.
+- **Tooltip**: bg `--info`, teks putih 12px/600, radius 8px, padding 6px 10px, panah kecil di bawah.
+
+### 6.10 Balances
+
+- Dua kolom dipisah garis vertikal `--border`.
+- Angka Display; di bawahnya **chip**:
+  - Available: bg `--success-soft`, teks `--success`.
+  - Pending: bg `--danger-soft`, teks `--danger`.
+  - Chip: 11px/500, padding 4px 12px, radius 6px.
+- Tombol "Withdraw Money" Primary full-width di bawah.
+
+### 6.11 Theme Toggle
+
+- Tombol bulat 40×40 di pojok kiri bawah (ikon setengah lingkaran).
+- Opsi: **Light · Dark · System**. Simpan di `localStorage` (`theme`), set `data-theme` pada `<html>`.
+- Transisi: `background-color, color, border-color 200ms ease`.
 
 ---
 
-# 44. Design Do / Don't
+## 7. Iconography
 
-## Do
+- Gaya **outline**, stroke 1.5–1.75px, ukuran 20px (menu) / 18px (tombol) / 16px (kartu).
+- Library yang disarankan: Lucide / Phosphor.
+- Warna mengikuti teks; ikon aktif memakai `--primary`.
 
-- Use thin borders
-- Use warm neutral backgrounds
-- Use dark green as the main brand color
-- Keep cards compact
-- Use whitespace
-- Use consistent 8px-ish radius
-- Use precise engineering metadata
-- Prioritize PDF readability
-- Use drawers for contextual details
-- Use tables for structured asset data
+## 8. Ilustrasi & Gambar
 
-## Don't
+- Gaya **3D soft render** (glossy, pastel + biru).
+- Thumbnail produk persegi, rasio 1:1, `object-fit: cover`.
+- Dark mode: ilustrasi tetap sama; background thumbnail diredupkan agar tidak silau.
 
-- Do not copy Vona directly
-- Do not use large gradients
-- Do not use heavy shadows
-- Do not use multiple UI frameworks
-- Do not hide critical data inside excessive dialogs
-- Do not use color alone for detection status
-- Do not let overlays obscure P&ID symbols
-- Do not render every PDF page simultaneously
-- Do not make the dashboard look like a generic SaaS analytics product
+## 9. Motion
 
----
+| Elemen              | Efek                                     | Durasi            |
+| ------------------- | ---------------------------------------- | ----------------- |
+| Hover tombol / item | warna & `translateY(-1px)`               | 150ms ease-out    |
+| Pergantian tema     | transisi warna                           | 200ms ease        |
+| Chart saat load     | garis tergambar (stroke-dashoffset)      | 800ms ease-in-out |
+| Kartu muncul        | fade + translateY(8px → 0), stagger 60ms | 300ms             |
 
-# 45. Final Visual Target
+Hormati `prefers-reduced-motion: reduce` (matikan animasi non-esensial).
 
-The final interface should feel like:
+## 10. Aksesibilitas
 
-```text
-Vona Nature
-     +
-Engineering Document Viewer
-     +
-Computer Vision Detection Workspace
-     +
-Minimal Enterprise Asset Management
+- Kontras teks minimal **4.5:1** (body) dan **3:1** (teks besar & ikon).
+- Teks putih di atas `--accent` (`#6CC8F2`) kontrasnya rendah → gunakan weight 600 dan ukuran ≥ 14px, atau gelapkan menjadi `#3FA9DD` untuk tombol kecil.
+- Warna tren tidak boleh menjadi satu-satunya penanda: sertakan tanda `+` / `-` (sudah ada) atau ikon panah.
+- Semua elemen interaktif bisa diakses keyboard dengan focus ring jelas.
+- Chart diberi `aria-label` dan tabel data alternatif; tooltip juga muncul saat focus.
+- Ukuran target sentuh minimal 44×44px.
+
+## 11. Contoh Konfigurasi Tailwind
+
+```js
+// tailwind.config.js
+module.exports = {
+  darkMode: ["selector", '[data-theme="dark"]'],
+  theme: {
+    extend: {
+      colors: {
+        primary: "var(--primary)",
+        accent: "var(--accent)",
+        success: "var(--success)",
+        danger: "var(--danger)",
+        surface: "var(--surface)",
+        "surface-2": "var(--surface-2)",
+        border: "var(--border)",
+        "text-primary": "var(--text-primary)",
+        "text-secondary": "var(--text-secondary)",
+      },
+      borderRadius: { card: "20px", frame: "28px", btn: "10px" },
+      boxShadow: { card: "var(--shadow-card)", frame: "var(--shadow-frame)" },
+      fontFamily: { sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"] },
+    },
+  },
+};
 ```
 
-The visual hierarchy should be:
+## 12. Checklist Implementasi
 
-```text
-1. PDF / engineering document
-2. Detection result
-3. Asset metadata
-4. Review workflow
-5. Analytics
-6. Administrative controls
-```
-
-The interface should look **quiet and premium**, but the interaction model should be optimized for engineers working with large P&ID/PFD documents.
-
-The design reference is used for the visual direction—especially its restrained nature palette, compact sidebar, thin borders, card density, and minimalist dashboard composition—not as a pixel-for-pixel clone.
+- [ ] Token warna light & dark terpasang di `:root` dan `[data-theme="dark"]`
+- [ ] Font Plus Jakarta Sans dimuat (weight 400/500/600/700)
+- [ ] Sidebar, Header, Banner, Stat Card, Top Products, Chart, Balances
+- [ ] Theme toggle (Light/Dark/System) + persist
+- [ ] Responsif pada semua breakpoint
+- [ ] Uji kontras & navigasi keyboard
