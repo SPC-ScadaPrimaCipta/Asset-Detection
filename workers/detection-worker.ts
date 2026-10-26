@@ -71,6 +71,12 @@ type WorkerLog = (msg: string, extra?: Record<string, unknown>) => void;
  */
 async function resolveJobDuplicates(jobId: string, log: WorkerLog): Promise<void> {
   try {
+    const jobRow = await db.query<{ document_id: string }>(
+      'SELECT document_id FROM detection_jobs WHERE id = $1',
+      [jobId],
+    );
+    const docId = jobRow.rows[0]?.document_id;
+
     const allDetRows = await db.query<{
       id: string;
       asset_tag: string | null;
@@ -84,12 +90,18 @@ async function resolveJobDuplicates(jobId: string, log: WorkerLog): Promise<void
       bbox_w: number | null;
       bbox_h: number | null;
     }>(
-      `SELECT id, asset_tag, asset_type, confidence, review_status, created_at,
-              pid_page, bbox_x, bbox_y, bbox_w, bbox_h
-       FROM detections
-       WHERE job_id = $1
-         AND detection_status != 'REJECTED'`,
-      [jobId],
+      docId
+        ? `SELECT id, asset_tag, asset_type, confidence, review_status, created_at,
+                  pid_page, bbox_x, bbox_y, bbox_w, bbox_h
+           FROM detections
+           WHERE document_id = $1
+             AND detection_status != 'REJECTED'`
+        : `SELECT id, asset_tag, asset_type, confidence, review_status, created_at,
+                  pid_page, bbox_x, bbox_y, bbox_w, bbox_h
+           FROM detections
+           WHERE job_id = $1
+             AND detection_status != 'REJECTED'`,
+      [docId || jobId],
     );
 
     const candidates: DuplicateRow[] = allDetRows.rows.map((r) => ({
@@ -131,7 +143,7 @@ async function resolveJobDuplicates(jobId: string, log: WorkerLog): Promise<void
 
       log(`entity resolution complete: ${groups.length} canonical groups, ${groups.reduce((s, g) => s + g.duplicateIds.length, 0)} duplicates marked`);
 
-      if (env.DETECTION_AUTO_DEDUPE === 'true') {
+      if (env.DETECTION_AUTO_DEDUPE !== 'false') {
         const duplicateIds = groups.flatMap((g) => g.duplicateIds);
         if (duplicateIds.length > 0) {
           const deleted = await db.query<{ id: string }>(

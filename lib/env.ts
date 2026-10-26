@@ -332,7 +332,7 @@ const envSchema = z.object({
   // Delete duplicate detections after a job finishes (same rules as the
   // Remove Duplicates button). Off by default: duplicates are annotated for
   // review so a false positive is never removed without a trace.
-  DETECTION_AUTO_DEDUPE: z.enum(['true', 'false']).default('false'),
+  DETECTION_AUTO_DEDUPE: z.enum(['true', 'false']).default('true'),
   // How many YOLO detections to process OCR in parallel per page
   OCR_BATCH_SIZE: z.coerce.number().int().positive().default(5),
 });
