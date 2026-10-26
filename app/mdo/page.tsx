@@ -139,11 +139,13 @@ function MdoContent() {
   }, [searchParams]);
 
   // 2. Load MDO Records for active document
-  const loadMdoRecords = useCallback(async () => {
+  const loadMdoRecords = useCallback(async (silent = false) => {
     if (!documentId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/documents/${documentId}/mdo`);
+      const res = await fetch(`/api/documents/${documentId}/mdo?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       const body = await res.json();
       const list: MdoRecord[] = Array.isArray(body?.records) ? body.records : [];
       setRecords(list);
@@ -156,15 +158,32 @@ function MdoContent() {
     } catch (err) {
       console.error('[mdo] load records failed:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [documentId]);
 
+  // Auto-sync when page loads, window gains focus, or periodic interval
   useEffect(() => {
-    if (documentId) {
-      loadMdoRecords();
-    }
-  }, [documentId, loadMdoRecords]);
+    if (!documentId) return;
+    loadMdoRecords();
+
+    const handleFocus = () => {
+      loadMdoRecords(true);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Subtle background sync every 8 seconds if user is not actively editing
+    const interval = setInterval(() => {
+      if (!editingRecord && !enriching) {
+        loadMdoRecords(true);
+      }
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [documentId, loadMdoRecords, editingRecord, enriching]);
 
   // 3. Trigger Vision AI Process Flow Enrichment & Build MDO
   const handleBuildMdo = async () => {
@@ -186,6 +205,7 @@ function MdoContent() {
       alert('Gagal membuat MDO: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setEnriching(false);
+      await loadMdoRecords(true);
     }
   };
 
@@ -409,6 +429,28 @@ function MdoContent() {
           >
             <ArrowLeft size={13} /> Back to Detection
           </Link>
+
+          {/* Quick Refresh Button */}
+          <button
+            onClick={() => loadMdoRecords()}
+            disabled={loading}
+            title="Refresh Data MDO"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--foreground)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <ArrowClockwise size={13} /> Refresh
+          </button>
 
           {/* Document Selector */}
           <select

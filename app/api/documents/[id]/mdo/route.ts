@@ -212,7 +212,81 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: documentId } = await params;
+
+  // 1. Clean up any MDO records for detections that are no longer approved or rejected
+  await db.query(
+    `DELETE FROM detection_mdo_records
+     WHERE document_id = $1
+       AND detection_id NOT IN (
+         SELECT id FROM detections
+         WHERE document_id = $1
+           AND (review_status = 'APPROVED' OR detection_status IN ('CONFIRMED', 'MANUAL'))
+           AND detection_status != 'REJECTED'
+           AND review_status != 'REJECTED'
+       )`,
+    [documentId]
+  );
+
+  // 2. Auto-seed any missing approved detections that don't have an MDO record yet
+  const missingDetections = (await db.query<{
+    id: string;
+    asset_tag: string | null;
+    asset_type: string;
+    description: string | null;
+    size: string | null;
+    service: string | null;
+  }>(
+    `SELECT d.id, d.asset_tag, d.asset_type, d.description, d.size, d.service
+     FROM detections d
+     WHERE d.document_id = $1
+       AND (d.review_status = 'APPROVED' OR d.detection_status IN ('CONFIRMED', 'MANUAL'))
+       AND d.detection_status != 'REJECTED'
+       AND d.review_status != 'REJECTED'
+       AND (d.candidate_status IS NULL OR d.candidate_status != 'NOISE')
+       AND d.id NOT IN (
+         SELECT detection_id FROM detection_mdo_records WHERE document_id = $1
+       )`,
+    [documentId]
+  )).rows;
+
+  if (missingDetections.length > 0) {
+    const existingPrefixRow = (await db.query<{ location_prefix: string | null }>(
+      'SELECT location_prefix FROM detection_mdo_records WHERE document_id = $1 AND location_prefix IS NOT NULL LIMIT 1',
+      [documentId]
+    )).rows[0];
+    const prefix = existingPrefixRow?.location_prefix || 'GRS';
+
+    const { deriveEquipmentNaming } = await import('@/lib/mdo-enrichment');
+    const { assembleMdoDescription } = await import('@/lib/mdo-description');
+
+    for (const d of missingDetections) {
+      const naming = deriveEquipmentNaming(d.asset_type, d.asset_tag, d.description);
+      const ofVal = d.service || (d.description?.toUpperCase().includes('LINE') || d.description?.toUpperCase().includes('HEADER') ? d.description : null);
+      const desc = assembleMdoDescription({
+        locationPrefix: prefix,
+        equipmentTypeShort: naming.shortType,
+        size: d.size,
+        ofValue: ofVal,
+      });
+
+      await db.query(
+        `INSERT INTO detection_mdo_records
+          (detection_id, document_id, location_prefix, tag_no_proposed,
+           equipment_type_short, equipment_name, size,
+           of_value, description, equipment_type, component_name, approval_status, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'APPROVED',NOW())
+         ON CONFLICT (detection_id) DO NOTHING`,
+        [
+          d.id, documentId, prefix, d.asset_tag,
+          naming.shortType, naming.equipmentName, d.size,
+          ofVal, desc, d.asset_type.toUpperCase(), d.description,
+        ]
+      );
+    }
+  }
+
+  // 3. Query all synced MDO records
   const rows = await db.query(
     `SELECT m.id, m.detection_id, m.document_id, m.location_prefix,
             m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
@@ -227,7 +301,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
        AND d.detection_status != 'REJECTED'
        AND d.review_status != 'REJECTED'
      ORDER BY m.created_at, m.id`,
-    [id],
+    [documentId],
   );
-  return NextResponse.json({ records: rows.rows });
+
+  return NextResponse.json(
+    { records: rows.rows },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      },
+    }
+  );
 }
