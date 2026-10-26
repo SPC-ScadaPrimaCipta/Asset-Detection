@@ -10,7 +10,6 @@ import {
   GitFork,
   FileText,
   BookOpen,
-  Layers,
   Settings,
   Sparkles,
   ExternalLink,
@@ -23,7 +22,6 @@ const MENU_ITEMS = [
   { href: '/mdo', label: 'MDO Flow', icon: GitFork },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/legends', label: 'Legends', icon: BookOpen },
-  { href: '/assets', label: 'Asset Register', icon: Layers },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
