@@ -675,8 +675,8 @@ function MdoContent() {
                       <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--foreground)' }}>
                         Belum ada data MDO untuk dokumen ini.
                       </p>
-                      <p style={{ margin: 0, fontSize: 12, color: 'var(--foreground-muted)', maxWidth: 460 }}>
-                        Pastikan aset sudah dideteksi di halaman Detection, kemudian klik tombol <strong>Analyze Process Flow & Build MDO</strong> di atas untuk menjalankan Vision AI alur proses dan merumuskan deskripsi 8 kolom.
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--foreground-muted)', maxWidth: 520, lineHeight: 1.5 }}>
+                        Hanya aset yang telah <strong>disetujui / di-approve</strong> (atau ditambahkan manual) di halaman Detection yang akan diproses ke MDO. Aset yang di-reject atau berstatus pending tidak dimasukkan. Klik tombol <strong>Analyze Process Flow & Build MDO</strong> di atas untuk merakit deskripsi 8 kolom.
                       </p>
                       <button
                         onClick={handleBuildMdo}

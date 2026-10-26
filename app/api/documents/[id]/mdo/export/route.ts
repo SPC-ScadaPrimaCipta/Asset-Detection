@@ -19,22 +19,32 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const doc = (await db.query('SELECT filename FROM documents WHERE id=$1', [id])).rows[0];
     if (!doc) return NextResponse.json({ error: 'Document not found' }, { status: 404 });
 
-    // Fetch records (if any approved, take approved; otherwise take all non-rejected)
+    // Fetch records for approved detections
     let rows = (await db.query(
-       `SELECT tag_no_proposed, equipment_type_short, equipment_name, size,
-               from_value, to_value, of_value, description
-        FROM detection_mdo_records
-        WHERE document_id=$1 AND approval_status='APPROVED'
-        ORDER BY created_at, id`, [id],
+       `SELECT m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
+               m.from_value, m.to_value, m.of_value, m.description
+        FROM detection_mdo_records m
+        JOIN detections d ON d.id = m.detection_id
+        WHERE m.document_id=$1 
+          AND (d.review_status = 'APPROVED' OR d.detection_status IN ('CONFIRMED', 'MANUAL'))
+          AND d.detection_status != 'REJECTED'
+          AND d.review_status != 'REJECTED'
+          AND m.approval_status = 'APPROVED'
+        ORDER BY m.created_at, m.id`, [id],
     )).rows;
 
     if (rows.length === 0) {
       rows = (await db.query(
-        `SELECT tag_no_proposed, equipment_type_short, equipment_name, size,
-                from_value, to_value, of_value, description
-         FROM detection_mdo_records
-         WHERE document_id=$1 AND approval_status != 'REJECTED'
-         ORDER BY created_at, id`, [id],
+        `SELECT m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
+                m.from_value, m.to_value, m.of_value, m.description
+         FROM detection_mdo_records m
+         JOIN detections d ON d.id = m.detection_id
+         WHERE m.document_id=$1 
+           AND (d.review_status = 'APPROVED' OR d.detection_status IN ('CONFIRMED', 'MANUAL'))
+           AND d.detection_status != 'REJECTED'
+           AND d.review_status != 'REJECTED'
+           AND m.approval_status != 'REJECTED'
+         ORDER BY m.created_at, m.id`, [id],
       )).rows;
     }
 

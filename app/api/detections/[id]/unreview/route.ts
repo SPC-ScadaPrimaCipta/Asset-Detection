@@ -10,6 +10,8 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
       "UPDATE detections SET review_status='PENDING', detection_status='DETECTED', updated_at=NOW() WHERE id=$1",
       [id]
     );
+    await db.query("DELETE FROM assets WHERE detection_id=$1", [id]);
+    await db.query("DELETE FROM detection_mdo_records WHERE detection_id=$1", [id]);
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
