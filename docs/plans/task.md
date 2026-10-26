@@ -2,9 +2,8 @@
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Explore project context (detection viewer, MDO pipeline, navigation) | COMPLETED |
-| TASK-02 | Ask clarifying questions (one at a time) | COMPLETED |
-| TASK-03 | Propose 2-3 approaches with trade-offs & recommendation | COMPLETED |
-| TASK-04 | Present design in sections and get user approval | IN_PROGRESS |
-| TASK-05 | Write validated design doc and commit | PENDING |
-| TASK-06 | Transition to implementation (invoke writing-plans) | PENDING |
+| TASK-01 | Remove Asset Register pages & update navigation (`app/assets`, `app/asset-register`, `app/sidebar-nav.tsx`, `components/Header.tsx`, `components/dashboard/VerificationStatusCard.tsx`) | PENDING |
+| TASK-02 | Create backend endpoint `POST /api/detections/manual` (`app/api/detections/manual/route.ts`) | PENDING |
+| TASK-03 | Create `AddManualAssetModal` component (`components/detection/AddManualAssetModal.tsx`) | PENDING |
+| TASK-04 | Integrate manual drawing selection & modal in Detection viewer (`app/detection/page.tsx`) | PENDING |
+| TASK-05 | Full end-to-end verification, Next.js build validation & quality gate | PENDING |
