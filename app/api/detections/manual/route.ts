@@ -17,27 +17,36 @@ export async function POST(req: NextRequest) {
       bbox,
     } = body;
 
-    if (!documentId) {
+    const docId = documentId || body.document_id;
+    const tag = assetTag || body.asset_tag;
+    const type = assetType || body.asset_type;
+    const desc = description ?? body.description;
+    const srv = service ?? body.service;
+    const sz = size ?? body.size;
+    const eqClass = equipmentClass ?? body.equipment_class;
+    const pageNumber = pidPage ?? body.pid_page;
+
+    if (!docId) {
       return NextResponse.json({ error: 'documentId is required' }, { status: 400 });
     }
-    if (!assetTag || !assetTag.trim()) {
+    if (!tag || !tag.trim()) {
       return NextResponse.json({ error: 'Asset Tag is required' }, { status: 400 });
     }
-    if (!assetType || !assetType.trim()) {
+    if (!type || !type.trim()) {
       return NextResponse.json({ error: 'Asset Type is required' }, { status: 400 });
     }
 
-    const docRes = await db.query('SELECT project_id, filename FROM documents WHERE id = $1', [documentId]);
+    const docRes = await db.query('SELECT project_id, filename FROM documents WHERE id = $1', [docId]);
     if (docRes.rows.length === 0) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
     const projectId = docRes.rows[0].project_id;
     const pidNumber = docRes.rows[0].filename;
 
-    const pageNum = pidPage ? Number(pidPage) : 1;
+    const pageNum = pageNumber ? Number(pageNumber) : 1;
     const pageRes = await db.query(
       'SELECT id FROM document_pages WHERE document_id = $1 AND page_number = $2',
-      [documentId, pageNum]
+      [docId, pageNum]
     );
     const documentPageId = pageRes.rows[0]?.id ?? null;
 
@@ -47,12 +56,12 @@ export async function POST(req: NextRequest) {
     const w = bbox?.width != null ? Math.max(10, Math.round(Number(bbox.width))) : 50;
     const h = bbox?.height != null ? Math.max(10, Math.round(Number(bbox.height))) : 50;
 
-    const cleanTag = assetTag.trim().toUpperCase();
-    const cleanType = assetType.trim();
-    const cleanDesc = description?.trim() || null;
-    const cleanService = service?.trim() || null;
-    const cleanSize = size?.trim() || null;
-    const cleanClass = equipmentClass?.trim() || cleanType;
+    const cleanTag = tag.trim().toUpperCase();
+    const cleanType = type.trim();
+    const cleanDesc = desc?.trim() || null;
+    const cleanService = srv?.trim() || null;
+    const cleanSize = sz?.trim() || null;
+    const cleanClass = eqClass?.trim() || cleanType;
 
     const insertDetectionSql = `
       INSERT INTO detections (
@@ -83,7 +92,7 @@ export async function POST(req: NextRequest) {
 
     const detectionRes = await db.query(insertDetectionSql, [
       detectionId,
-      documentId,
+      docId,
       documentPageId,
       cleanTag,
       cleanType,
@@ -122,7 +131,7 @@ export async function POST(req: NextRequest) {
         [
           assetId,
           projectId,
-          documentId,
+          docId,
           detectionId,
           cleanTag,
           cleanType,
