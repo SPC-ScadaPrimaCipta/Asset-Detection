@@ -6,9 +6,9 @@ import { renderPageToPng } from '@/lib/pdf-render';
 // Extend route timeout — PDF rendering via child_process can take 3-10s for large P&IDs
 export const maxDuration = 60;
 
-// Render scale: 3.0 ≈ 216dpi — sharper display for P&ID detail while keeping response size manageable.
-// Worker uses 4.0 for AI analysis; viewer uses 3.0 for display.
-const VIEWER_SCALE = 3.0;
+// Render scale: 4.0 ≈ 288dpi — crystal clear high-DPI display for P&ID engineering detail.
+// Worker uses 4.0 for AI analysis; viewer uses 4.0 for sharp non-pixelated zoom display.
+const DEFAULT_VIEWER_SCALE = 4.0;
 
 function pngHeaders(pngBuf: Buffer, cacheHit: boolean) {
   return {
@@ -21,7 +21,7 @@ function pngHeaders(pngBuf: Buffer, cacheHit: boolean) {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; page: string }> }
 ) {
   const { id, page: pageStr } = await params;
@@ -30,6 +30,9 @@ export async function GET(
   if (isNaN(pageNumber) || pageNumber < 1) {
     return NextResponse.json({ error: 'Invalid page number' }, { status: 400 });
   }
+
+  const requestedScale = req.nextUrl?.searchParams?.get('scale');
+  const scale = requestedScale ? Math.min(5.0, Math.max(1.0, parseFloat(requestedScale))) : DEFAULT_VIEWER_SCALE;
 
   try {
     const doc = await db.query('SELECT file_path, page_count, file_type FROM documents WHERE id=$1', [id]);
@@ -58,7 +61,7 @@ export async function GET(
 
     // Disk cache: halaman PDF immutable → render sekali, sajikan file sesudahnya.
     // Penting saat worker detection jalan bersamaan (render 5.0 berebut CPU).
-    const cacheName = `viewer-${id}-p${pageNumber}-s${VIEWER_SCALE}.png`;
+    const cacheName = `viewer-${id}-p${pageNumber}-s${scale}.png`;
     try {
       if (await fileExists(cacheName)) {
         const cached = await getFile(cacheName) as unknown as Buffer;
@@ -71,7 +74,7 @@ export async function GET(
       /* cache read gagal → render ulang */
     }
 
-    const result = await renderPageToPng(buf, pageNumber, VIEWER_SCALE);
+    const result = await renderPageToPng(buf, pageNumber, scale);
     const pngBuf = result.png;
 
     // Simpan cache best-effort (jangan gagalkan response)

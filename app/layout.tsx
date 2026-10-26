@@ -1,91 +1,105 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import SidebarNav from "./sidebar-nav";
+import Header from "@/components/Header";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Asset Detection",
-  description: "Automatic P&ID Asset Detection",
+  title: "Neuro. — Automatic Asset Detection",
+  description: "AI-Powered Industrial P&ID Asset & Symbol Detection Platform",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
-      style={{ height: "100%" }}
+      className={plusJakartaSans.variable}
+      style={{ height: "100%", width: "100%" }}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('neuro-theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         style={{
-          display: "flex",
-          height: "100%",
+          minHeight: "100vh",
+          width: "100%",
           margin: 0,
           padding: 0,
-          background: "var(--background)",
+          background: "var(--bg-app)",
           color: "var(--foreground)",
           fontFamily:
-            'var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+            'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+          boxSizing: "border-box",
         }}
       >
-        <aside
-          style={{
-            width: "var(--sidebar-width)",
-            display: "flex",
-            flexDirection: "column",
-            flexShrink: 0,
-            borderRight: "1px solid var(--border)",
-            background:
-              "linear-gradient(180deg, #121D26 0%, #182832 58%, #14212A 100%)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Brand */}
+        <ThemeProvider>
+          {/* Full-width App Container with Outer Padding for Floating Sidebar */}
           <div
             style={{
-              padding: "14px 16px",
-              borderBottom: "1px solid var(--border)",
+              width: "100%",
+              minHeight: "100vh",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              background: "var(--bg-app)",
+              boxSizing: "border-box",
+              padding: "16px",
+              gap: "20px",
             }}
           >
-            <img
-              src="/ptm.png"
-              alt="Asset Detection"
+            {/* Floating Rounded Royal Blue Sidebar - Completely isolated from edges */}
+            <aside
               style={{
-                width: "100%",
-                maxWidth: "160px",
-                height: "auto",
-                objectFit: "contain",
+                width: "var(--sidebar-width, 240px)",
+                display: "flex",
+                flexDirection: "column",
+                flexShrink: 0,
+                background: "var(--sidebar-bg)",
+                height: "calc(100vh - 32px)",
+                position: "sticky",
+                top: "16px",
+                borderRadius: "var(--radius-sidebar, 24px)",
+                overflow: "hidden",
+                boxShadow: "0 12px 36px rgba(0, 0, 0, 0.22)",
+                border: "1px solid var(--border)",
+                zIndex: 20,
               }}
-            />
+            >
+              <SidebarNav />
+            </aside>
+
+            {/* Main Content Area with Header */}
+            <main
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: "calc(100vh - 32px)",
+                overflowY: "auto",
+                padding: "8px 12px 16px 0",
+                minWidth: 0,
+                background: "transparent",
+                boxSizing: "border-box",
+              }}
+            >
+              {/* Neuro Top Header */}
+              <Header operatorName="Operator" />
+
+              {/* Main Content Body - Full Width */}
+              <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{children}</div>
+            </main>
           </div>
-
-          {/* Navigation */}
-          <SidebarNav />
-        </aside>
-
-        <main
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            background: "var(--background)",
-          }}
-        >
-          <div style={{ padding: "32px" }}>{children}</div>
-        </main>
+        </ThemeProvider>
       </body>
     </html>
   );

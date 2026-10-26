@@ -674,7 +674,7 @@ export const worker = new Worker(
         applyProjectAutoTagging(dxfResult.detections, {
           existingProjectTags,
           legendSymbols: dxfLegendSymbols,
-          allowGeneratedTags: false,
+          allowGeneratedTags: true,
         });
 
         const NULL_THR = tuningForDxf.detection.nullFieldConfidenceThreshold;
@@ -1033,7 +1033,7 @@ export const worker = new Worker(
           const { generatedCount: autoTaggedCount } = applyProjectAutoTagging(deduped, {
             existingProjectTags,
             legendSymbols: cappedSymbols,
-            allowGeneratedTags: false,
+            allowGeneratedTags: true,
           });
         if (autoTaggedCount > 0) {
           log(`page ${page} auto-tagged ${autoTaggedCount} detection(s) without OCR tags`, {

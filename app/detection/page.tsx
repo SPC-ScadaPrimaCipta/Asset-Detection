@@ -1,54 +1,39 @@
-"use client";
+'use client';
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-import dynamic from "next/dynamic";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import {
   Lightning,
   CheckCircle,
   XCircle,
   PencilSimple,
   FloppyDisk,
-  FileXls,
-  PlusCircle,
   CaretLeft,
   CaretRight,
-} from "@phosphor-icons/react";
-import { LegendSelector } from "../../components/ui/LegendSelector";
-import { findDuplicates } from "../../lib/detection/duplicate-detection";
+  Plus,
+  Minus,
+  ArrowRight,
+  X,
+  SquaresFour,
+  Check,
+  Tag,
+  ArrowClockwise,
+} from '@phosphor-icons/react';
+import { LegendSelector } from '@/components/ui/LegendSelector';
 
-const DxfViewer = dynamic(() => import("@/components/DxfViewer"), {
+const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
   ssr: false,
   loading: () => (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "520px",
-        background: "#161719",
-        color: "#9ca3af",
-        fontSize: "13px",
-      }}
-    >
-      Memuat WebGL CAD Viewer...
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--foreground-muted)', fontSize: 13 }}>
+      Memuat CAD Viewer...
     </div>
   ),
 });
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 
-interface Project {
-  id: string;
-  name: string;
-}
 interface Document {
   id: string;
   filename: string;
@@ -56,4940 +41,1534 @@ interface Document {
   status: string;
   file_type?: string;
 }
-interface Legend {
-  id: string;
-  name: string;
-}
-interface DetectionJob {
-  id: string;
-  status: string;
-  progress_pct: number;
-  document_id: string;
-  legend_id: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error_detail?: string | null;
-}
+
 interface Detection {
   id: string;
   asset_tag: string | null;
   asset_type: string;
   description: string | null;
+  service: string | null;
+  size: string | null;
   equipment_class: string | null;
   pid_page: number | null;
   confidence: number | null;
   detection_status: string;
   review_status: string;
+  candidate_status?: string | null;
   bbox_x: number | null;
   bbox_y: number | null;
   bbox_w: number | null;
   bbox_h: number | null;
-  world_bbox_x?: number | null;
-  world_bbox_y?: number | null;
-  world_bbox_w?: number | null;
-  world_bbox_h?: number | null;
-  sheet_bbox_x?: number | null;
-  sheet_bbox_y?: number | null;
-  sheet_bbox_w?: number | null;
-  sheet_bbox_h?: number | null;
-  symbol_bbox_x: number | null;
-  symbol_bbox_y: number | null;
-  symbol_bbox_w: number | null;
-  symbol_bbox_h: number | null;
-  page_width: number | null;
-  page_height: number | null;
-  evidence: string[] | string | null;
-  service: string | null;
-  location: string | null;
-  unit: string | null;
-  area: string | null;
-  size?: string | null;
-  legend_id: string | null;
-  legend_symbol_id: string | null;
-  detection_source: string | null;
-  validation_status: string | null;
-  mdo_id?: string | null;
-  mdo_tag_no_proposed?: string | null;
-  mdo_equipment_type?: string | null;
-  mdo_component_name?: string | null;
-  mdo_size?: string | null;
-  mdo_from?: string | null;
-  mdo_to?: string | null;
-  mdo_of?: string | null;
-  mdo_at?: string | null;
-  mdo_approval_status?: "PENDING" | "APPROVED" | "REJECTED" | null;
-  candidate_status?: string | null;
-  candidate_source?: string | null;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+interface JobProgress {
+  jobId: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  progressPct: number;
+  stageText: string;
+  stats?: {
+    total: number;
+    confirmed: number;
+    pending: number;
+    rejected: number;
+    detected: number;
+  };
+  errorDetail?: string | null;
+}
 
 const cardStyle: React.CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--radius-md)",
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-card, 20px)',
+  boxShadow: 'var(--shadow-card)',
 };
 
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: "12px",
-  fontWeight: "600",
-  color: "var(--foreground-muted)",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-};
-
-const selectStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--border)",
-  background: "var(--background)",
-  color: "var(--foreground)",
-  fontSize: "14px",
-  fontFamily: "inherit",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
-  color: "var(--foreground)",
-  fontSize: "13px",
-  fontWeight: "500",
-  cursor: "pointer",
-  transition: "all 150ms ease-out",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  ...buttonStyle,
-  background: "var(--primary)",
-  color: "var(--surface)",
-  border: "1px solid var(--primary)",
-};
-
-const badgeBase: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "2px 8px",
-  borderRadius: "9999px",
-  fontSize: "12px",
-  fontWeight: "500",
-  lineHeight: "1.5",
-};
-
-const toolButtonStyle: React.CSSProperties = {
-  padding: "6px 8px",
-  fontSize: "12px",
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
-  color: "var(--foreground-muted)",
-  cursor: "pointer",
-  transition: "all 150ms ease-out",
-};
-
-const legendItemStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  fontSize: "12px",
-  color: "var(--foreground-muted)",
-};
-
-// M3: Normalize asset type casing — Title Case, trim whitespace, collapse internal spaces
-function normalizeType(t: string): string {
-  return t
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function confBadge(c: number | null) {
-  if (c === null)
-    return (
-      <span style={{ fontSize: "12px", color: "var(--foreground-subtle)" }}>
-        —
-      </span>
-    );
-  const pct = Math.round(c * 100);
-  const style: React.CSSProperties =
-    c >= 0.9
-      ? { background: "var(--success-soft)", color: "var(--success)" }
-      : c >= 0.7
-        ? { background: "var(--warning-soft)", color: "var(--warning)" }
-        : { background: "var(--danger-soft)", color: "var(--danger)" };
-  // M2: warn low confidence
-  const warn = c < 0.7 ? " ⚠" : "";
+function StatusBadge({ status }: { status: string }) {
+  const isApproved = status === 'APPROVED' || status === 'CONFIRMED';
+  const isRejected = status === 'REJECTED';
+  const bg = isApproved ? 'var(--success-soft)' : isRejected ? 'var(--danger-soft)' : 'var(--warning-soft)';
+  const color = isApproved ? 'var(--success)' : isRejected ? 'var(--danger)' : 'var(--warning)';
   return (
-    <span style={{ ...badgeBase, ...style }}>
-      {pct}%{warn}
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 'var(--radius-chip, 6px)', fontSize: 11, fontWeight: 700, background: bg, color }}>
+      {isApproved ? 'APPROVED' : isRejected ? 'REJECTED' : 'PENDING'}
     </span>
   );
 }
 
-// M5: Source indicator badge — LEGEND-confirmed vs VISION-only
-function sourceBadge(source: string | null) {
-  if (!source) return null;
-  const isLegend =
-    source === "LEGEND" ||
-    source === "CACHE" ||
-    source === "COMPANY_KB" ||
-    source === "ISA" ||
-    source === "ISO";
-  const style: React.CSSProperties = isLegend
-    ? {
-        background: "rgba(0,120,80,0.10)",
-        color: "var(--success)",
-        border: "1px solid rgba(0,120,80,0.20)",
-      }
-    : {
-        background: "rgba(180,120,0,0.10)",
-        color: "var(--warning)",
-        border: "1px solid rgba(180,120,0,0.20)",
-      };
-  const label = isLegend ? "✓ Legend" : "~ Vision";
-  return (
-    <span style={{ ...badgeBase, fontSize: "10px", ...style }}>{label}</span>
-  );
-}
+function DetectionContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-function statusBadge(ds: string, rs: string) {
-  const label =
-    ds === "MANUAL"
-      ? "Manual"
-      : rs === "APPROVED"
-        ? "Confirmed"
-        : rs === "REJECTED"
-          ? "Rejected"
-          : ds === "DETECTED"
-            ? "Detected"
-            : ds;
-  const style: React.CSSProperties =
-    rs === "APPROVED"
-      ? { background: "var(--success-soft)", color: "var(--success)" }
-      : rs === "REJECTED"
-        ? { background: "var(--danger-soft)", color: "var(--danger)" }
-        : {
-            background: "var(--surface-muted)",
-            color: "var(--foreground-muted)",
-          };
-  return <span style={{ ...badgeBase, ...style }}>{label}</span>;
-}
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documentId, setDocumentId] = useState<string>('');
+  const [selectedLegendId, setSelectedLegendId] = useState<string | null>(null);
+  const [selectedLegendIds, setSelectedLegendIds] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
+  const [jobProgress, setJobProgress] = useState<JobProgress | null>(null);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [detections, setDetections] = useState<Detection[]>([]);
+  const [loadingDets, setLoadingDets] = useState(false);
 
-function parseEvidence(ev: string[] | string | null): string[] {
-  if (!ev) return [];
-  if (Array.isArray(ev)) return ev;
-  try {
-    const p = JSON.parse(ev);
-    return Array.isArray(p) ? p : [String(p)];
-  } catch {
-    return [String(ev)];
-  }
-}
+  // Pagination & Filters
+  const [page, setPage] = useState<number>(1);
+  const [statusTab, setStatusTab] = useState<'all' | 'PENDING' | 'APPROVED' | 'REJECTED'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-function isAutoGeneratedTag(ev: string[] | string | null): boolean {
-  const evArr = parseEvidence(ev);
-  return evArr.some(
-    (e) => e.includes("[Auto-Tag]") || e.includes("[Auto-Generated Tag]"),
-  );
-}
+  // Multi-selection (Bulk Action)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-// ─── ManualAddModal ───────────────────────────────────────────────────────────
+  // Edit Modal State
+  const [editingItem, setEditingItem] = useState<Detection | null>(null);
+  const [editForm, setEditForm] = useState({
+    asset_tag: '',
+    asset_type: '',
+    description: '',
+    service: '',
+    size: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
 
-function ManualAddModal({
-  open,
-  onClose,
-  onSave,
-  documentId,
-  legendId,
-  jobId,
-  initialBbox,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: () => void;
-  documentId: string;
-  legendId: string;
-  jobId: string | null;
-  initialBbox?: { x: number; y: number; w: number; h: number } | null;
-}) {
-  const [assetType, setAssetType] = useState("");
-  const [assetTag, setAssetTag] = useState("");
-  const [description, setDescription] = useState("");
-  const [pidPage, setPidPage] = useState("");
-  // BBox — 0-1000 normalized coordinate space (same as AI detections)
-  const [bboxX, setBboxX] = useState("0");
-  const [bboxY, setBboxY] = useState("0");
-  const [bboxW, setBboxW] = useState("100");
-  const [bboxH, setBboxH] = useState("100");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-
-  // Reset form when modal opens — prefill bbox dari hasil draw di viewer
-  useEffect(() => {
-    if (open) {
-      setAssetType("");
-      setAssetTag("");
-      setDescription("");
-      setPidPage("");
-      setBboxX(String(initialBbox?.x ?? 0));
-      setBboxY(String(initialBbox?.y ?? 0));
-      setBboxW(String(initialBbox?.w ?? 100));
-      setBboxH(String(initialBbox?.h ?? 100));
-      setError("");
-      setSubmitting(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  if (!open) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assetType.trim()) {
-      setError("Asset Type is required.");
-      return;
-    }
-    const bx = Math.max(0, Math.min(1000, parseInt(bboxX, 10) || 0));
-    const by = Math.max(0, Math.min(1000, parseInt(bboxY, 10) || 0));
-    const bw = Math.max(1, Math.min(1000 - bx, parseInt(bboxW, 10) || 100));
-    const bh = Math.max(1, Math.min(1000 - by, parseInt(bboxH, 10) || 100));
-
-    setError("");
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/detections/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          asset_type: assetType.trim(),
-          asset_tag: assetTag.trim() || null,
-          description: description.trim() || null,
-          pid_page: pidPage ? parseInt(pidPage, 10) : null,
-          document_id: documentId,
-          legend_id: legendId || null,
-          job_id: jobId,
-          bbox_x: bx,
-          bbox_y: by,
-          bbox_w: bw,
-          bbox_h: bh,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError((body as { error?: string }).error ?? `Error ${res.status}`);
-        setSubmitting(false);
-        return;
-      }
-      onSave();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
-        zIndex: 50,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        overflowY: "auto",
-        paddingTop: "80px",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        style={{
-          ...cardStyle,
-          padding: "24px",
-          maxWidth: "420px",
-          width: "100%",
-          margin: "0 auto",
-          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "16px",
-          }}
-        >
-          <h2
-            style={{
-              fontSize: "16px",
-              fontWeight: "600",
-              color: "var(--foreground)",
-              margin: 0,
-            }}
-          >
-            Add Asset Manually
-          </h2>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "20px",
-              color: "var(--foreground-muted)",
-              lineHeight: 1,
-            }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-        >
-          {/* Asset Type (required) */}
-          <label style={{ display: "block" }}>
-            <span style={{ ...fieldLabelStyle, marginBottom: "4px" }}>
-              Asset Type <span style={{ color: "var(--danger)" }}>*</span>
-            </span>
-            <input
-              type="text"
-              required
-              value={assetType}
-              onChange={(e) => setAssetType(e.target.value)}
-              placeholder="e.g. PUMP, VALVE, COMPRESSOR"
-              style={selectStyle}
-            />
-          </label>
-
-          {/* Asset Tag */}
-          <label style={{ display: "block" }}>
-            <span style={fieldLabelStyle}>Asset Tag</span>
-            <input
-              type="text"
-              value={assetTag}
-              onChange={(e) => setAssetTag(e.target.value)}
-              placeholder="e.g. P-101A"
-              style={selectStyle}
-            />
-          </label>
-
-          {/* Description */}
-          <label style={{ display: "block" }}>
-            <span style={fieldLabelStyle}>Description</span>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description…"
-              rows={3}
-              style={{ ...selectStyle, resize: "none" }}
-            />
-          </label>
-
-          {/* P&ID Page */}
-          <label style={{ display: "block" }}>
-            <span style={fieldLabelStyle}>P&amp;ID Page</span>
-            <input
-              type="number"
-              min={1}
-              value={pidPage}
-              onChange={(e) => setPidPage(e.target.value)}
-              placeholder="Page number"
-              style={selectStyle}
-            />
-          </label>
-
-          {/* Bounding Box */}
-          <div>
-            <span
-              style={{
-                ...fieldLabelStyle,
-                display: "block",
-                marginBottom: "4px",
-              }}
-            >
-              Bounding Box
-              <span
-                style={{
-                  color: "var(--foreground-subtle)",
-                  textTransform: "none",
-                  fontWeight: "normal",
-                  marginLeft: "4px",
-                }}
-              >
-                — 0–1000 normalized coordinate space
-              </span>
-            </span>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "12px",
-              }}
-            >
-              {[
-                { val: bboxX, set: setBboxX, label: "X", hint: "(left edge)" },
-                { val: bboxY, set: setBboxY, label: "Y", hint: "(top edge)" },
-                { val: bboxW, set: setBboxW, label: "Width", hint: "" },
-                { val: bboxH, set: setBboxH, label: "Height", hint: "" },
-              ].map(({ val, set, label, hint }) => (
-                <label key={label} style={{ display: "block" }}>
-                  <span style={{ ...fieldLabelStyle }}>{label}</span>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--foreground-subtle)",
-                      marginLeft: "4px",
-                    }}
-                  >
-                    {hint}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1000}
-                    value={val}
-                    onChange={(e) => set(e.target.value)}
-                    style={{ ...selectStyle, marginTop: "4px" }}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <p
-              style={{
-                fontSize: "12px",
-                color: "var(--danger)",
-                background: "var(--danger-soft)",
-                borderRadius: "var(--radius-sm)",
-                padding: "8px 12px",
-                margin: 0,
-              }}
-            >
-              {error}
-            </p>
-          )}
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: "12px", paddingTop: "4px" }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border)",
-                background: "var(--surface)",
-                color: "var(--foreground)",
-                fontSize: "13px",
-                fontWeight: "500",
-                cursor: "pointer",
-                transition: "all 150ms ease-out",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{
-                flex: 1,
-                ...primaryButtonStyle,
-                opacity: submitting ? 0.5 : 1,
-              }}
-            >
-              {submitting ? "Saving…" : "Save Asset"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ─── JobProgress ─────────────────────────────────────────────────────────────
-
-function JobProgress({
-  jobId,
-  onComplete,
-}: {
-  jobId: string;
-  onComplete: () => void;
-}) {
-  const [job, setJob] = useState<DetectionJob | null>(null);
-  const doneRef = useRef(false);
-
-  useEffect(() => {
-    if (!jobId) return;
-    doneRef.current = false;
-    const poll = async () => {
-      const r = await fetch(`/api/detection/jobs/${jobId}`);
-      if (!r.ok) return;
-      const j: DetectionJob = await r.json();
-      setJob(j);
-      if (
-        (j.status === "COMPLETED" ||
-          j.status === "FAILED" ||
-          j.status === "CANCELLED") &&
-        !doneRef.current
-      ) {
-        doneRef.current = true;
-        onComplete();
-      }
-    };
-    poll();
-    const t = setInterval(poll, 2000);
-    return () => clearInterval(t);
-  }, [jobId, onComplete]);
-
-  if (!job) return null;
-
-  const statusColor =
-    job.status === "COMPLETED"
-      ? "var(--success)"
-      : job.status === "FAILED"
-        ? "var(--danger)"
-        : job.status === "CANCELLED"
-          ? "var(--foreground-muted)"
-          : "var(--info)";
-
-  const statusBg =
-    job.status === "COMPLETED"
-      ? "var(--success-soft)"
-      : job.status === "FAILED"
-        ? "var(--danger-soft)"
-        : job.status === "CANCELLED"
-          ? "rgba(0, 43, 78, 0.04)"
-          : "var(--info-soft)";
-
-  return (
-    <div
-      style={{
-        ...cardStyle,
-        padding: "16px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <span
-          style={{
-            fontSize: "13px",
-            fontWeight: "500",
-            color: "var(--foreground)",
-          }}
-        >
-          Detection Job
-        </span>
-        <span
-          style={{
-            fontSize: "11px",
-            fontWeight: "600",
-            padding: "4px 8px",
-            borderRadius: "var(--radius-sm)",
-            color: "white",
-            background: statusColor,
-          }}
-        >
-          {job.status}
-        </span>
-      </div>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          width: "100%",
-          height: "6px",
-          borderRadius: "3px",
-          background: "var(--border)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "6px",
-            borderRadius: "3px",
-            background: statusColor,
-            width: `${job.progress_pct ?? 0}%`,
-            transition: "width 500ms ease-out",
-          }}
-        />
-      </div>
-      <p
-        style={{
-          fontSize: "12px",
-          color: "var(--foreground-muted)",
-          margin: 0,
-        }}
-      >
-        {job.progress_pct ?? 0}% complete
-      </p>
-
-      {job.status === "PROCESSING" && (
-        <p
-          style={{
-            fontSize: "12px",
-            color: "var(--info)",
-            margin: 0,
-            animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-          }}
-        >
-          Analyzing P&ID with AI…
-        </p>
-      )}
-      {job.status === "PENDING" && (
-        <p
-          style={{
-            fontSize: "12px",
-            color: "var(--warning, #f59e0b)",
-            margin: 0,
-          }}
-        >
-          Waiting for worker… If stuck, run:{" "}
-          <code
-            style={{
-              fontFamily: "monospace",
-              background: "rgba(0,0,0,0.15)",
-              padding: "1px 4px",
-              borderRadius: "3px",
-            }}
-          >
-            npm run worker
-          </code>{" "}
-          in a separate terminal.
-        </p>
-      )}
-      {job.status === "FAILED" && job.error_detail && (
-        <p
-          style={{
-            fontSize: "12px",
-            color: "var(--danger)",
-            background: statusBg,
-            borderRadius: "var(--radius-sm)",
-            padding: "8px",
-            margin: 0,
-            fontFamily: "monospace",
-          }}
-        >
-          {job.error_detail.slice(0, 300)}
-        </p>
-      )}
-
-      {/* Cancel button */}
-      {(job.status === "PENDING" || job.status === "PROCESSING") && (
-        <button
-          onClick={async () => {
-            await fetch(`/api/detection/jobs/${jobId}/cancel`, {
-              method: "POST",
-            });
-          }}
-          style={{
-            fontSize: "12px",
-            color: "var(--danger)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            textDecoration: "underline",
-            padding: 0,
-            textAlign: "left",
-          }}
-        >
-          Cancel job
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── PidViewer ───────────────────────────────────────────────────────────────
-
-// CAD canvas constants
-const CAD_BG = "#111C27";
-const CAD_GRID_COLOR = "rgba(125,211,252,0.055)";
-const CAD_GRID_MAJOR_COLOR = "rgba(125,211,252,0.13)";
-const CAD_TOOLBAR_BG = "#182832";
-const CAD_TOOLBAR_BORDER = "#30424E";
-
-const cadToolBtn: React.CSSProperties = {
-  padding: "5px 10px",
-  fontSize: "11px",
-  fontFamily: "ui-monospace, monospace",
-  fontWeight: "500",
-  borderRadius: "3px",
-  border: "1px solid #3a3a3a",
-  background: "#202F3A",
-  color: "#D7E4E9",
-  cursor: "pointer",
-  letterSpacing: "0.02em",
-  transition: "background 100ms, border-color 100ms, color 100ms",
-  display: "flex",
-  alignItems: "center",
-  gap: "5px",
-  lineHeight: "1",
-  whiteSpace: "nowrap" as const,
-};
-
-const cadToolBtnActive: React.CSSProperties = {
-  ...cadToolBtn,
-  background: "rgba(34,211,238,0.14)",
-  border: "1px solid #22D3EE",
-  color: "#67E8F9",
-};
-
-const cadSep: React.CSSProperties = {
-  width: 1,
-  height: 16,
-  background: "#3a3a3a",
-  flexShrink: 0,
-};
-
-// Neon bbox color per review status / confidence
-function cadBboxColor(d: Detection): string {
-  if (d.review_status === "APPROVED") return "#00e676"; // neon green — confirmed
-  if (d.review_status === "REJECTED") return "#ff5252"; // red — rejected
-  const conf = d.confidence ?? 0;
-  if (conf >= 0.9) return "#00bcd4"; // cyan — high confidence
-  if (conf >= 0.7) return "#ffd600"; // yellow — medium
-  return "#ff6d00"; // orange — low/needs review
-}
-
-function PidViewer({
-  documentId,
-  fileType,
-  detections,
-  selectedId,
-  onSelect,
-  page,
-  totalPages,
-  onPageChange,
-  onBboxChange,
-  drawMode,
-  onDrawComplete,
-  onDrawCancel,
-  showAll,
-  onShowAllChange,
-  showDetail,
-  onShowDetailChange,
-  fillHeight,
-}: {
-  documentId: string;
-  fileType?: string;
-  detections: Detection[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  page: number;
-  totalPages: number;
-  onPageChange: (p: number) => void;
-  onBboxChange?: (
-    id: string,
-    bbox: { x: number; y: number; w: number; h: number },
-  ) => void;
-  drawMode?: boolean;
-  onDrawComplete?: (bbox: {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  }) => void;
-  onDrawCancel?: () => void;
-  showAll?: boolean;
-  onShowAllChange?: (v: boolean) => void;
-  showDetail?: boolean;
-  onShowDetailChange?: (v: boolean) => void;
-  fillHeight?: boolean;
-}) {
+  // Viewer Pan & Zoom State
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [rotation, setRotation] = useState(0); // 0 | 90 | 180 | 270
-  const [fullscreen, setFullscreen] = useState(false);
-  const [showGrid, setShowGrid] = useState(false);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [showAllBboxes, setShowAllBboxes] = useState(true);
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
 
-  // Text overlay — read every text token on the drawing (DXF TEXT or PDF text layer)
-  // DXF WebGL engine already renders native TEXT/MTEXT. Overlay starts off for
-  // DXF to prevent duplicated/misaligned labels; PDF uses overlay by default.
-  const [showText, setShowText] = useState(fileType !== "dxf");
-  const [showReviewCandidates, setShowReviewCandidates] = useState(false);
-  const [textTokens, setTextTokens] = useState<
-    Array<{ text: string; x: number; y: number; w: number; h: number }>
-  >([]);
-  // Natural image dimensions — used to map bbox coords to display space
-  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(
-    null,
-  );
-  const [imgLoading, setImgLoading] = useState(!!documentId);
-  const [imgError, setImgError] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  // ── BBox drag/scale meniru halaman legend (review/page.tsx) ──────────────
-  // dragBbox dalam koordinat 0-1000 (SVG viewBox linear dengan natural px,
-  // jadi 0-1000 bisa dipakai langsung untuk math lalu dirender ulang).
-  // Editing & draw dinonaktifkan saat rotation !== 0 (sumbu tidak valid).
-  const suppressClickRef = useRef(false);
-  const [dragBbox, setDragBbox] = useState<null | {
-    id: string;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    startX: number;
-    startY: number;
-    origX: number;
-    origY: number;
-    origW: number;
-    origH: number;
-    mode: string;
-  }>(null);
-  const [bboxSavedFlash, setBboxSavedFlash] = useState(false);
-  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Draw-new-box state (koordinat SVG px = natural px)
-  const [drawStart, setDrawStart] = useState<{ sx: number; sy: number } | null>(
-    null,
-  );
-  const [drawRect, setDrawRect] = useState<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Fetch tokens
-  useEffect(() => {
-    if (!showText || !documentId) return;
-    fetch(`/api/documents/${documentId}/text?page=${page}`)
-      .then((r) => r.json())
-      .then((d: { tokens: typeof textTokens }) => setTextTokens(d.tokens))
-      .catch(console.error);
-  }, [showText, documentId, page]);
+  // Container viewport size observer for high-DPI scaling
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 900, h: 650 });
 
-  const isDxf = fileType === "dxf";
-  useEffect(() => {
-    setShowText(!isDxf);
-  }, [isDxf]);
-  const dxfRawUrl =
-    documentId && isDxf ? `/api/documents/${documentId}/raw` : null;
-
-  // Sheet regions for DXF navigation (world-unit extents per sheet).
-  const [dxfRegions, setDxfRegions] = useState<
-    Array<{
-      pidPage: number;
-      entityCount: number;
-      extents: { minX: number; minY: number; maxX: number; maxY: number };
-    }>
-  >([]);
-  useEffect(() => {
-    if (!isDxf || !documentId) {
-      setDxfRegions([]);
-      return;
-    }
-    let cancelled = false;
-    fetch(`/api/documents/${documentId}/dxf-regions`)
-      .then((r) => r.json())
-      .then((d: { regions?: typeof dxfRegions }) => {
-        if (!cancelled && Array.isArray(d.regions)) setDxfRegions(d.regions);
-      })
-      .catch(() => {
-        /* non-fatal: viewer falls back to whole-file fit */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isDxf, documentId]);
-
-  // For PDF: direct image URL. For DXF: handled by WebGL DxfViewer component.
-  const imgSrc =
-    documentId && !isDxf
-      ? `/api/documents/${documentId}/pages/${page}/image`
-      : null;
-
-  // Reset image state on page or document change
-  useEffect(() => {
-    if (isDxf) {
-      setImgLoading(false);
-      setImgError(false);
-    } else {
-      setImgNatural(null);
-      setImgLoading(!!documentId);
-      setImgError(false);
-    }
-  }, [documentId, page, isDxf]);
-
-  // Prefetch halaman tetangga agar navigasi ◀/▶ instan (browser cache 1 jam)
-  // DXF tidak punya halaman gambar — skip
-  useEffect(() => {
-    if (!documentId || isDxf) return;
-    for (const p of [page - 1, page + 1]) {
-      if (p < 1 || p > totalPages) continue;
-      const img = new Image();
-      img.src = `/api/documents/${documentId}/pages/${p}/image`;
-    }
-  }, [documentId, page, totalPages, isDxf]);
-
-  // Reset pan/zoom/rotation when page changes
-  useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, [page]);
-
-  // ESC exits fullscreen / cancels draw mode
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (drawMode) {
-          setDrawStart(null);
-          setDrawRect(null);
-          onDrawCancel?.();
-        } else {
-          setFullscreen(false);
-        }
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [drawMode, onDrawCancel]);
-
-  // showAll: tampilkan semua bbox di halaman. Selected = solid, lainnya = dashed.
-  const visible = showAll
-    ? detections.filter(
-        (d) =>
-          d.detection_status !== "REJECTED" &&
-          d.review_status !== "REJECTED" &&
-          d.bbox_x !== null &&
-          d.bbox_y !== null &&
-          d.bbox_w !== null &&
-          d.bbox_h !== null,
-      )
-    : selectedId
-      ? detections.filter(
-          (d) =>
-            d.id === selectedId &&
-            d.detection_status !== "REJECTED" &&
-            d.review_status !== "REJECTED" &&
-            d.bbox_x !== null &&
-            d.bbox_y !== null &&
-            d.bbox_w !== null &&
-            d.bbox_h !== null,
-        )
-      : [];
-
-  // wheel must be non-passive to allow preventDefault (React onWheel is passive in Chrome)
-  // Re-bind when `fullscreen` toggles: viewerContent remounts under a new parent,
-  // so viewerRef.current points to a new DOM node.
   useEffect(() => {
     const el = viewerRef.current;
     if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerSize({ w: rect.width, h: rect.height });
+      }
+    };
+
+    updateSize();
+
+    const ro = new ResizeObserver(() => {
+      updateSize();
+    });
+    ro.observe(el);
+
+    return () => ro.disconnect();
+  }, []);
+
+  // Compute base drawing dimension that fits the viewport container comfortably at zoom=1
+  const baseSize = useMemo(() => {
+    if (!imgNatural || !containerSize.w || !containerSize.h) return null;
+    const aspect = imgNatural.w / imgNatural.h;
+    const availW = Math.max(100, containerSize.w - 32);
+    const availH = Math.max(100, containerSize.h - 32);
+
+    if (availW / availH > aspect) {
+      const h = availH;
+      const w = Math.round(h * aspect);
+      return { w, h };
+    } else {
+      const w = availW;
+      const h = Math.round(w / aspect);
+      return { w, h };
+    }
+  }, [imgNatural, containerSize]);
+
+  // Reset zoom & pan when page or document changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setImgNatural(null);
+  }, [page, documentId]);
+
+  // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
+  useEffect(() => {
+    const container = viewerRef.current;
+    if (!container) return;
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.15 : 0.15;
-      const rect = el.getBoundingClientRect();
-      // Cursor position relative to viewport center
-      const cx = e.clientX - rect.left - rect.width / 2;
-      const cy = e.clientY - rect.top - rect.height / 2;
+      // Zoom factor: 1.15 on wheel up (zoom in), 0.87 on wheel down (zoom out)
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left - rect.width / 2;
+      const mouseY = e.clientY - rect.top - rect.height / 2;
+
       setZoom((prevZoom) => {
-        const nextZoom = Math.max(0.15, Math.min(10, prevZoom + delta));
-        // Adjust pan so content under cursor stays fixed
-        const zoomRatio = nextZoom / prevZoom;
+        const nextZoom = Math.min(8, Math.max(0.2, Number((prevZoom * zoomFactor).toFixed(3))));
+        const scaleRatio = nextZoom / prevZoom;
         setPan((prevPan) => ({
-          x: cx - (cx - prevPan.x) * zoomRatio,
-          y: cy - (cy - prevPan.y) * zoomRatio,
+          x: Number((mouseX - (mouseX - prevPan.x) * scaleRatio).toFixed(1)),
+          y: Number((mouseY - (mouseY - prevPan.y) * scaleRatio).toFixed(1)),
         }));
         return nextZoom;
       });
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [fullscreen]);
 
-  // Konversi client px → koordinat SVG (natural px). SVG viewBox = natural,
-  // jadi rect (displayed, sudah termasuk zoom/pan) diskalakan linear.
-  const clientToSvg = (clientX: number, clientY: number) => {
-    const svg = svgRef.current;
-    const nat = imgNatural;
-    if (!svg || !nat) return null;
-    const rect = svg.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
-    return {
-      sx: ((clientX - rect.left) / rect.width) * nat.w,
-      sy: ((clientY - rect.top) / rect.height) * nat.h,
-    };
-  };
-  const clampNum = (v: number, lo: number, hi: number) =>
-    Math.max(lo, Math.min(hi, v));
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Middle button = pan regardless of mode
-    if (e.button === 1) {
-      e.preventDefault();
-      setDragging(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-      return;
-    }
-    // Draw mode: mousedown di area kosong mulai gambar kotak baru
-    if (drawMode && rotation === 0) {
-      if ((e.target as HTMLElement).closest("[data-bbox]")) return;
-      const p = clientToSvg(e.clientX, e.clientY);
-      if (!p) return;
-      e.stopPropagation();
-      setDrawStart(p);
-      setDrawRect({ x: p.sx, y: p.sy, w: 0, h: 0 });
-      return;
-    }
-    if ((e.target as HTMLElement).closest("[data-bbox]")) return;
-    setDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (drawStart) {
-      const p = clientToSvg(e.clientX, e.clientY);
-      if (!p || !imgNatural) return;
-      const x = clampNum(Math.min(drawStart.sx, p.sx), 0, imgNatural.w);
-      const y = clampNum(Math.min(drawStart.sy, p.sy), 0, imgNatural.h);
-      const w = clampNum(Math.abs(p.sx - drawStart.sx), 0, imgNatural.w - x);
-      const h = clampNum(Math.abs(p.sy - drawStart.sy), 0, imgNatural.h - y);
-      setDrawRect({ x, y, w, h });
-      return;
-    }
-    if (!dragging) return;
-    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  };
-  const handleMouseUp = () => {
-    // Selesaikan draw → normalisasi ke 0-1000, panggil parent untuk konfirmasi
-    if (drawStart && drawRect && imgNatural) {
-      const nx = Math.round((drawRect.x / imgNatural.w) * 1000);
-      const ny = Math.round((drawRect.y / imgNatural.h) * 1000);
-      const nw = Math.round((drawRect.w / imgNatural.w) * 1000);
-      const nh = Math.round((drawRect.h / imgNatural.h) * 1000);
-      setDrawStart(null);
-      setDrawRect(null);
-      if (nw >= 10 && nh >= 10) {
-        onDrawComplete?.({
-          x: clampNum(nx, 0, 1000 - nw),
-          y: clampNum(ny, 0, 1000 - nh),
-          w: Math.min(nw, 1000),
-          h: Math.min(nh, 1000),
-        });
-      }
-      return;
-    }
-    setDragging(false);
-  };
-
-  const rotate = () => setRotation((r) => (r + 90) % 360);
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setRotation(0);
-  };
-  const zoomExtents = () => {
-    // Fit image to viewport
-    const el = viewerRef.current;
-    if (!el || !imgNatural) {
-      resetView();
-      return;
-    }
-    const rect = el.getBoundingClientRect();
-    const scaleX = (rect.width * 0.9) / imgNatural.w;
-    const scaleY = (rect.height * 0.9) / imgNatural.h;
-    setZoom(Math.min(scaleX, scaleY));
-    setPan({ x: 0, y: 0 });
-    setRotation(0);
-  };
-
-  // ── BBox drag/resize meniru legend: 1 handler di <g>, mode dari ─────────
-  // data-handle ("e|w|n|s|ne|nw|se|sw") atau "move". Math dalam 0-1000.
-  const beginBboxDrag = (
-    e: React.MouseEvent,
-    id: string,
-    mode: string,
-    orig: { x: number; y: number; w: number; h: number },
-  ) => {
-    if (rotation !== 0 || !onBboxChange) return; // sumbu tidak valid saat dirotasi
-    e.stopPropagation();
-    e.preventDefault();
-    suppressClickRef.current = false;
-    setDragBbox({
-      id,
-      ...orig,
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: orig.x,
-      origY: orig.y,
-      origW: orig.w,
-      origH: orig.h,
-      mode,
-    });
-  };
-
-  // Window listeners meniru legend: mousemove update dragBbox, mouseup autosave.
-  useEffect(() => {
-    if (!dragBbox) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const onMove = (e: MouseEvent) => {
-      const rect = svg.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      // client px → 0-1000 (rect sudah termasuk zoom/pan transform)
-      const ndx = ((e.clientX - dragBbox.startX) / rect.width) * 1000;
-      const ndy = ((e.clientY - dragBbox.startY) / rect.height) * 1000;
-      if (
-        Math.abs(e.clientX - dragBbox.startX) > 3 ||
-        Math.abs(e.clientY - dragBbox.startY) > 3
-      ) {
-        suppressClickRef.current = true;
-      }
-      const o = dragBbox;
-      if (o.mode === "move") {
-        const nx = clampNum(o.origX + ndx, 0, 1000 - o.origW);
-        const ny = clampNum(o.origY + ndy, 0, 1000 - o.origH);
-        setDragBbox((p) =>
-          p ? { ...p, x: Math.round(nx), y: Math.round(ny) } : p,
-        );
-      } else {
-        // Resize — mode kombinasi e/w/n/s (mis. 'e', 'nw', 'se')
-        const m: string = o.mode;
-        const right = o.origX + o.origW;
-        const bottom = o.origY + o.origH;
-        let nx = o.origX,
-          ny = o.origY,
-          nw = o.origW,
-          nh = o.origH;
-        if (m.includes("e")) nw = clampNum(o.origW + ndx, 10, 1000 - o.origX);
-        if (m.includes("s")) nh = clampNum(o.origH + ndy, 10, 1000 - o.origY);
-        if (m.includes("w")) {
-          nx = clampNum(o.origX + ndx, 0, right - 10);
-          nw = right - nx;
-        }
-        if (m.includes("n")) {
-          ny = clampNum(o.origY + ndy, 0, bottom - 10);
-          nh = bottom - ny;
-        }
-        setDragBbox((p) =>
-          p
-            ? {
-                ...p,
-                x: Math.round(nx),
-                y: Math.round(ny),
-                w: Math.round(nw),
-                h: Math.round(nh),
-              }
-            : p,
-        );
-      }
-    };
-    const onUp = async () => {
-      const cur = dragBbox;
-      setDragBbox(null);
-      if (!cur || !onBboxChange) return;
-      const d = detections.find((x) => x.id === cur.id);
-      const norm = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
-      if (
-        d &&
-        (norm.x !== (d.bbox_x ?? 0) ||
-          norm.y !== (d.bbox_y ?? 0) ||
-          norm.w !== (d.bbox_w ?? 0) ||
-          norm.h !== (d.bbox_h ?? 0))
-      ) {
-        try {
-          await onBboxChange(cur.id, norm);
-          setBboxSavedFlash(true);
-          if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
-          savedFlashTimer.current = setTimeout(
-            () => setBboxSavedFlash(false),
-            2500,
-          );
-        } catch {
-          /* parent menampilkan error via reload; abaikan di sini */
-        }
-      }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    container.addEventListener('wheel', onWheel, { passive: false });
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      container.removeEventListener('wheel', onWheel);
     };
-    // Re-bind saat dragBbox berubah (pola legend) agar closure selalu baca state terbaru.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragBbox]);
-
-  // Build CSS transform: rotation applied first, then zoom+pan
-  const imgTransform = `rotate(${rotation}deg)`;
-  const containerTransform = `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`;
-
-  const viewerContent = (
-    <>
-      {/* CAD Toolbar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          padding: "6px 12px",
-          borderBottom: `1px solid ${CAD_TOOLBAR_BORDER}`,
-          background: CAD_TOOLBAR_BG,
-          flexWrap: "wrap",
-          minHeight: 38,
-        }}
-      >
-        {/* Page nav — only for multi-page PDF */}
-        {totalPages > 1 && (
-          <>
-            <button
-              onClick={() => onPageChange(Math.max(1, page - 1))}
-              disabled={page <= 1}
-              style={{ ...cadToolBtn, opacity: page <= 1 ? 0.35 : 1 }}
-              title="Previous page"
-            >
-              ◀
-            </button>
-            <span
-              style={{
-                fontSize: "11px",
-                color: "#888",
-                fontFamily: "ui-monospace,monospace",
-                padding: "0 2px",
-              }}
-            >
-              {page}/{totalPages}
-            </span>
-            <button
-              onClick={() => onPageChange(Math.min(totalPages, page + 1))}
-              disabled={page >= totalPages}
-              style={{ ...cadToolBtn, opacity: page >= totalPages ? 0.35 : 1 }}
-              title="Next page"
-            >
-              ▶
-            </button>
-            <div style={cadSep} />
-          </>
-        )}
-
-        {isDxf ? (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#60a5fa",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "#3b82f6",
-                display: "inline-block",
-              }}
-            />
-            AutoCAD WebGL Mode
-          </span>
-        ) : (
-          <>
-            {/* Zoom Extents */}
-            <button
-              onClick={zoomExtents}
-              style={cadToolBtn}
-              title="Zoom Extents (fit to view)"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                />
-              </svg>
-              Extents
-            </button>
-
-            {/* Zoom controls */}
-            <button
-              onClick={() =>
-                setZoom((z) => Math.max(0.15, +(z - 0.2).toFixed(2)))
-              }
-              style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
-              title="Zoom out"
-            >
-              −
-            </button>
-            <span
-              style={{
-                fontSize: "11px",
-                color: "#aaa",
-                fontFamily: "ui-monospace,monospace",
-                minWidth: 42,
-                textAlign: "center",
-              }}
-            >
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              onClick={() =>
-                setZoom((z) => Math.min(10, +(z + 0.2).toFixed(2)))
-              }
-              style={{ ...cadToolBtn, padding: "5px 8px", fontWeight: "700" }}
-              title="Zoom in"
-            >
-              +
-            </button>
-
-            <div style={cadSep} />
-
-            {/* Grid toggle */}
-            <button
-              onClick={() => setShowGrid((g) => !g)}
-              style={showGrid ? cadToolBtnActive : cadToolBtn}
-              title="Toggle CAD grid"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M3 3h18v18H3z" />
-                <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-              </svg>
-              Grid
-            </button>
-
-            {/* Rotate */}
-            <button
-              onClick={rotate}
-              style={rotation > 0 ? cadToolBtnActive : cadToolBtn}
-              title="Rotate 90°"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              {rotation > 0 ? `${rotation}°` : "Rotate"}
-            </button>
-
-            {/* Reset */}
-            <button
-              onClick={resetView}
-              style={cadToolBtn}
-              title="Reset view (zoom/pan/rotation)"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 12a9 9 0 1018 0 9 9 0 00-18 0"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 8v4l3 3"
-                />
-              </svg>
-              Reset
-            </button>
-          </>
-        )}
-
-        <div style={cadSep} />
-
-        {/* Show All bboxes */}
-        {onShowAllChange && (
-          <button
-            onClick={() => onShowAllChange(!showAll)}
-            style={showAll ? cadToolBtnActive : cadToolBtn}
-            title={
-              showAll ? "Show selected bbox only" : "Show all bounding boxes"
-            }
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <rect x="3" y="3" width="7" height="7" />
-              <rect x="14" y="3" width="7" height="7" />
-              <rect x="3" y="14" width="7" height="7" />
-              <rect x="14" y="14" width="7" height="7" />
-            </svg>
-            {showAll ? "All ON" : "Show All"}
-          </button>
-        )}
-
-        {onShowDetailChange && (
-          <button
-            onClick={() => onShowDetailChange(!showDetail)}
-            style={showDetail ? cadToolBtnActive : cadToolBtn}
-            title={
-              showDetail
-                ? "Hide selected asset detail"
-                : "Show selected asset detail"
-            }
-          >
-            {showDetail ? "Hide Detail" : "Show Detail"}
-          </button>
-        )}
-
-        {/* Text toggle */}
-        <button
-          onClick={() => setShowText(!showText)}
-          style={showText ? cadToolBtnActive : cadToolBtn}
-          title="Show all drawing text"
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M4 19h16M4 15h16M4 11h16M4 7h16" />
-          </svg>
-          Text
-        </button>
-        {isDxf && (
-          <button
-            onClick={() => setShowReviewCandidates((value) => !value)}
-            style={showReviewCandidates ? cadToolBtnActive : cadToolBtn}
-            title="Show or hide AI review candidates"
-          >
-            {showReviewCandidates ? "AI Candidates ON" : "AI Candidates"}
-          </button>
-        )}
-
-        {/* Status hints */}
-        {bboxSavedFlash && selectedId && (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#00e676",
-              fontWeight: "600",
-              fontFamily: "ui-monospace,monospace",
-            }}
-          >
-            ✓ BBox saved
-          </span>
-        )}
-        {drawMode && (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#00bcd4",
-              fontWeight: "600",
-              fontFamily: "ui-monospace,monospace",
-            }}
-          >
-            ⊞ Draw mode — drag canvas · Esc cancel
-          </span>
-        )}
-        {(selectedId || drawMode) && rotation !== 0 && (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#ffd600",
-              fontFamily: "ui-monospace,monospace",
-            }}
-          >
-            Reset rotation to 0° to edit bbox
-          </span>
-        )}
-
-        {/* Right: info + fullscreen */}
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#666",
-              fontFamily: "ui-monospace,monospace",
-            }}
-          >
-            {showAll
-              ? `${visible.length} bbox`
-              : visible.length > 0
-                ? (visible[0].asset_tag ?? visible[0].asset_type).slice(0, 20)
-                : "—"}
-          </span>
-          <button
-            onClick={() => setFullscreen((f) => !f)}
-            style={cadToolBtn}
-            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
-          >
-            {fullscreen ? (
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            ) : (
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                />
-              </svg>
-            )}
-            {fullscreen ? "Exit" : "Full"}
-          </button>
-        </div>
-      </div>
-
-      {/* Viewer area */}
-      {isDxf && dxfRawUrl ? (
-        <DxfViewer
-          url={dxfRawUrl}
-          detections={detections}
-          textTokens={textTokens}
-          showText={showText}
-          showReviewCandidates={showReviewCandidates}
-          selectedId={selectedId}
-          onSelectAsset={onSelect}
-          showAll={showAll}
-          regions={dxfRegions}
-          activeSheet={page}
-          style={{
-            flex: 1,
-            minHeight: fullscreen ? "calc(100vh - 80px)" : "560px",
-            height: fullscreen ? "calc(100vh - 80px)" : undefined,
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            position: "relative",
-            background: CAD_BG,
-            overflow: "hidden",
-            userSelect: "none",
-            flex: 1,
-            minHeight: fullscreen ? "calc(100vh - 80px)" : 600,
-            cursor: drawMode ? "crosshair" : dragging ? "grabbing" : "grab",
-          }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          ref={viewerRef}
-        >
-          {/* CAD Grid overlay — fixed to viewport, not affected by pan/zoom */}
-          {showGrid && (
-            <svg
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                pointerEvents: "none",
-                zIndex: 0,
-              }}
-            >
-              <defs>
-                <pattern
-                  id="cad-grid-minor"
-                  width="20"
-                  height="20"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <path
-                    d="M 20 0 L 0 0 0 20"
-                    fill="none"
-                    stroke={CAD_GRID_COLOR}
-                    strokeWidth="0.5"
-                  />
-                </pattern>
-                <pattern
-                  id="cad-grid-major"
-                  width="100"
-                  height="100"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <rect width="100" height="100" fill="url(#cad-grid-minor)" />
-                  <path
-                    d="M 100 0 L 0 0 0 100"
-                    fill="none"
-                    stroke={CAD_GRID_MAJOR_COLOR}
-                    strokeWidth="1"
-                  />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#cad-grid-major)" />
-            </svg>
-          )}
-
-          {/* Transformed container — zoom + pan, centered */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Inner wrapper takes zoom+pan transform */}
-            <div
-              style={{
-                transform: containerTransform,
-                transformOrigin: "center center",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                maxWidth: "100%",
-                maxHeight: "100%",
-                flexShrink: 0,
-              }}
-            >
-              {imgSrc && (
-                <div
-                  style={{
-                    transform: imgTransform,
-                    transformOrigin: "center center",
-                    lineHeight: 0,
-                    position: "relative",
-                    display: "inline-block",
-                    flexShrink: 0,
-                    maxWidth: "100%",
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    key={imgSrc}
-                    src={imgSrc}
-                    alt={`P&ID page ${page}`}
-                    onLoad={(e) => {
-                      const img = e.currentTarget;
-                      const w = img.naturalWidth || img.width || 2400;
-                      const h = img.naturalHeight || img.height || 1600;
-                      setImgNatural({ w, h });
-                      setImgLoading(false);
-                      setImgError(false);
-                    }}
-                    onError={() => {
-                      setImgLoading(false);
-                      setImgError(true);
-                    }}
-                    style={{
-                      display: "block",
-                      width: "auto",
-                      height: "auto",
-                      maxWidth: fullscreen ? "88vw" : "100%",
-                      maxHeight: fullscreen ? "calc(100vh - 200px)" : "560px",
-                      opacity: imgLoading ? 0 : 1,
-                      transition: "opacity 0.2s ease",
-                    }}
-                    draggable={false}
-                  />
-
-                  {/* SVG bbox overlay — Phase 5: selected bbox bisa drag + resize */}
-                  {imgNatural && !imgError && (
-                    <svg
-                      ref={svgRef}
-                      viewBox={`0 0 ${imgNatural.w} ${imgNatural.h}`}
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: "100%",
-                        height: "100%",
-                        overflow: "visible",
-                        pointerEvents: "none",
-                      }}
-                    >
-                      {visible.map((d) => {
-                        const isSel = d.id === selectedId;
-                        // Drag aktif (legend-style): pakai dragBbox, bukan nilai DB
-                        const drag =
-                          dragBbox && dragBbox.id === d.id ? dragBbox : null;
-                        const nx = drag ? drag.x : (d.bbox_x ?? 0);
-                        const ny = drag ? drag.y : (d.bbox_y ?? 0);
-                        const nw = drag ? drag.w : (d.bbox_w ?? 50);
-                        const nh = drag ? drag.h : (d.bbox_h ?? 50);
-                        const hasCanonicalBox =
-                          d.symbol_bbox_x !== null &&
-                          d.symbol_bbox_y !== null &&
-                          d.symbol_bbox_w !== null &&
-                          d.symbol_bbox_h !== null &&
-                          d.page_width !== null &&
-                          d.page_height !== null &&
-                          d.page_width > 0 &&
-                          d.page_height > 0;
-                        const x = hasCanonicalBox
-                          ? (d.symbol_bbox_x! / d.page_width!) * imgNatural.w
-                          : (nx / 1000) * imgNatural.w;
-                        const y = hasCanonicalBox
-                          ? (d.symbol_bbox_y! / d.page_height!) * imgNatural.h
-                          : (ny / 1000) * imgNatural.h;
-                        const w = hasCanonicalBox
-                          ? (d.symbol_bbox_w! / d.page_width!) * imgNatural.w
-                          : (nw / 1000) * imgNatural.w;
-                        const h = hasCanonicalBox
-                          ? (d.symbol_bbox_h! / d.page_height!) * imgNatural.h
-                          : (nh / 1000) * imgNatural.h;
-                        const selected = d.id === selectedId;
-                        const editable =
-                          isSel && rotation === 0 && !!onBboxChange;
-                        const color = cadBboxColor(d);
-                        const labelW = Math.max(w, 80);
-                        const labelY = y > 22 ? y - 22 : y + h + 4;
-                        // Handle resize 8-titik (koordinat pixel SVG)
-                        const hs = Math.max(10, imgNatural.w * 0.008);
-                        const hh = hs / 2;
-                        const handles: Array<{
-                          mode: string;
-                          cx: number;
-                          cy: number;
-                          cursor: string;
-                        }> = editable
-                          ? [
-                              {
-                                mode: "nw",
-                                cx: x,
-                                cy: y,
-                                cursor: "nwse-resize",
-                              },
-                              {
-                                mode: "n",
-                                cx: x + w / 2,
-                                cy: y,
-                                cursor: "ns-resize",
-                              },
-                              {
-                                mode: "ne",
-                                cx: x + w,
-                                cy: y,
-                                cursor: "nesw-resize",
-                              },
-                              {
-                                mode: "e",
-                                cx: x + w,
-                                cy: y + h / 2,
-                                cursor: "ew-resize",
-                              },
-                              {
-                                mode: "se",
-                                cx: x + w,
-                                cy: y + h,
-                                cursor: "nwse-resize",
-                              },
-                              {
-                                mode: "s",
-                                cx: x + w / 2,
-                                cy: y + h,
-                                cursor: "ns-resize",
-                              },
-                              {
-                                mode: "sw",
-                                cx: x,
-                                cy: y + h,
-                                cursor: "nesw-resize",
-                              },
-                              {
-                                mode: "w",
-                                cx: x,
-                                cy: y + h / 2,
-                                cursor: "ew-resize",
-                              },
-                            ]
-                          : [];
-                        const effNorm = { x: nx, y: ny, w: nw, h: nh };
-                        return (
-                          <g
-                            key={d.id}
-                            data-bbox="true"
-                            onClick={() => {
-                              // Abaikan klik yang merupakan akhir dari drag (pola legend)
-                              if (suppressClickRef.current) {
-                                suppressClickRef.current = false;
-                                return;
-                              }
-                              onSelect(d.id);
-                            }}
-                            onMouseDown={(e) => {
-                              // 1 handler meniru legend: baca data-handle dari target
-                              if (!editable) return;
-                              e.stopPropagation();
-                              const handle = (
-                                e.target as Element
-                              ).getAttribute?.("data-handle");
-                              if (handle) {
-                                beginBboxDrag(e, d.id, handle, effNorm);
-                              } else if (isSel) {
-                                beginBboxDrag(e, d.id, "move", effNorm);
-                              }
-                            }}
-                            style={{
-                              pointerEvents: "all",
-                              cursor: editable ? "move" : "pointer",
-                            }}
-                          >
-                            <rect
-                              x={x}
-                              y={y}
-                              width={w}
-                              height={h}
-                              fill="transparent"
-                            />
-                            <rect
-                              x={x}
-                              y={y}
-                              width={w}
-                              height={h}
-                              fill={selected ? `${color}18` : "none"}
-                              stroke={color}
-                              strokeWidth={selected ? 3 : 2}
-                              strokeDasharray={selected ? undefined : "8 4"}
-                              rx={3}
-                              opacity={selected ? 1 : 0.85}
-                            />
-                            {/* Resize handles — drag untuk scale bbox manual */}
-                            {handles.map((hd) => (
-                              <rect
-                                key={hd.mode}
-                                data-handle={hd.mode}
-                                x={hd.cx - hh}
-                                y={hd.cy - hh}
-                                width={hs}
-                                height={hs}
-                                fill="white"
-                                stroke={color}
-                                strokeWidth={2}
-                                rx={2}
-                                style={{ cursor: hd.cursor }}
-                              />
-                            ))}
-                            <rect
-                              x={x}
-                              y={labelY}
-                              width={labelW}
-                              height={20}
-                              fill={color}
-                              rx={3}
-                              opacity={selected ? 1 : 0.85}
-                            />
-                            <text
-                              x={x + 5}
-                              y={labelY + 14}
-                              fill="white"
-                              fontSize={13}
-                              fontFamily="ui-monospace, monospace"
-                              fontWeight={selected ? 700 : 400}
-                            >
-                              {(d.asset_tag ?? d.asset_type).slice(0, 16)}
-                            </text>
-                          </g>
-                        );
-                      })}
-                      {/* Preview kotak baru saat draw mode */}
-                      {drawMode && drawRect && imgNatural && (
-                        <rect
-                          x={drawRect.x}
-                          y={drawRect.y}
-                          width={Math.max(drawRect.w, 2)}
-                          height={Math.max(drawRect.h, 2)}
-                          fill="rgba(59,130,246,0.15)"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          strokeDasharray="8 4"
-                          rx={3}
-                          style={{ pointerEvents: "none" }}
-                        />
-                      )}
-                      {/* Text Overlay */}
-                      {showText &&
-                        imgNatural &&
-                        textTokens.map((t, i) => (
-                          <text
-                            key={i}
-                            x={(t.x / 1000) * imgNatural.w}
-                            y={(t.y / 1000) * imgNatural.h}
-                            fontSize={10}
-                            fill="#ffffff"
-                            fillOpacity={0.8}
-                            stroke="#000000"
-                            strokeWidth={0.2}
-                            style={{
-                              userSelect: "none",
-                              pointerEvents: "none",
-                            }}
-                          >
-                            {t.text}
-                          </text>
-                        ))}
-                    </svg>
-                  )}
-                </div>
-              )}
-
-              {/* Loading — PDF */}
-              {imgLoading && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      textAlign: "center",
-                      color: "#666",
-                    }}
-                  >
-                    <svg
-                      style={{
-                        width: 32,
-                        height: 32,
-                        margin: "0 auto 8px",
-                        animation: "spin 1s linear infinite",
-                      }}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        opacity="0.25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        opacity="0.75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8v8H4z"
-                      />
-                    </svg>
-                    <p style={{ fontSize: 12 }}>{`Rendering page ${page}…`}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Error / empty */}
-              {(imgError || !imgSrc) && !imgLoading && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      textAlign: "center",
-                      color: "#555",
-                      fontFamily: "ui-monospace, monospace",
-                    }}
-                  >
-                    <svg
-                      style={{ width: 56, height: 56, margin: "0 auto 8px" }}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1}
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                    <p style={{ fontSize: 13 }}>
-                      {imgError
-                        ? "Failed to load page"
-                        : "Select document to view"}
-                    </p>
-                    <p style={{ fontSize: 11, marginTop: 4 }}>
-                      {imgError
-                        ? "Check server logs"
-                        : "Run detection to see bounding boxes"}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Legend bar — CAD dark style */}
-      <div
-        style={{
-          display: "flex",
-          gap: "16px",
-          flexWrap: "wrap",
-          alignItems: "center",
-          padding: "5px 12px",
-          borderTop: `1px solid ${CAD_TOOLBAR_BORDER}`,
-          background: CAD_TOOLBAR_BG,
-          fontSize: "11px",
-          fontFamily: "ui-monospace, monospace",
-          color: "#888",
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 18,
-              height: 2,
-              background: "#00bcd4",
-              borderRadius: 1,
-            }}
-          />
-          ≥90%
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 18,
-              height: 2,
-              background: "#ffd600",
-              borderRadius: 1,
-            }}
-          />
-          ≥70%
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 18,
-              height: 2,
-              background: "#ff6d00",
-              borderRadius: 1,
-            }}
-          />
-          Review
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 18,
-              height: 2,
-              background: "#00e676",
-              borderRadius: 1,
-            }}
-          />
-          Confirmed
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 18,
-              height: 2,
-              background: "#ff5252",
-              borderRadius: 1,
-            }}
-          />
-          Rejected
-        </span>
-        <span
-          style={{ marginLeft: "auto", color: "#555", letterSpacing: "0.02em" }}
-        >
-          {drawMode
-            ? "DRAW MODE · drag canvas · ESC cancel"
-            : showAll
-              ? `SHOW ALL · ${visible.length} bbox · scroll=zoom · drag=pan`
-              : "scroll=zoom · drag=pan · drag bbox/handle to adjust"}
-        </span>
-      </div>
-    </>
-  );
-
-  // Fullscreen overlay
-  if (fullscreen) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 50,
-          background: CAD_BG,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            flex: 1,
-            minHeight: 0,
-          }}
-        >
-          {viewerContent}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        background: CAD_BG,
-        border: `1px solid ${CAD_TOOLBAR_BORDER}`,
-        borderRadius: "var(--radius-md)",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        height: fillHeight ? "auto" : "640px",
-        minHeight: "480px",
-      }}
-    >
-      {viewerContent}
-    </div>
-  );
-}
-
-// ─── AssetDetail ─────────────────────────────────────────────────────────────
-
-function AssetDetail({
-  detection,
-  onClose,
-  onConfirm,
-  onReject,
-  onEdit,
-}: {
-  detection: Detection;
-  onClose: () => void;
-  onConfirm: (id: string) => Promise<void>;
-  onReject: (id: string) => Promise<void>;
-  onEdit: (id: string, fields: Partial<Detection>) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editTag, setEditTag] = useState(detection.asset_tag ?? "");
-  const [editType, setEditType] = useState(detection.asset_type);
-  const [editDesc, setEditDesc] = useState(detection.description ?? "");
-  const [editSize, setEditSize] = useState(detection.size ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    await onEdit(detection.id, {
-      asset_tag: editTag || null,
-      asset_type: editType,
-      description: editDesc || null,
-      size: editSize || null,
-    } as Partial<Detection>);
-    setSaving(false);
-    setEditing(false);
-  };
-
-  const ev = parseEvidence(detection.evidence);
-  const pct =
-    detection.confidence !== null
-      ? Math.round(detection.confidence * 100)
-      : null;
-
-  const successBtn: React.CSSProperties = {
-    flex: 1,
-    padding: "6px 8px",
-    borderRadius: "var(--radius-sm)",
-    background: "var(--success)",
-    color: "white",
-    fontSize: "12px",
-    fontWeight: "600",
-    border: "none",
-    cursor: "pointer",
-    transition: "all 150ms ease-out",
-  };
-  const infoBtn: React.CSSProperties = {
-    flex: 1,
-    padding: "6px 8px",
-    borderRadius: "var(--radius-sm)",
-    background: "#002B4E",
-    color: "white",
-    fontSize: "12px",
-    fontWeight: "600",
-    border: "none",
-    cursor: "pointer",
-    transition: "all 150ms ease-out",
-  };
-  const dangerBtn: React.CSSProperties = {
-    flex: 1,
-    padding: "6px 8px",
-    borderRadius: "var(--radius-sm)",
-    background: "var(--danger)",
-    color: "white",
-    fontSize: "12px",
-    fontWeight: "600",
-    border: "none",
-    cursor: "pointer",
-    transition: "all 150ms ease-out",
-  };
-
-  return (
-    <div
-      style={{
-        ...cardStyle,
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        boxSizing: "border-box",
-        minHeight: 0,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            minWidth: 0,
-          }}
-        >
-          <span
-            style={{
-              fontWeight: "600",
-              color: "var(--foreground)",
-              fontSize: "14px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {detection.asset_tag ?? detection.asset_type}
-          </span>
-          {isAutoGeneratedTag(detection.evidence) && (
-            <span
-              title="Tag ini dibuat secara otomatis berdasarkan konfigurasi Legenda & nomor urut proyek"
-              style={{
-                fontSize: "10px",
-                fontWeight: "600",
-                color: "var(--accent, #0284c7)",
-                background: "var(--accent-soft, rgba(2, 132, 199, 0.12))",
-                padding: "1px 5px",
-                borderRadius: "4px",
-                border:
-                  "1px solid var(--accent-subtle, rgba(2, 132, 199, 0.25))",
-                letterSpacing: "0.02em",
-                flexShrink: 0,
-              }}
-            >
-              Auto Tag
-            </span>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: "20px",
-            color: "var(--foreground-muted)",
-            lineHeight: 1,
-          }}
-        >
-          &times;
-        </button>
-      </div>
-
-      {/* Body */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "visible",
-          padding: "16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-          fontSize: "14px",
-        }}
-      >
-        {!editing ? (
-          <dl
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: "8px 16px",
-              margin: 0,
-            }}
-          >
-            {[
-              ["Asset Tag", detection.asset_tag ?? "—"],
-              ["Asset Type", detection.asset_type],
-              ["Size", detection.size ?? "—"],
-              ["Equipment Class", detection.equipment_class ?? "—"],
-              ["Description", detection.description ?? "—"],
-              [
-                "P&ID Page",
-                detection.pid_page !== null ? String(detection.pid_page) : "—",
-              ],
-              ["Service", detection.service ?? "—"],
-              ["Location", detection.location ?? "—"],
-              ["Unit", detection.unit ?? "—"],
-              ["Area", detection.area ?? "—"],
-              ["Confidence", pct !== null ? `${pct}%` : "—"],
-              ["Detection Status", detection.detection_status],
-              ["Review Status", detection.review_status],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: "600",
-                    color: "var(--foreground-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  {k}
-                </dt>
-                <dd style={{ margin: "2px 0 0", color: "var(--foreground)" }}>
-                  {v}
-                </dd>
-              </div>
-            ))}
-
-            {/* BBox */}
-            <div style={{ gridColumn: "1 / -1" }}>
-              <dt
-                style={{
-                  fontSize: "11px",
-                  fontWeight: "600",
-                  color: "var(--foreground-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                Bounding Box
-              </dt>
-              <dd
-                style={{
-                  margin: "2px 0 0",
-                  fontFamily: "var(--font-geist-mono, monospace)",
-                  fontSize: "12px",
-                  color: "var(--foreground-muted)",
-                }}
-              >
-                x={detection.bbox_x} y={detection.bbox_y} w={detection.bbox_w}{" "}
-                h={detection.bbox_h}
-              </dd>
-            </div>
-
-            {/* Evidence */}
-            {ev.length > 0 && (
-              <div style={{ gridColumn: "1 / -1" }}>
-                <dt
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: "600",
-                    color: "var(--foreground-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Evidence
-                </dt>
-                <ul
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "4px",
-                    margin: 0,
-                    padding: 0,
-                    listStyle: "none",
-                  }}
-                >
-                  {ev.map((e, i) => (
-                    <li
-                      key={i}
-                      style={{
-                        fontSize: "12px",
-                        color: "var(--foreground-muted)",
-                        display: "flex",
-                        gap: "6px",
-                      }}
-                    >
-                      <span style={{ color: "var(--info)", marginTop: "2px" }}>
-                        •
-                      </span>
-                      {e}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </dl>
-        ) : (
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-          >
-            <label style={{ display: "block" }}>
-              <span style={fieldLabelStyle}>Asset Tag</span>
-              <input
-                style={{ ...selectStyle, marginTop: "4px" }}
-                value={editTag}
-                onChange={(e) => setEditTag(e.target.value)}
-              />
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={fieldLabelStyle}>Asset Type</span>
-              <input
-                style={{ ...selectStyle, marginTop: "4px" }}
-                value={editType}
-                onChange={(e) => setEditType(e.target.value)}
-              />
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={fieldLabelStyle}>Size</span>
-              <input
-                style={{ ...selectStyle, marginTop: "4px" }}
-                value={editSize}
-                onChange={(e) => setEditSize(e.target.value)}
-                placeholder='e.g. 2", 4", DN100'
-              />
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={fieldLabelStyle}>Description</span>
-              <textarea
-                style={{ ...selectStyle, marginTop: "4px", resize: "none" }}
-                rows={3}
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-              />
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div
-        style={{
-          borderTop: "1px solid var(--border)",
-          padding: "12px 16px",
-          display: "flex",
-          gap: "8px",
-        }}
-      >
-        {detection.review_status !== "APPROVED" &&
-          detection.review_status !== "REJECTED" && (
-            <>
-              <button
-                onClick={() => onConfirm(detection.id)}
-                style={{
-                  ...successBtn,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "5px",
-                }}
-              >
-                <CheckCircle
-                  size={14}
-                  weight="bold"
-                  style={{ flexShrink: 0 }}
-                />
-                Confirm
-              </button>
-              {!editing ? (
-                <button
-                  onClick={() => setEditing(true)}
-                  style={{
-                    ...infoBtn,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <PencilSimple
-                    size={14}
-                    weight="bold"
-                    style={{ flexShrink: 0 }}
-                  />
-                  Edit
-                </button>
-              ) : (
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  style={{
-                    ...infoBtn,
-                    opacity: saving ? 0.5 : 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <FloppyDisk
-                    size={14}
-                    weight="bold"
-                    style={{ flexShrink: 0 }}
-                  />
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              )}
-              <button
-                onClick={() => onReject(detection.id)}
-                style={{
-                  ...dangerBtn,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "5px",
-                }}
-              >
-                <XCircle size={14} weight="bold" style={{ flexShrink: 0 }} />
-                Reject
-              </button>
-            </>
-          )}
-        {editing && (
-          <button
-            onClick={() => setEditing(false)}
-            style={{
-              padding: "6px 12px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)",
-              fontSize: "12px",
-              color: "var(--foreground-muted)",
-              background: "var(--surface)",
-              cursor: "pointer",
-            }}
-          >
-            Cancel
-          </button>
-        )}
-        {(detection.review_status === "APPROVED" ||
-          detection.review_status === "REJECTED") && (
-          <span
-            style={{
-              fontSize: "12px",
-              color: "var(--foreground-subtle)",
-              fontStyle: "italic",
-            }}
-          >
-            Reviewed — {detection.review_status.toLowerCase()}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── DetectionsTable ─────────────────────────────────────────────────────────
-
-const STATUS_OPTS = ["", "DETECTED", "CONFIRMED", "REJECTED", "MANUAL"];
-const CONF_OPTS = [
-  { label: "All Conf.", value: "" },
-  { label: "≥95% High", value: "high" },
-  { label: "≥80% Medium", value: "medium" },
-  { label: "<80% Review", value: "low" },
-];
-const VALIDATION_OPTS = [
-  { label: "All Validation", value: "" },
-  { label: "NEEDS REVIEW", value: "NEEDS_REVIEW" },
-  { label: "VALID", value: "VALID" },
-  { label: "CONFLICT", value: "CONFLICT" },
-];
-const CANDIDATE_OPTS = [
-  { label: "All Candidates", value: "" },
-  { label: "Final", value: "FINAL" },
-  { label: "AI Review", value: "REVIEW_CANDIDATE" },
-  { label: "Approved", value: "APPROVED" },
-  { label: "Noise", value: "NOISE" },
-];
-
-function DetectionsTable({
-  detections,
-  selectedId,
-  onSelect,
-  onBulkAction,
-  onMdoAction,
-  approvingMdoId,
-  currentViewerPage,
-}: {
-  detections: Detection[];
-  selectedId: string | null;
-  onSelect: (d: Detection) => void;
-  onBulkAction?: (action: "confirm" | "reject", ids: string[]) => Promise<void>;
-  onMdoAction?: (id: string, action: "approve" | "reject") => Promise<void>;
-  approvingMdoId?: string | null;
-  currentViewerPage?: number | null;
-}) {
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [conf, setConf] = useState("");
-  const [validationFilter, setValidationFilter] = useState("");
-  const [assetTypeFilter, setAssetTypeFilter] = useState("");
-  const [candidateFilter, setCandidateFilter] = useState("");
-  const [syncPage, setSyncPage] = useState(false);
-  const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState<
-    "tag" | "type" | "size" | "page" | "conf" | "status"
-  >("tag");
-  const [sortAsc, setSortAsc] = useState(true);
-  // M1: Hide duplicates by default — show only highest-confidence detection per normalized tag+type combo
-  const [hideDupes, setHideDupes] = useState(true);
-  const [pageSize, setPageSize] = useState(15);
-
-  // Bulk select
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkLoading, setBulkLoading] = useState(false);
-
-  // Duplicate detection — one geometry-first rule shared with the API/worker.
-  // Keyed by tag+type before; that hid every untagged symbol of a type behind a
-  // single row and missed duplicates whose labels drifted between lanes.
-  const duplicateInfo = useMemo(() => {
-    const result = findDuplicates(
-      detections.map((d) => ({
-        id: d.id,
-        assetTag: d.asset_tag,
-        assetType: d.asset_type,
-        confidence: d.confidence,
-        page: d.pid_page,
-        reviewStatus: d.review_status,
-        bbox:
-          d.bbox_x !== null &&
-          d.bbox_y !== null &&
-          d.bbox_w !== null &&
-          d.bbox_h !== null
-            ? { x: d.bbox_x, y: d.bbox_y, width: d.bbox_w, height: d.bbox_h }
-            : null,
-      })),
-    );
-    const groupSize = new Map<string, number>();
-    for (const g of result.groups)
-      groupSize.set(g.winnerId, g.duplicateIds.length + 1);
-    return { ...result, groupSize };
-  }, [detections]);
-
-  // Unique asset types for filter dropdown
-  const assetTypes = useMemo(() => {
-    const types = new Set<string>();
-    for (const d of detections)
-      if (d.asset_type) types.add(normalizeType(d.asset_type));
-    return Array.from(types).sort();
-  }, [detections]);
-
-  const filtered = (() => {
-    // Duplicates are hidden (not deleted) until the user runs Remove Duplicates.
-    const base = hideDupes
-      ? detections.filter((d) => !duplicateInfo.duplicateIds.has(d.id))
-      : detections;
-    return base.filter((d) => {
-      const tag = d.asset_tag ?? "";
-      const type = normalizeType(d.asset_type);
-      const sz = d.size ?? "";
-      if (
-        q &&
-        !tag.toLowerCase().includes(q.toLowerCase()) &&
-        !type.toLowerCase().includes(q.toLowerCase()) &&
-        !sz.toLowerCase().includes(q.toLowerCase())
-      )
-        return false;
-      if (status) {
-        const matchStatus =
-          status === "CONFIRMED"
-            ? d.review_status === "APPROVED"
-            : status === "REJECTED"
-              ? d.review_status === "REJECTED"
-              : d.detection_status === status;
-        if (!matchStatus) return false;
-      }
-      if (conf === "high" && (d.confidence ?? 0) < 0.95) return false;
-      if (
-        conf === "medium" &&
-        ((d.confidence ?? 0) < 0.8 || (d.confidence ?? 0) >= 0.95)
-      )
-        return false;
-      if (conf === "low" && (d.confidence ?? 0) >= 0.8) return false;
-      if (validationFilter && d.validation_status !== validationFilter)
-        return false;
-      if (assetTypeFilter && normalizeType(d.asset_type) !== assetTypeFilter)
-        return false;
-      if (candidateFilter && d.candidate_status !== candidateFilter)
-        return false;
-      // Page sync: filter to viewer page when enabled
-      if (syncPage && currentViewerPage && d.pid_page !== currentViewerPage)
-        return false;
-      return true;
-    });
-  })();
-
-  const sorted = [...filtered].sort((a, b) => {
-    let cmp = 0;
-    if (sortBy === "tag")
-      cmp = (a.asset_tag ?? "").localeCompare(b.asset_tag ?? "");
-    else if (sortBy === "type")
-      cmp = (a.asset_type ?? "").localeCompare(b.asset_type ?? "");
-    else if (sortBy === "size")
-      cmp = (a.size ?? "").localeCompare(b.size ?? "");
-    else if (sortBy === "page") cmp = (a.pid_page ?? 0) - (b.pid_page ?? 0);
-    else if (sortBy === "conf") cmp = (a.confidence ?? 0) - (b.confidence ?? 0);
-    else if (sortBy === "status")
-      cmp = (a.review_status ?? "").localeCompare(b.review_status ?? "");
-    return sortAsc ? cmp : -cmp;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  // Clamp: halaman tabel basi (filter menyusut / data reload) → slice kosong misterius.
-  const safeTablePage = Math.min(Math.max(1, page), totalPages);
-  const slice = sorted.slice(
-    (safeTablePage - 1) * pageSize,
-    safeTablePage * pageSize,
-  );
-
-  const toggleSort = (
-    col: "tag" | "type" | "size" | "page" | "conf" | "status",
-  ) => {
-    if (sortBy === col) setSortAsc(!sortAsc);
-    else {
-      setSortBy(col);
-      setSortAsc(true);
-    }
-    setPage(1);
-  };
-
-  const SortHeader = ({
-    col,
-    label,
-  }: {
-    col: "tag" | "type" | "size" | "page" | "conf" | "status";
-    label: string;
-  }) => (
-    <th
-      onClick={() => toggleSort(col)}
-      style={{
-        textAlign: "left",
-        padding: "8px 12px",
-        fontWeight: "600",
-        color: "var(--foreground-muted)",
-        cursor: "pointer",
-        background: "var(--surface-muted)",
-        transition: "background 150ms ease-out",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = "rgba(0, 43, 78, 0.06)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "var(--surface-muted)";
-      }}
-    >
-      {label} {sortBy === col && (sortAsc ? "↑" : "↓")}
-    </th>
-  );
-
-  const cellBase: React.CSSProperties = { padding: "8px 12px" };
-
-  return (
-    <div
-      style={{
-        ...cardStyle,
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-      }}
-    >
-      {/* Filters */}
-      <div
-        style={{
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "8px",
-        }}
-      >
-        <input
-          type="text"
-          placeholder="Search tag / type…"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(1);
-          }}
-          style={{
-            ...selectStyle,
-            width: 176,
-            fontSize: "12px",
-            padding: "6px 10px",
-          }}
-        />
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
-        >
-          {STATUS_OPTS.map((s) => (
-            <option key={s} value={s}>
-              {s || "All Status"}
-            </option>
-          ))}
-        </select>
-        <select
-          value={conf}
-          onChange={(e) => {
-            setConf(e.target.value);
-            setPage(1);
-          }}
-          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
-        >
-          {CONF_OPTS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        {/* Asset type filter */}
-        <select
-          value={assetTypeFilter}
-          onChange={(e) => {
-            setAssetTypeFilter(e.target.value);
-            setPage(1);
-          }}
-          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
-        >
-          <option value="">All Types</option>
-          {assetTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        {/* Validation status filter */}
-        <select
-          value={validationFilter}
-          onChange={(e) => {
-            setValidationFilter(e.target.value);
-            setPage(1);
-          }}
-          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
-        >
-          {VALIDATION_OPTS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={candidateFilter}
-          onChange={(e) => { setCandidateFilter(e.target.value); setPage(1); }}
-          style={{ ...selectStyle, fontSize: "12px", padding: "6px 10px" }}
-        >
-          {CANDIDATE_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        {/* Sync to viewer page */}
-        {onBulkAction !== undefined && (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              fontSize: "12px",
-              color: syncPage ? "var(--primary)" : "var(--foreground-muted)",
-              cursor: "pointer",
-              userSelect: "none",
-              fontWeight: syncPage ? "600" : "400",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={syncPage}
-              onChange={(e) => {
-                setSyncPage(e.target.checked);
-                setPage(1);
-              }}
-              style={{ cursor: "pointer" }}
-            />
-            Sync to viewer page
-          </label>
-        )}
-        {/* M1: Dedup toggle */}
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "5px",
-            fontSize: "12px",
-            color: "var(--foreground-muted)",
-            cursor: "pointer",
-            userSelect: "none",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={hideDupes}
-            onChange={(e) => {
-              setHideDupes(e.target.checked);
-              setPage(1);
-            }}
-            style={{ cursor: "pointer" }}
-          />
-          Hide duplicates
-        </label>
-        <span
-          style={{
-            marginLeft: "auto",
-            fontSize: "12px",
-            color: "var(--foreground-subtle)",
-            alignSelf: "center",
-          }}
-        >
-          {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-          {hideDupes && detections.length !== filtered.length
-            ? ` (${detections.length} total)`
-            : ""}
-        </span>
-      </div>
-
-      {/* Quick-select helpers — always visible when bulk actions enabled */}
-      {onBulkAction && (
-        <div
-          style={{
-            padding: "6px 16px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "6px",
-            alignItems: "center",
-            background: "var(--surface-muted)",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "11px",
-              color: "var(--foreground-muted)",
-              fontWeight: "600",
-              marginRight: "2px",
-            }}
-          >
-            Quick:
-          </span>
-          <button
-            onClick={() => {
-              const highConf = filtered.filter(
-                (d) => (d.confidence ?? 0) >= 0.95,
-              );
-              setSelected(new Set(highConf.map((d) => d.id)));
-            }}
-            style={{ ...toolButtonStyle, fontSize: "11px", padding: "3px 8px" }}
-          >
-            Select High Conf (≥95%)
-          </button>
-          <button
-            onClick={() => {
-              const pending = filtered.filter(
-                (d) => d.review_status === "PENDING",
-              );
-              setSelected(new Set(pending.map((d) => d.id)));
-            }}
-            style={{ ...toolButtonStyle, fontSize: "11px", padding: "3px 8px" }}
-          >
-            Select All Pending
-          </button>
-          <button
-            onClick={() => setSelected(new Set(filtered.filter((d) => d.candidate_status === "REVIEW_CANDIDATE").map((d) => d.id)))}
-            style={{ ...toolButtonStyle, fontSize: "11px", padding: "3px 8px", color: "var(--warning)", border: "1px solid var(--warning)" }}
-          >
-            Select AI Review
-          </button>
-          <button
-            disabled={bulkLoading}
-            onClick={async () => {
-              const highConf = filtered
-                .filter((d) => (d.confidence ?? 0) >= 0.95)
-                .map((d) => d.id);
-              if (!highConf.length) return;
-              setBulkLoading(true);
-              try {
-                await onBulkAction("confirm", highConf);
-              } finally {
-                setBulkLoading(false);
-                setSelected(new Set());
-              }
-            }}
-            style={{
-              ...toolButtonStyle,
-              fontSize: "11px",
-              padding: "3px 8px",
-              color: "var(--success)",
-              border: "1px solid var(--success)",
-              opacity: bulkLoading ? 0.5 : 1,
-            }}
-          >
-            ✓ Confirm All High Conf
-          </button>
-        </div>
-      )}
-
-      {/* Bulk actions bar — shown when items are selected */}
-      {onBulkAction && selected.size > 0 && (
-        <div
-          style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            background: "var(--primary-soft)",
-            flexWrap: "wrap",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "12px",
-              fontWeight: "600",
-              color: "var(--primary)",
-            }}
-          >
-            {selected.size} selected
-          </span>
-          <button
-            disabled={bulkLoading}
-            onClick={async () => {
-              setBulkLoading(true);
-              try {
-                await onBulkAction("confirm", Array.from(selected));
-                setSelected(new Set());
-              } finally {
-                setBulkLoading(false);
-              }
-            }}
-            style={{
-              ...toolButtonStyle,
-              fontSize: "12px",
-              padding: "4px 10px",
-              color: "var(--success)",
-              border: "1px solid var(--success)",
-              opacity: bulkLoading ? 0.5 : 1,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            <CheckCircle size={13} weight="fill" /> Confirm Selected
-          </button>
-          <button
-            disabled={bulkLoading}
-            onClick={async () => {
-              setBulkLoading(true);
-              try {
-                await onBulkAction("reject", Array.from(selected));
-                setSelected(new Set());
-              } finally {
-                setBulkLoading(false);
-              }
-            }}
-            style={{
-              ...toolButtonStyle,
-              fontSize: "12px",
-              padding: "4px 10px",
-              color: "var(--danger)",
-              border: "1px solid var(--danger)",
-              opacity: bulkLoading ? 0.5 : 1,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            <XCircle size={13} weight="fill" /> Reject Selected
-          </button>
-          <button
-            onClick={() => setSelected(new Set())}
-            style={{
-              ...toolButtonStyle,
-              fontSize: "12px",
-              padding: "4px 10px",
-            }}
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {/* Table */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
-        <table
-          style={{
-            width: "100%",
-            fontSize: "12px",
-            borderCollapse: "collapse",
-          }}
-        >
-          <thead
-            style={{
-              background: "var(--surface-muted)",
-              position: "sticky",
-              top: 0,
-              zIndex: 10,
-            }}
-          >
-            <tr>
-              {onBulkAction && (
-                <th
-                  style={{
-                    textAlign: "left",
-                    ...cellBase,
-                    fontWeight: "600",
-                    color: "var(--foreground-muted)",
-                    width: "32px",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={
-                      slice.length > 0 && slice.every((d) => selected.has(d.id))
-                    }
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelected(
-                          (prev) =>
-                            new Set([...prev, ...slice.map((d) => d.id)]),
-                        );
-                      } else {
-                        setSelected((prev) => {
-                          const next = new Set(prev);
-                          slice.forEach((d) => next.delete(d.id));
-                          return next;
-                        });
-                      }
-                    }}
-                    style={{ cursor: "pointer" }}
-                  />
-                </th>
-              )}
-              <th
-                style={{
-                  textAlign: "left",
-                  ...cellBase,
-                  fontWeight: "600",
-                  color: "var(--foreground-muted)",
-                }}
-              >
-                No
-              </th>
-              <SortHeader col="tag" label="Asset Tag" />
-              <SortHeader col="type" label="Asset Type" />
-              <SortHeader col="size" label="Size" />
-              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Tag No Proposed</th>
-              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Equipment Type</th>
-              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>Component Name</th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                From
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                To
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Of
-              </th>
-              <th
-                style={{
-                  ...cellBase,
-                  color: "var(--foreground-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                At
-              </th>
-              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>MDO Size</th>
-              <SortHeader col="page" label="Page" />
-              <SortHeader col="conf" label="Conf." />
-              <SortHeader col="status" label="Status" />
-              <th style={{ ...cellBase, color: "var(--foreground-muted)", whiteSpace: "nowrap" }}>MDO Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slice.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={onBulkAction ? 16 : 15}
-                  style={{
-                    padding: "48px 12px",
-                    textAlign: "center",
-                    color: "var(--foreground-subtle)",
-                  }}
-                >
-                  No detections found.
-                </td>
-              </tr>
-            ) : (
-              slice.map((d, i) => (
-                <tr
-                  key={d.id}
-                  onClick={() => onSelect(d)}
-                  style={{
-                    borderTop: "1px solid var(--border)",
-                    cursor: "pointer",
-                    background:
-                      d.id === selectedId
-                        ? "var(--primary-soft)"
-                        : "transparent",
-                    transition: "background 150ms ease-out",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (d.id !== selectedId)
-                      e.currentTarget.style.background =
-                        "rgba(0, 43, 78, 0.04)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (d.id !== selectedId)
-                      e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  {onBulkAction && (
-                    <td
-                      style={{ ...cellBase, width: "32px" }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selected.has(d.id)}
-                        onChange={(e) => {
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (e.target.checked) next.add(d.id);
-                            else next.delete(d.id);
-                            return next;
-                          });
-                        }}
-                        style={{ cursor: "pointer" }}
-                      />
-                    </td>
-                  )}
-                  <td
-                    style={{ ...cellBase, color: "var(--foreground-subtle)" }}
-                  >
-                    {(page - 1) * pageSize + i + 1}
-                  </td>
-                  {/* M4: No-tag indicator */}
-                  <td
-                    style={{
-                      ...cellBase,
-                      fontWeight: "500",
-                      fontFamily: "var(--font-geist-mono, monospace)",
-                    }}
-                  >
-                    {d.asset_tag ? (
-                      <span
-                        style={{
-                          color: "var(--foreground)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <span>{d.asset_tag}</span>
-                        {isAutoGeneratedTag(d.evidence) && (
-                          <span
-                            title="Tag ini dibuat secara otomatis berdasarkan konfigurasi Legenda & nomor urut proyek"
-                            style={{
-                              fontSize: "10px",
-                              fontWeight: "600",
-                              color: "var(--accent, #0284c7)",
-                              background:
-                                "var(--accent-soft, rgba(2, 132, 199, 0.12))",
-                              padding: "1px 5px",
-                              borderRadius: "4px",
-                              border:
-                                "1px solid var(--accent-subtle, rgba(2, 132, 199, 0.25))",
-                              lineHeight: "1.2",
-                              letterSpacing: "0.02em",
-                            }}
-                          >
-                            Auto
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          color: "var(--foreground-subtle)",
-                          fontStyle: "italic",
-                          fontSize: "11px",
-                          background: "var(--surface-muted)",
-                          padding: "1px 6px",
-                          borderRadius: "4px",
-                          border: "1px dashed var(--border)",
-                        }}
-                      >
-                        no tag
-                      </span>
-                    )}
-                  </td>
-                  {/* M3: Normalized type + source badge */}
-                  <td style={{ ...cellBase, color: "var(--foreground)" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "2px",
-                      }}
-                    >
-                      <span>{normalizeType(d.asset_type)}</span>
-                      {sourceBadge(d.detection_source)}
-                      {d.candidate_status === "REVIEW_CANDIDATE" && (
-                        <span
-                          style={{
-                            ...badgeBase,
-                            fontSize: "10px",
-                            background: "var(--warning-soft)",
-                            color: "var(--warning)",
-                          }}
-                        >
-                          AI Review
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td
-                    style={{
-                      ...cellBase,
-                      color: d.size
-                        ? "var(--foreground)"
-                        : "var(--foreground-subtle)",
-                      fontFamily: d.size
-                        ? "var(--font-geist-mono, monospace)"
-                        : "inherit",
-                    }}
-                  >
-                    {d.size ? (
-                      <span
-                        style={{
-                          background: "var(--surface-muted)",
-                          padding: "1px 6px",
-                          borderRadius: "4px",
-                          border: "1px solid var(--border)",
-                          fontSize: "11px",
-                          fontWeight: "500",
-                        }}
-                      >
-                        {d.size}
-                      </span>
-                    ) : (
-                      <span style={{ color: "var(--foreground-subtle)" }}>
-                        —
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ ...cellBase, whiteSpace: "nowrap" }}>{d.mdo_tag_no_proposed || "—"}</td>
-                  {[
-                    d.mdo_equipment_type,
-                    d.mdo_component_name,
-                    d.mdo_from,
-                    d.mdo_to,
-                    d.mdo_of,
-                    d.mdo_at,
-                    d.mdo_size,
-                  ].map((value, index) => (
-                    <td
-                      key={index}
-                      style={{
-                        ...cellBase,
-                        color: value
-                          ? "var(--foreground)"
-                          : "var(--foreground-subtle)",
-                        whiteSpace: index === 1 ? "normal" : "nowrap",
-                        maxWidth: index === 1 ? 220 : undefined,
-                      }}
-                    >
-                      {value || "—"}
-                    </td>
-                  ))}
-                  <td style={{ ...cellBase, color: "var(--foreground-muted)" }}>
-                    {d.pid_page ?? "—"}
-                  </td>
-                  <td style={cellBase}>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "2px",
-                      }}
-                    >
-                      {confBadge(d.confidence)}
-                      {/* Duplicate group size — same rule as the warning bar */}
-                      {(() => {
-                        const cnt = duplicateInfo.groupSize.get(d.id) ?? 1;
-                        return cnt > 1 ? (
-                          <span
-                            style={{
-                              fontSize: "10px",
-                              color: "var(--warning)",
-                              fontWeight: "500",
-                            }}
-                          >
-                            {cnt}× dup
-                          </span>
-                        ) : null;
-                      })()}
-                    </div>
-                  </td>
-                  <td style={cellBase}>
-                    {statusBadge(d.detection_status, d.review_status)}
-                  </td>
-                  <td style={cellBase}>
-                    {d.mdo_id ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <span style={{
-                          ...badgeBase,
-                          fontSize: "10px",
-                          ...(d.mdo_approval_status === "APPROVED"
-                            ? { background: "var(--success-soft)", color: "var(--success)" }
-                            : d.mdo_approval_status === "REJECTED"
-                              ? { background: "var(--danger-soft)", color: "var(--danger)" }
-                              : { background: "var(--warning-soft)", color: "var(--warning)" }),
-                        }}>
-                          {d.mdo_approval_status ?? "PENDING"}
-                        </span>
-                        {d.mdo_approval_status !== "APPROVED" && onMdoAction && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onMdoAction(d.mdo_id!, "approve"); }}
-                            disabled={approvingMdoId === d.mdo_id}
-                            style={{ ...toolButtonStyle, fontSize: "10px", padding: "2px 6px", background: "#2D7A3A", color: "#fff", border: "1px solid #2D7A3A" }}
-                          >
-                            {approvingMdoId === d.mdo_id ? "…" : "Approve"}
-                          </button>
-                        )}
-                        {d.mdo_approval_status !== "REJECTED" && onMdoAction && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onMdoAction(d.mdo_id!, "reject"); }}
-                            disabled={approvingMdoId === d.mdo_id}
-                            style={{ ...toolButtonStyle, fontSize: "10px", padding: "2px 6px" }}
-                          >
-                            Reject
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <span style={{ color: "var(--foreground-subtle)", fontSize: "11px" }}>—</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div
-        style={{
-          padding: "8px 16px",
-          borderTop: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          fontSize: "12px",
-          color: "var(--foreground-muted)",
-        }}
-      >
-        <button
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page === 1}
-          style={{
-            ...toolButtonStyle,
-            opacity: page === 1 ? 0.4 : 1,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <CaretLeft size={14} weight="bold" />
-        </button>
-        <span>
-          Page {safeTablePage} / {totalPages}
-        </span>
-        <button
-          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          disabled={page === totalPages}
-          style={{
-            ...toolButtonStyle,
-            opacity: page === totalPages ? 0.4 : 1,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <CaretRight size={14} weight="bold" />
-        </button>
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-        >
-          <span style={{ color: "var(--foreground-muted)" }}>Show</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-            style={{
-              padding: "2px 6px",
-              fontSize: "12px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)",
-              background: "var(--surface)",
-              color: "var(--foreground)",
-              cursor: "pointer",
-            }}
-          >
-            {[15, 25, 50, 100].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <span style={{ color: "var(--foreground-subtle)" }}>
-            {sorted.length} total
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-function DetectionWorkspace() {
-  const searchParams = useSearchParams();
-  const initProjectId = searchParams.get("project_id") ?? "";
-
-  // ── Hydration-safe localStorage ───────────────────────────────────────────
-  // Always start with empty/default values (SSR-safe), then hydrate from
-  // localStorage in a single useEffect after mount. This prevents the
-  // SSR vs client mismatch that caused React hydration errors and blank viewer.
-  const [mounted, setMounted] = useState(false);
-  const [projectId, setProjectId] = useState(initProjectId);
-  const [documentId, setDocumentId] = useState("");
-  const [legendIds, setLegendIds] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState<number | null>(null);
-
-  // Single effect: read all persisted state after first client render
-  useEffect(() => {
-    const savedProject = localStorage.getItem("det_projectId");
-    const savedDoc = localStorage.getItem("det_documentId");
-    const savedPage = localStorage.getItem("det_currentPage");
-
-    if (savedProject) setProjectId(savedProject);
-    if (savedDoc) setDocumentId(savedDoc);
-    if (savedPage) setCurrentPage(parseInt(savedPage, 10));
-
-    try {
-      const raw = localStorage.getItem("det_legendIds");
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          setLegendIds(
-            arr
-              .filter((v): v is string => typeof v === "string" && v !== "")
-              .slice(0, 3),
-          );
-        }
-      } else {
-        const legacy = localStorage.getItem("det_legendId");
-        if (legacy) setLegendIds([legacy]);
-      }
-    } catch {
-      /* corrupted storage — start empty */
-    }
-
-    setMounted(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount
-
-  /** Primary legend = first selected. Kept for ManualAddModal. */
-  const legendId = legendIds[0] ?? "";
-
-  // Sync to localStorage (only after mounted to avoid server-side writes)
-  useEffect(() => {
-    if (!mounted) return;
-    if (projectId) localStorage.setItem("det_projectId", projectId);
-    else localStorage.removeItem("det_projectId");
-  }, [projectId, mounted]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    if (documentId) localStorage.setItem("det_documentId", documentId);
-    else localStorage.removeItem("det_documentId");
-  }, [documentId, mounted]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    if (legendIds.length > 0) {
-      localStorage.setItem("det_legendIds", JSON.stringify(legendIds));
-      localStorage.setItem("det_legendId", legendIds[0]);
-    } else {
-      localStorage.removeItem("det_legendIds");
-      localStorage.removeItem("det_legendId");
-    }
-  }, [legendIds, mounted]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    if (currentPage)
-      localStorage.setItem("det_currentPage", String(currentPage));
-    else localStorage.removeItem("det_currentPage");
-  }, [currentPage, mounted]);
-
-  // Reset halaman saat ganti dokumen — halaman basi dari dokumen lain
-  // (via localStorage) membuat viewer kosong: filter pid_page tak cocok.
-  const prevDocRef = useRef<string>("");
-  useEffect(() => {
-    if (!mounted) return;
-    if (prevDocRef.current && prevDocRef.current !== documentId) {
-      setCurrentPage(1);
-      setSelectedDetection(null);
-    }
-    prevDocRef.current = documentId;
-  }, [documentId, mounted]);
-
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [legends, setLegends] = useState<Legend[]>([]);
-  const [detections, setDetections] = useState<Detection[]>([]);
-
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState<string | null>(null);
-  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(
-    null,
-  );
-  const [showManualAdd, setShowManualAdd] = useState(false);
-  // Draw-to-add: tekan Add Assets Manually → mode draw di viewer → konfirmasi kotak → modal
-  const [drawMode, setDrawMode] = useState(false);
-  const [pendingDrawBbox, setPendingDrawBbox] = useState<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
-  const [confirmingDraw, setConfirmingDraw] = useState(false);
-  const [showAllBbox, setShowAllBbox] = useState(false);
-  const [showDetail, setShowDetail] = useState(false);
-  const [buildingMdo, setBuildingMdo] = useState(false);
-  const [approving, setApproving] = useState<string | null>(null);
-
-  const handleMdoAction = async (mdoId: string, action: 'approve' | 'reject') => {
-    setApproving(mdoId);
-    try {
-      await fetch(`/api/mdo/${mdoId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-      await loadDetections();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setApproving(null);
-    }
-  };
-
-  const handleApproveAll = async () => {
-    if (!documentId) return;
-    try {
-      await fetch(`/api/documents/${documentId}/mdo/approve-all`, { method: 'POST' });
-      await loadDetections();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  const [mdoMessage, setMdoMessage] = useState<string | null>(null);
-
-  const maxPage = detections.length
-    ? Math.max(1, ...detections.map((d) => d.pid_page ?? 1))
-    : 1;
-
-  // Derive selected document object for file_type check
-  const selectedDocument = documents.find((d) => d.id === documentId) ?? null;
-
-  const handleBuildMdo = async () => {
-    if (!documentId || selectedDocument?.file_type !== "dxf") return;
-    setBuildingMdo(true);
-    setMdoMessage(null);
-    try {
-      const res = await fetch(`/api/documents/${documentId}/mdo`, {
-        method: "POST",
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(body.error ?? `MDO build failed (${res.status})`);
-      await loadDetections();
-      setMdoMessage(`MDO updated: ${body.count ?? 0} record(s)`);
-    } catch (error) {
-      setMdoMessage(
-        error instanceof Error ? error.message : "MDO build failed",
-      );
-    } finally {
-      setBuildingMdo(false);
-    }
-  };
-
-  // Clamp pengaman: halaman basi (melebihi maxPage) paksa ke 1.
-  // Terjadi saat localStorage menyimpan halaman dokumen lain.
-  const safePage =
-    currentPage && currentPage >= 1 && currentPage <= maxPage ? currentPage : 1;
-
-  // Detections filtered to current page (null means all pages)
-  const pageDetections = currentPage
-    ? detections.filter((d) => d.pid_page === safePage)
-    : detections;
-
-  // Stats (over all detections, not just current page)
-  const total = detections.length;
-  const confirmed = detections.filter(
-    (d) => d.review_status === "APPROVED",
-  ).length;
-  const pending = detections.filter(
-    (d) => d.review_status === "PENDING",
-  ).length;
-  const rejected = detections.filter(
-    (d) => d.review_status === "REJECTED",
-  ).length;
-  const avgConf = detections.length
-    ? Math.round(
-        (detections.reduce((s, d) => s + (d.confidence ?? 0), 0) /
-          detections.length) *
-          100,
-      )
-    : null;
-
-  // Duplicate count — same geometry-first rules as the table and the API.
-  const duplicateCount = useMemo(
-    () =>
-      findDuplicates(
-        detections.map((d) => ({
-          id: d.id,
-          assetTag: d.asset_tag,
-          assetType: d.asset_type,
-          confidence: d.confidence,
-          page: d.pid_page,
-          reviewStatus: d.review_status,
-          bbox:
-            d.bbox_x !== null &&
-            d.bbox_y !== null &&
-            d.bbox_w !== null &&
-            d.bbox_h !== null
-              ? { x: d.bbox_x, y: d.bbox_y, width: d.bbox_w, height: d.bbox_h }
-              : null,
-        })),
-      ).duplicateIds.size,
-    [detections],
-  );
-
-  const [deduping, setDeduping] = useState(false);
-  const [dedupeError, setDedupeError] = useState("");
-  const [confirmDedupe, setConfirmDedupe] = useState(false);
-
-  const handleDeduplicate = async () => {
-    if (!documentId) return;
-    setConfirmDedupe(false);
-    setDeduping(true);
-    setDedupeError("");
-    try {
-      const res = await fetch("/api/detections/deduplicate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_id: documentId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(
-          (body as { error?: string }).error ?? `Error ${res.status}`,
-        );
-      await loadDetections();
-    } catch (e) {
-      setDedupeError(e instanceof Error ? e.message : "Deduplicate failed");
-    } finally {
-      setDeduping(false);
-    }
-  };
-
-  // Load reference data
-  useEffect(() => {
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((d) => setProjects(Array.isArray(d) ? d : []));
-    fetch("/api/legends?status=ACTIVE")
-      .then((r) => r.json())
-      .then((d) => setLegends(Array.isArray(d) ? d : []));
   }, []);
 
+  // 1. Load initial documents list
   useEffect(() => {
-    if (!projectId) {
-      setDocuments([]);
-      setDocumentId("");
-      return;
-    }
-    fetch(`/api/documents?project_id=${projectId}`)
+    fetch('/api/documents')
       .then((r) => r.json())
-      .then((d) => {
-        const arr = Array.isArray(d) ? d : [];
-        setDocuments(arr);
-        // Only auto-select first doc when no doc selected yet
-        setDocumentId((prev) => prev || (arr.length ? arr[0].id : ""));
-      });
-  }, [projectId]);
-
-  // Auto-load last completed job (with detections) when document is selected
-  useEffect(() => {
-    if (!documentId) {
-      setCurrentJobId(null);
-      setDetections([]);
-      return;
-    }
-    // Load most recent completed job for status display
-    fetch(
-      `/api/detection/jobs?document_id=${documentId}&limit=1&status=COMPLETED`,
-    )
-      .then((r) => r.json())
-      .then((d) => {
-        const jobs = Array.isArray(d) ? d : Array.isArray(d.data) ? d.data : [];
-        if (jobs[0]) setCurrentJobId(jobs[0].id);
+      .then((data) => {
+        const docs = Array.isArray(data) ? data : data.documents || [];
+        setDocuments(docs);
+        const queryDocId = searchParams.get('document_id');
+        if (queryDocId && docs.some((d: Document) => d.id === queryDocId)) {
+          setDocumentId(queryDocId);
+        } else if (docs.length > 0) {
+          setDocumentId(docs[0].id);
+        }
       })
-      .catch(() => {});
-  }, [documentId]);
+      .catch((err) => console.error('[detection] load docs failed:', err));
+  }, [searchParams]);
 
+  // Sync active document
+  const activeDoc = documents.find((d) => d.id === documentId) ?? null;
+  const isDxf = activeDoc?.file_type === 'dxf';
+  const totalPages = activeDoc?.page_count || 1;
+
+  // 2. Load detections for document
   const loadDetections = useCallback(async () => {
     if (!documentId) return;
-    // Query by document_id — works regardless of which job produced the detections
-    const r = await fetch(
-      `/api/detections?document_id=${documentId}&limit=500`,
-    );
-    const d = await r.json();
-    setDetections(Array.isArray(d.data) ? d.data : []);
+    setLoadingDets(true);
+    try {
+      const res = await fetch(`/api/detections?document_id=${documentId}&limit=1000`);
+      const body = await res.json();
+      const list = Array.isArray(body?.data) ? body.data : Array.isArray(body?.detections) ? body.detections : [];
+      setDetections(list);
+    } catch (err) {
+      console.error('[detection] load detections failed:', err);
+    } finally {
+      setLoadingDets(false);
+    }
   }, [documentId]);
 
+  // Monitor background detection job progress
+  const monitorJob = useCallback(
+    (jobId: string) => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+
+      setRunning(true);
+      setJobProgress({
+        jobId,
+        status: 'PROCESSING',
+        progressPct: 5,
+        stageText: 'Starting detection job & preparing drawing...',
+      });
+
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const jRes = await fetch(`/api/detection/jobs/${jobId}`);
+          const jData = await jRes.json();
+          if (!jRes.ok) throw new Error(jData.error || 'Failed to poll job status');
+
+          const pct = Math.max(5, Math.min(100, jData.progress_pct ?? 0));
+          let stageText = 'Analyzing P&ID Drawing...';
+          if (jData.status === 'PENDING') {
+            stageText = 'Queueing job in detection worker...';
+          } else if (pct < 20) {
+            stageText = 'Loading drawing & extracting layers / pages...';
+          } else if (pct < 50) {
+            stageText = 'Detecting equipment symbols & spatial geometry...';
+          } else if (pct < 75) {
+            stageText = 'Matching symbols against Legend & OCR text...';
+          } else if (pct < 95) {
+            stageText = 'Tracing process flow & allocating incremental tags...';
+          } else {
+            stageText = 'Finalizing detections & updating database...';
+          }
+
+          setJobProgress({
+            jobId,
+            status: jData.status,
+            progressPct: pct,
+            stageText,
+            stats: jData.stats,
+            errorDetail: jData.error_detail,
+          });
+
+          if (jData.status === 'COMPLETED') {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setRunning(false);
+            setJobProgress({
+              jobId,
+              status: 'COMPLETED',
+              progressPct: 100,
+              stageText: `Detection completed! ${jData.stats?.total ?? 0} physical assets detected.`,
+              stats: jData.stats,
+            });
+            await loadDetections();
+            setTimeout(() => {
+              setJobProgress((prev) => (prev?.status === 'COMPLETED' ? null : prev));
+            }, 4500);
+          } else if (jData.status === 'FAILED') {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setRunning(false);
+            setJobProgress({
+              jobId,
+              status: 'FAILED',
+              progressPct: pct,
+              stageText: 'Detection job failed',
+              errorDetail: jData.error_detail || 'Unknown error during detection',
+            });
+          }
+        } catch (err) {
+          console.error('[detection] poll job error:', err);
+        }
+      }, 1500);
+    },
+    [loadDetections]
+  );
+
+  useEffect(() => {
+    if (documentId) {
+      loadDetections();
+      setSelectedIds(new Set());
+      setSelectedId(null);
+      setPage(1);
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
+
+      // Check if there is an active job running for this document
+      fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
+        .then((r) => r.json())
+        .then((body) => {
+          const latestJob = Array.isArray(body?.data) ? body.data[0] : null;
+          if (latestJob && (latestJob.status === 'PROCESSING' || latestJob.status === 'PENDING')) {
+            monitorJob(latestJob.id);
+          }
+        })
+        .catch((err) => console.warn('[detection] check active job failed:', err));
+    }
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [documentId, loadDetections, monitorJob]);
+
+  // 3. Trigger Detection
   const handleRunDetection = async () => {
     if (!documentId) return;
     setRunning(true);
-    setRunError(null);
-    setDetections([]);
-    setSelectedDetection(null);
     try {
-      const r = await fetch("/api/detection/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/detection/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           document_id: documentId,
-          legend_ids: legendIds,
-          project_id: projectId || null,
+          legend_id: selectedLegendId || undefined,
+          legend_ids: selectedLegendIds.length ? selectedLegendIds : undefined,
         }),
       });
-      const j = await r.json();
-      if (!r.ok) {
-        setRunError(j.error ?? `Failed to start job (HTTP ${r.status})`);
-        setRunning(false);
-        return;
-      }
-      if (!j.id) {
-        setRunError(
-          "Job created but no ID returned — Redis/worker may be down. Run: npm run worker",
-        );
-        setRunning(false);
-        return;
-      }
-      setCurrentJobId(j.id);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Job creation failed');
+
+      const jobId = data.job?.id || data.id;
+      monitorJob(jobId);
     } catch (err) {
-      setRunError(
-        err instanceof Error
-          ? err.message
-          : "Network error starting detection job",
-      );
-    } finally {
+      console.error('[detection] start job failed:', err);
       setRunning(false);
+      setJobProgress({
+        jobId: 'error',
+        status: 'FAILED',
+        progressPct: 0,
+        stageText: 'Failed to start detection job',
+        errorDetail: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
-  const handleJobComplete = useCallback(async () => {
-    await loadDetections();
-  }, [loadDetections]);
+  // 4. Quick Actions: Approve, Reject, Edit
+  const handleApprove = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await fetch(`/api/detections/${id}/confirm`, { method: 'POST' });
+      setDetections((prev) =>
+        prev.map((d) => (d.id === id ? { ...d, review_status: 'APPROVED', detection_status: 'CONFIRMED' } : d))
+      );
+    } catch (err) {
+      console.error('[detection] approve failed:', err);
+    }
+  };
 
-  // Load detections when document selected; poll while job is running
-  useEffect(() => {
+  const handleReject = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await fetch(`/api/detections/${id}/reject`, { method: 'POST' });
+      setDetections((prev) =>
+        prev.map((d) => (d.id === id ? { ...d, review_status: 'REJECTED', detection_status: 'REJECTED' } : d))
+      );
+    } catch (err) {
+      console.error('[detection] reject failed:', err);
+    }
+  };
+
+  const handleOpenEdit = (item: Detection, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingItem(item);
+    setEditForm({
+      asset_tag: item.asset_tag || '',
+      asset_type: item.asset_type || '',
+      description: item.description || '',
+      service: item.service || '',
+      size: item.size || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingItem) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/detections/${editingItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      setDetections((prev) =>
+        prev.map((d) => (d.id === editingItem.id ? { ...d, ...editForm } : d))
+      );
+      setEditingItem(null);
+    } catch (err) {
+      console.error('[detection] save edit failed:', err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // 5. Bulk Actions (Approve / Reject Selected)
+  const toggleSelect = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredDetections.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredDetections.map((d) => d.id)));
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    try {
+      await fetch('/api/detections/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'confirm' }),
+      });
+      setDetections((prev) =>
+        prev.map((d) => (selectedIds.has(d.id) ? { ...d, review_status: 'APPROVED', detection_status: 'CONFIRMED' } : d))
+      );
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('[detection] bulk approve failed:', err);
+    }
+  };
+
+  const handleBulkReject = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    try {
+      await fetch('/api/detections/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'reject' }),
+      });
+      setDetections((prev) =>
+        prev.map((d) => (selectedIds.has(d.id) ? { ...d, review_status: 'REJECTED', detection_status: 'REJECTED' } : d))
+      );
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('[detection] bulk reject failed:', err);
+    }
+  };
+
+  // 5b. Auto-tagging for missing tags
+  const [autoTagging, setAutoTagging] = useState(false);
+  const handleAutoTag = async () => {
     if (!documentId) return;
-    loadDetections();
-    const t = setInterval(loadDetections, 5000);
-    return () => clearInterval(t);
-  }, [documentId, loadDetections]);
-
-  const handleConfirm = async (id: string) => {
-    await fetch(`/api/detections/${id}/confirm`, { method: "POST" });
-    await loadDetections();
-    setSelectedDetection((prev) =>
-      prev?.id === id
-        ? { ...prev, detection_status: "CONFIRMED", review_status: "APPROVED" }
-        : prev,
-    );
+    setAutoTagging(true);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/auto-tag`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Auto-tag failed');
+      await loadDetections();
+    } catch (err) {
+      console.error('[detection] auto-tag failed:', err);
+    } finally {
+      setAutoTagging(false);
+    }
   };
 
-  const handleReject = async (id: string) => {
-    await fetch(`/api/detections/${id}/reject`, { method: "POST" });
-    await loadDetections();
-    setSelectedDetection(null);
+  // 6. Filtering & Search
+  const pageDetections = detections.filter((d) => (d.pid_page ?? 1) === page);
+  const filteredDetections = pageDetections.filter((d) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matches =
+        (d.asset_tag ?? '').toLowerCase().includes(q) ||
+        (d.asset_type ?? '').toLowerCase().includes(q) ||
+        (d.service ?? '').toLowerCase().includes(q) ||
+        (d.description ?? '').toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (statusTab === 'PENDING') return d.review_status === 'PENDING';
+    if (statusTab === 'APPROVED') return d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
+    if (statusTab === 'REJECTED') return d.review_status === 'REJECTED' || d.detection_status === 'REJECTED';
+    return true;
+  });
+
+  const counts = {
+    total: pageDetections.length,
+    pending: pageDetections.filter((d) => d.review_status === 'PENDING').length,
+    approved: pageDetections.filter((d) => d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED').length,
+    rejected: pageDetections.filter((d) => d.review_status === 'REJECTED' || d.detection_status === 'REJECTED').length,
+    untagged: detections.filter((d) => !d.asset_tag || d.asset_tag.trim() === '').length,
   };
 
-  const handleBulkAction = async (action: "confirm" | "reject", ids: string[]) => {
-    const response = await fetch("/api/detections/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, action }),
-    });
-    if (!response.ok) throw new Error("Bulk review action failed");
-    await loadDetections();
+  const selectedItem = detections.find((d) => d.id === selectedId) ?? null;
+
+  // Zoom handlers
+  const handleZoomIn = () => setZoom((z) => Math.min(8, Number((z * 1.25).toFixed(2))));
+  const handleZoomOut = () => setZoom((z) => Math.max(0.2, Number((z * 0.8).toFixed(2))));
+  const handleResetZoom = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   };
 
-  const handleEdit = async (id: string, fields: Partial<Detection>) => {
-    const body: Record<string, unknown> = {};
-    if (fields.asset_tag !== undefined) body.asset_tag = fields.asset_tag;
-    if (fields.asset_type !== undefined) body.asset_type = fields.asset_type;
-    if (fields.description !== undefined) body.description = fields.description;
-    await fetch(`/api/detections/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    await loadDetections();
-    setSelectedDetection((prev) =>
-      prev?.id === id ? { ...prev, ...fields } : prev,
-    );
-  };
-
-  // Phase 5: persist koreksi bbox manual dari PidViewer (drag/resize)
-  const handleBboxChange = async (
-    id: string,
-    bbox: { x: number; y: number; w: number; h: number },
-  ) => {
-    await fetch(`/api/detections/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bbox_x: bbox.x,
-        bbox_y: bbox.y,
-        bbox_w: bbox.w,
-        bbox_h: bbox.h,
-      }),
-    });
-    await loadDetections();
-    setSelectedDetection((prev) =>
-      prev?.id === id
-        ? {
-            ...prev,
-            bbox_x: bbox.x,
-            bbox_y: bbox.y,
-            bbox_w: bbox.w,
-            bbox_h: bbox.h,
-          }
-        : prev,
-    );
-  };
-
-  const selectedId = selectedDetection?.id ?? null;
+  const imgSrc = documentId && !isDxf ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: "100%",
-        gap: "24px",
-        paddingBottom: "24px",
-      }}
-    >
-      {/* Manual Add Modal */}
-      <ManualAddModal
-        open={showManualAdd}
-        onClose={() => {
-          setShowManualAdd(false);
-          setPendingDrawBbox(null);
-          setConfirmingDraw(false);
-        }}
-        onSave={loadDetections}
-        documentId={documentId}
-        legendId={legendId}
-        jobId={currentJobId}
-        initialBbox={pendingDrawBbox}
-      />
-
-      {/* Header */}
-      <div>
-        <h1
-          style={{
-            fontSize: "28px",
-            fontWeight: "600",
-            color: "var(--foreground)",
-            margin: "0 0 8px",
-          }}
-        >
-          Automatic Asset Detection
-        </h1>
-        <p
-          style={{
-            fontSize: "14px",
-            color: "var(--foreground-muted)",
-            margin: 0,
-          }}
-        >
-          Select document and legend, then run detection.
-        </p>
-      </div>
-
-      {/* Controls */}
-      <div style={cardStyle}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "16px",
-            alignItems: "flex-end",
-            padding: "20px",
-          }}
-        >
-          <label
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
+      {/* ── Top Header Bar ──────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+          <select
+            value={documentId}
+            onChange={(e) => setDocumentId(e.target.value)}
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "6px",
-              minWidth: "160px",
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--foreground)',
+              fontSize: 13,
+              fontWeight: 600,
+              maxWidth: 240,
             }}
           >
-            <span style={fieldLabelStyle}>Project</span>
-            <select
-              value={projectId}
-              onChange={(e) => {
-                setProjectId(e.target.value);
-                setDocumentId("");
-                setCurrentJobId(null);
-                setDetections([]);
-              }}
-              style={selectStyle}
-            >
-              <option value="">Select project…</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            {documents.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.filename}
+              </option>
+            ))}
+          </select>
 
-          <label
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "6px",
-              minWidth: "224px",
+          <LegendSelector
+            value={selectedLegendId}
+            onChange={(val) => {
+              if (typeof val === 'string') setSelectedLegendId(val);
+              else if (Array.isArray(val)) setSelectedLegendId(val[0] ?? null);
+              else setSelectedLegendId(null);
             }}
-          >
-            <span style={fieldLabelStyle}>Document</span>
-            <select
-              value={documentId}
-              onChange={(e) => {
-                setDocumentId(e.target.value);
-                setCurrentJobId(null);
-                setDetections([]);
-              }}
-              disabled={!mounted || !projectId}
-              style={selectStyle}
-            >
-              <option value="">Select document…</option>
-              {documents.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.filename} ({d.page_count}p)
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div style={{ minWidth: "224px" }}>
-            <LegendSelector
-              legends={legends}
-              legendIds={legendIds}
-              onChange={setLegendIds}
-              label="Legend"
-            />
-          </div>
+            multiValues={selectedLegendIds}
+            onMultiChange={(ids) => {
+              setSelectedLegendIds(ids);
+              setSelectedLegendId(ids[0] ?? null);
+            }}
+            placeholder="Select Legend standard…"
+          />
 
           <button
             onClick={handleRunDetection}
-            disabled={!mounted || running || !documentId}
-            style={
-              !mounted || running || !documentId
-                ? {
-                    ...primaryButtonStyle,
-                    background: "#2D7A3A",
-                    border: "1px solid #2D7A3A",
-                    opacity: 0.5,
-                    cursor: "not-allowed",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }
-                : {
-                    ...primaryButtonStyle,
-                    background: "#2D7A3A",
-                    border: "1px solid #2D7A3A",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }
-            }
-          >
-            <Lightning size={14} weight="fill" style={{ flexShrink: 0 }} />
-            {running ? "Starting…" : "Run Detection"}
-          </button>
-
-          <button
-            onClick={handleBuildMdo}
-            disabled={
-              !mounted || buildingMdo || selectedDocument?.file_type !== "dxf"
-            }
+            disabled={running || !documentId}
             style={{
-              ...buttonStyle,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              opacity:
-                !mounted || buildingMdo || selectedDocument?.file_type !== "dxf"
-                  ? 0.45
-                  : 1,
-            }}
-            title="Build MDO from existing DXF detections without rerunning detection"
-          >
-            {buildingMdo ? "Building MDO…" : "Build MDO"}
-          </button>
-          <button
-            onClick={() => {
-              if (documentId)
-                window.location.href = `/api/documents/${documentId}/mdo/export`;
-            }}
-            disabled={
-              !mounted || !documentId || selectedDocument?.file_type !== "dxf"
-            }
-            style={{
-              ...buttonStyle,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              opacity:
-                !mounted || !documentId || selectedDocument?.file_type !== "dxf"
-                  ? 0.45
-                  : 1,
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid #16a34a',
+              background: '#16a34a',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: running ? 'not-allowed' : 'pointer',
+              opacity: running ? 0.8 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
-            Export MDO
-          </button>
-
-          {/* Manual Add button — masuk draw mode di viewer (bukan langsung modal) */}
-          <button
-            onClick={() => {
-              if (drawMode) {
-                setDrawMode(false);
-              } else {
-                setDrawMode(true);
-                setConfirmingDraw(false);
-                setPendingDrawBbox(null);
-                setSelectedDetection(null);
-              }
-            }}
-            disabled={!mounted || !documentId}
-            style={
-              !mounted || !documentId
-                ? {
-                    ...buttonStyle,
-                    opacity: 0.4,
-                    cursor: "not-allowed",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }
-                : drawMode
-                  ? {
-                      ...primaryButtonStyle,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }
-                  : {
-                      ...buttonStyle,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }
-            }
-          >
-            {drawMode ? (
-              "✕ Cancel Drawing"
+            {running ? (
+              <>
+                <ArrowClockwise size={14} weight="bold" className="animate-spin" />
+                Detecting ({jobProgress?.progressPct ?? 5}%)
+              </>
             ) : (
               <>
-                <PlusCircle size={14} weight="bold" style={{ flexShrink: 0 }} />{" "}
-                Add Asset Manually
+                <Lightning size={14} weight="fill" />
+                Run Detection
               </>
             )}
           </button>
         </div>
-        {mdoMessage && (
-          <div
+
+        {/* Right side header: Stats & Proceed to MDO Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
+              Total: <strong>{counts.total}</strong>
+            </span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--success-soft)', color: 'var(--success)' }}>
+              Approved: <strong>{counts.approved}</strong>
+            </span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--warning-soft)', color: 'var(--warning)' }}>
+              Pending: <strong>{counts.pending}</strong>
+            </span>
+          </div>
+
+          <Link
+            href={`/mdo?document_id=${documentId}`}
             style={{
-              padding: "0 20px 12px",
-              fontSize: "12px",
-              color: "var(--foreground-muted)",
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: '#2563eb',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              textDecoration: 'none',
+              boxShadow: '0 2px 4px rgba(37,99,235,0.2)',
             }}
           >
-            {mdoMessage}
-          </div>
-        )}
+            Proceed to MDO <ArrowRight size={14} weight="bold" />
+          </Link>
+        </div>
       </div>
 
-      {/* Run Detection error */}
-      {runError && (
-        <div
-          style={{
-            padding: "10px 16px",
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.4)",
-            borderRadius: "var(--radius-sm)",
-            color: "#f87171",
-            fontSize: "13px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "8px",
-          }}
-        >
-          <span>⚠ {runError}</span>
-          <button
-            onClick={() => setRunError(null)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#f87171",
-              cursor: "pointer",
-              fontSize: "16px",
-              lineHeight: 1,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Stats bar */}
-      {detections.length > 0 && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
-            gap: "12px",
-          }}
-        >
-          {[
-            { label: "Detected", value: total, color: "var(--foreground)" },
-            { label: "Confirmed", value: confirmed, color: "var(--success)" },
-            {
-              label: "Pending Review",
-              value: pending,
-              color: "var(--warning)",
-            },
-            { label: "Rejected", value: rejected, color: "var(--danger)" },
-            {
-              label: "Avg Confidence",
-              value: avgConf !== null ? `${avgConf}%` : "—",
-              color: "var(--info)",
-            },
-          ].map((s) => (
-            <div
-              key={s.label}
-              style={{ ...cardStyle, padding: "12px", textAlign: "center" }}
-            >
-              <p
-                style={{
-                  fontSize: "20px",
-                  fontWeight: "600",
-                  color: s.color,
-                  margin: 0,
-                }}
-              >
-                {s.value}
-              </p>
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "var(--foreground-muted)",
-                  margin: "4px 0 0",
-                }}
-              >
-                {s.label}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Duplicate warning bar */}
-      {detections.length > 0 && duplicateCount > 0 && !confirmDedupe && (
+      {/* ── Detection Progress Bar (Active when detection is running or completed/failed recently) ── */}
+      {jobProgress && (
         <div
           style={{
             ...cardStyle,
-            padding: "10px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-            border: "1px solid var(--warning)",
-            background: "var(--warning-soft)",
+            padding: '10px 14px',
+            background:
+              jobProgress.status === 'FAILED'
+                ? 'rgba(239,68,68,0.06)'
+                : jobProgress.status === 'COMPLETED'
+                ? 'rgba(34,197,94,0.06)'
+                : 'linear-gradient(180deg, var(--surface) 0%, var(--surface-muted) 100%)',
+            border: `1px solid ${
+              jobProgress.status === 'FAILED'
+                ? 'var(--danger)'
+                : jobProgress.status === 'COMPLETED'
+                ? 'var(--success)'
+                : 'rgba(37,99,235,0.5)'
+            }`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            flexShrink: 0,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            position: 'relative',
           }}
         >
-          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
-            ⚠ <strong>{duplicateCount}</strong> duplicate detection
-            {duplicateCount !== 1 ? "s" : ""} found (same tag + type)
-          </span>
-          <button
-            onClick={() => setConfirmDedupe(true)}
-            disabled={deduping}
-            style={{
-              ...buttonStyle,
-              fontSize: "12px",
-              padding: "5px 12px",
-              border: "1px solid var(--warning)",
-              color: "var(--warning)",
-              opacity: deduping ? 0.5 : 1,
-            }}
-          >
-            Remove Duplicates
-          </button>
-        </div>
-      )}
-
-      {/* Deduplicate confirm */}
-      {confirmDedupe && (
-        <div
-          style={{
-            ...cardStyle,
-            padding: "10px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-            border: "1px solid var(--danger)",
-            background: "var(--danger-soft)",
-          }}
-        >
-          <span style={{ fontSize: "13px", color: "var(--foreground)" }}>
-            Hapus <strong>{duplicateCount}</strong> duplikat? Tindakan ini{" "}
-            <strong>permanen</strong> — baris duplikat dihapus dari DB, hanya 1
-            terbaik per tag+type yang disimpan.
-          </span>
-          <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-            <button
-              onClick={handleDeduplicate}
-              disabled={deduping}
-              style={{
-                ...primaryButtonStyle,
-                fontSize: "12px",
-                padding: "5px 12px",
-                background: "var(--danger)",
-                border: "1px solid var(--danger)",
-                opacity: deduping ? 0.5 : 1,
-              }}
-            >
-              {deduping ? "Removing…" : "Ya, Hapus"}
-            </button>
-            <button
-              onClick={() => setConfirmDedupe(false)}
-              style={{ ...buttonStyle, fontSize: "12px", padding: "5px 12px" }}
-            >
-              Batal
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Deduplicate error */}
-      {dedupeError && (
-        <p
-          style={{
-            fontSize: "12px",
-            color: "var(--danger)",
-            background: "var(--danger-soft)",
-            borderRadius: "var(--radius-sm)",
-            padding: "8px 12px",
-            margin: 0,
-          }}
-        >
-          {dedupeError}
-          <button
-            onClick={() => setDedupeError("")}
-            style={{
-              marginLeft: "8px",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--danger)",
-              fontWeight: "600",
-            }}
-          >
-            ✕
-          </button>
-        </p>
-      )}
-
-      {/* Main workspace: Viewer (left, wide) + Table+Detail (right, narrower) */}
-      {detections.length > 0 || currentJobId ? (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-            flex: 1,
-            minHeight: 700,
-          }}
-        >
-          <div
-            className="detection-viewer-row"
-            style={{
-              display: "flex",
-              alignItems: "stretch",
-              gap: "12px",
-              flex: "0 0 auto",
-              minHeight: 480,
-            }}
-          >
-            {/* Left: Viewer — takes most of the width (~75%) */}
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-              }}
-            >
-              {/* Job progress inline above viewer — compact, doesn't push viewer down */}
-              {currentJobId && (
-                <div style={{ flexShrink: 0 }}>
-                  <JobProgress
-                    jobId={currentJobId}
-                    onComplete={handleJobComplete}
-                  />
-                </div>
-              )}
-              {/* Confirm bar: tampil setelah user selesai gambar kotak */}
-              {confirmingDraw && pendingDrawBbox && (
-                <div
-                  style={{
-                    ...cardStyle,
-                    flexShrink: 0,
-                    padding: "12px 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                    border: "1px solid var(--info)",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "var(--foreground)",
-                    }}
-                  >
-                    Use this box?
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      color: "var(--foreground-muted)",
-                      fontFamily: "var(--font-geist-mono, monospace)",
-                    }}
-                  >
-                    x={pendingDrawBbox.x} y={pendingDrawBbox.y} w=
-                    {pendingDrawBbox.w} h={pendingDrawBbox.h}
-                  </span>
-                  <span
-                    style={{ marginLeft: "auto", display: "flex", gap: "8px" }}
-                  >
-                    <button
-                      onClick={() => {
-                        setConfirmingDraw(false);
-                        setShowManualAdd(true);
-                      }}
-                      style={{
-                        ...primaryButtonStyle,
-                        padding: "6px 14px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      Use this box
-                    </button>
-                    <button
-                      onClick={() => {
-                        setPendingDrawBbox(null);
-                        setConfirmingDraw(false);
-                        setDrawMode(true);
-                      }}
-                      style={{
-                        ...buttonStyle,
-                        padding: "6px 14px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      Redraw
-                    </button>
-                    <button
-                      onClick={() => {
-                        setPendingDrawBbox(null);
-                        setConfirmingDraw(false);
-                        setDrawMode(false);
-                      }}
-                      style={{
-                        ...buttonStyle,
-                        padding: "6px 14px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </span>
-                </div>
-              )}
-              <div style={{ flex: 1, minHeight: 480, height: "auto" }}>
-                <PidViewer
-                  documentId={documentId}
-                  fileType={selectedDocument?.file_type}
-                  // DXF me-render SELURUH file CAD → beri semua deteksi (semua sheet).
-                  // PDF me-render 1 halaman → tetap filter per halaman.
-                  detections={
-                    selectedDocument?.file_type === "dxf"
-                      ? detections
-                      : pageDetections
-                  }
-                  selectedId={selectedId}
-                  onSelect={(id) => {
-                    const d = detections.find((x) => x.id === id);
-                    if (d) {
-                      setSelectedDetection(d);
-                      setShowDetail(true);
-                    }
-                  }}
-                  page={safePage}
-                  totalPages={maxPage}
-                  onPageChange={setCurrentPage}
-                  onBboxChange={handleBboxChange}
-                  drawMode={drawMode}
-                  onDrawComplete={(rect) => {
-                    setPendingDrawBbox(rect);
-                    setConfirmingDraw(true);
-                    setDrawMode(false);
-                  }}
-                  onDrawCancel={() => setDrawMode(false)}
-                  showAll={showAllBbox}
-                  onShowAllChange={setShowAllBbox}
-                  showDetail={showDetail}
-                  onShowDetailChange={setShowDetail}
+          {/* Header row: Status, text, percentage & stats */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              {jobProgress.status === 'FAILED' ? (
+                <XCircle size={20} weight="fill" color="var(--danger)" style={{ flexShrink: 0 }} />
+              ) : jobProgress.status === 'COMPLETED' ? (
+                <CheckCircle size={20} weight="fill" color="var(--success)" style={{ flexShrink: 0 }} />
+              ) : (
+                <ArrowClockwise
+                  size={18}
+                  weight="bold"
+                  color="#3b82f6"
+                  className="animate-spin"
+                  style={{ flexShrink: 0 }}
                 />
-              </div>
-            </div>
-
-            {/* Right panel: selected asset detail */}
-            <aside
-              className="detection-detail-panel"
-              style={{
-                width: showDetail && selectedDetection ? 320 : 0,
-                flex: showDetail && selectedDetection ? "0 0 320px" : "0 0 0px",
-                height: "auto",
-                minHeight: 0,
-                maxHeight: "none",
-                boxSizing: "border-box",
-                alignSelf: "stretch",
-                flexShrink: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-                overflowY: showDetail && selectedDetection ? "auto" : "hidden",
-                opacity: showDetail && selectedDetection ? 1 : 0,
-                pointerEvents:
-                  showDetail && selectedDetection ? "auto" : "none",
-                transition: "width 180ms ease, opacity 180ms ease",
-              }}
-            >
-              {selectedDetection && (
-                <div style={{ flexShrink: 0 }}>
-                  <AssetDetail
-                    detection={selectedDetection}
-                    onClose={() => {
-                      setSelectedDetection(null);
-                      setShowDetail(false);
-                    }}
-                    onConfirm={handleConfirm}
-                    onReject={handleReject}
-                    onEdit={handleEdit}
-                  />
-                </div>
               )}
-            </aside>
-          </div>
-          <section
-            className="mdo-result-panel"
-            style={{ ...cardStyle, minWidth: 0, overflow: "hidden" }}
-          >
-            <div
-              style={{
-                padding: "14px 16px 8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "12px",
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: "15px",
-                    fontWeight: 700,
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  MDO Detection Result
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
+                    {jobProgress.status === 'FAILED'
+                      ? 'Detection Failed'
+                      : jobProgress.status === 'COMPLETED'
+                      ? 'Detection Completed'
+                      : `Analyzing P&ID Assets (${jobProgress.progressPct}%)`}
+                  </span>
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background:
+                        jobProgress.status === 'FAILED'
+                          ? 'var(--danger-soft)'
+                          : jobProgress.status === 'COMPLETED'
+                          ? 'var(--success-soft)'
+                          : 'rgba(37,99,235,0.15)',
+                      color:
+                        jobProgress.status === 'FAILED'
+                          ? 'var(--danger)'
+                          : jobProgress.status === 'COMPLETED'
+                          ? 'var(--success)'
+                          : '#2563eb',
+                    }}
+                  >
+                    {jobProgress.status}
+                  </span>
                 </div>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    color: "var(--foreground-muted)",
-                    marginTop: "3px",
-                  }}
-                >
-                  Equipment register extracted from current document
-                </div>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  justifyContent: "flex-end",
-                }}
-              >
-                <span style={{ color: "var(--success)", fontSize: "11px" }}>
-                  Approved{" "}
-                  {detections.filter((d) => d.mdo_approval_status === "APPROVED").length}
-                </span>
-                <span style={{ color: "var(--warning)", fontSize: "11px" }}>
-                  Pending{" "}
-                  {detections.filter((d) => d.mdo_approval_status === "PENDING").length}
-                </span>
-                <span style={{ color: "var(--danger)", fontSize: "11px" }}>
-                  Rejected{" "}
-                  {detections.filter((d) => d.mdo_approval_status === "REJECTED").length}
-                </span>
                 <span
                   style={{
-                    color: "var(--foreground-muted)",
-                    fontSize: "12px",
-                    fontFamily: "var(--font-geist-mono, monospace)",
+                    fontSize: 11,
+                    color: jobProgress.status === 'FAILED' ? 'var(--danger)' : 'var(--foreground-muted)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {detections.filter((d) => d.mdo_id).length} MDO records
+                  {jobProgress.errorDetail || jobProgress.stageText}
+                </span>
+              </div>
+            </div>
+
+            {/* Right side stats */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {jobProgress.stats && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                  <span style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--foreground)' }}>
+                    Detected: <strong>{jobProgress.stats.total}</strong>
+                  </span>
+                  <span style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--warning-soft)', color: 'var(--warning)' }}>
+                    Pending: <strong>{jobProgress.stats.pending}</strong>
+                  </span>
+                  <span style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--success-soft)', color: 'var(--success)' }}>
+                    Confirmed: <strong>{jobProgress.stats.confirmed}</strong>
+                  </span>
+                </div>
+              )}
+
+              {/* Dismiss button when completed or failed */}
+              {(jobProgress.status === 'COMPLETED' || jobProgress.status === 'FAILED') && (
+                <button
+                  onClick={() => setJobProgress(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--foreground-muted)',
+                    cursor: 'pointer',
+                    fontSize: 18,
+                    padding: '2px 6px',
+                    lineHeight: 1,
+                  }}
+                  title="Close progress banner"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Progress Bar Track */}
+          <div
+            style={{
+              width: '100%',
+              height: 7,
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.25)',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${jobProgress.progressPct}%`,
+                borderRadius: 999,
+                background:
+                  jobProgress.status === 'FAILED'
+                    ? 'var(--danger)'
+                    : jobProgress.status === 'COMPLETED'
+                    ? 'var(--success)'
+                    : 'linear-gradient(90deg, #2563eb 0%, #7c3aed 50%, #10b981 100%)',
+                transition: 'width 0.4s ease-out',
+                boxShadow:
+                  jobProgress.status === 'FAILED'
+                    ? '0 0 8px rgba(239,68,68,0.5)'
+                    : jobProgress.status === 'COMPLETED'
+                    ? '0 0 8px rgba(34,197,94,0.5)'
+                    : '0 0 10px rgba(37,99,235,0.5)',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Actions Toolbar (Active when items are selected) ────────── */}
+      {selectedIds.size > 0 && (
+        <div
+          style={{
+            ...cardStyle,
+            padding: '6px 12px',
+            background: 'var(--surface-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexShrink: 0,
+            borderLeft: '3px solid #2563eb',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--foreground)' }}>
+            <strong>{selectedIds.size}</strong> asset(s) selected
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              style={{ background: 'none', border: 'none', color: 'var(--foreground-muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Deselect all
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={handleBulkApprove}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: 'var(--success)',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Check size={12} weight="bold" /> Approve Selected
+            </button>
+            <button
+              onClick={handleBulkReject}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: 'var(--danger)',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <X size={12} weight="bold" /> Reject Selected
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Workspace Area (Split Viewer + Cards) ─────────────────── */}
+      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* Left Side: Interactive Canvas / DXF Viewer */}
+        <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Viewer Toolbar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 10px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--surface-muted)',
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>
+                {isDxf ? 'CAD Drawing View' : 'P&ID Page View'}
+              </span>
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    style={{ padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                  >
+                    <CaretLeft size={12} />
+                  </button>
+                  <span style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    style={{ padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                  >
+                    <CaretRight size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <button
+                  onClick={handleZoomOut}
+                  style={{ padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                >
+                  <Minus size={12} />
+                </button>
+                <span style={{ fontSize: 11, width: 34, textAlign: 'center', color: 'var(--foreground-muted)' }}>
+                  {Math.round(zoom * 100)}%
                 </span>
                 <button
-                  onClick={handleApproveAll}
-                  disabled={!detections.some((d) => d.mdo_approval_status === "PENDING")}
+                  onClick={handleZoomIn}
+                  style={{ padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                >
+                  <Plus size={12} />
+                </button>
+                <button
+                  onClick={handleResetZoom}
+                  style={{ padding: '2px 8px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', borderRadius: 'var(--radius-sm)', marginLeft: 4 }}
+                >
+                  Reset
+                </button>
+              </div>
+
+              <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
+
+              <button
+                onClick={() => setShowAllBboxes((v) => !v)}
+                style={{
+                  padding: '3px 8px',
+                  fontSize: 11,
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1px solid ${showAllBboxes ? 'var(--primary)' : 'var(--border)'}`,
+                  background: showAllBboxes ? 'var(--primary)' : 'var(--surface)',
+                  color: showAllBboxes ? '#fff' : 'var(--foreground)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                <SquaresFour size={12} /> {showAllBboxes ? 'All BBoxes' : 'Selected BBox'}
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas Viewport */}
+          <div
+            ref={viewerRef}
+            onMouseDown={(e) => {
+              if (e.button === 0 || e.button === 1) {
+                setDragging(true);
+                setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+              }
+            }}
+            onMouseMove={(e) => {
+              if (dragging) {
+                setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+              }
+            }}
+            onMouseUp={() => setDragging(false)}
+            onMouseLeave={() => setDragging(false)}
+            style={{
+              position: 'relative',
+              flex: 1,
+              minHeight: 0,
+              overflow: 'hidden',
+              background: '#14161b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: dragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
+            }}
+          >
+            {isDxf ? (
+              <div style={{ width: '100%', height: '100%' }}>
+                <DxfViewer
+                  url={`/api/documents/${documentId}/file`}
+                  detections={pageDetections}
+                  selectedId={selectedId}
+                  onSelectAsset={(id: string) => {
+                    setSelectedId(id);
+                    cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }}
+                  activeSheet={page}
+                />
+              </div>
+            ) : imgSrc ? (
+              <div
+                style={{
+                  position: 'relative',
+                  width: baseSize ? Math.round(baseSize.w * zoom) : 'auto',
+                  height: baseSize ? Math.round(baseSize.h * zoom) : 'auto',
+                  maxWidth: baseSize ? undefined : '100%',
+                  maxHeight: baseSize ? undefined : '100%',
+                  flexShrink: 0,
+                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                  transition: dragging ? 'none' : 'transform 40ms ease-out',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <img
+                  key={imgSrc}
+                  src={imgSrc}
+                  alt={`P&ID page ${page}`}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setImgNatural({ w: img.naturalWidth || 2000, h: img.naturalHeight || 1400 });
+                  }}
                   style={{
-                    ...buttonStyle,
-                    fontSize: "11px",
-                    padding: "4px 10px",
-                    background: "#2D7A3A",
-                    color: "#fff",
-                    border: "1px solid #2D7A3A",
-                    opacity: detections.some((d) => d.mdo_approval_status === "PENDING") ? 1 : 0.4,
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    objectFit: 'contain',
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                    imageRendering: '-webkit-optimize-contrast',
+                  }}
+                  draggable={false}
+                />
+
+                {/* SVG Bounding Boxes Overlay */}
+                {imgNatural && (
+                  <svg
+                    viewBox="0 0 1000 1000"
+                    preserveAspectRatio="none"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+                  >
+                    {pageDetections
+                      .filter((d) => d.bbox_x !== null && d.bbox_y !== null && (showAllBboxes || d.id === selectedId))
+                      .map((d) => {
+                        const isSel = d.id === selectedId;
+                        const x = d.bbox_x!;
+                        const y = d.bbox_y!;
+                        const w = Math.max(10, d.bbox_w || 25);
+                        const h = Math.max(10, d.bbox_h || 25);
+                        const isApproved = d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
+                        const isRejected = d.review_status === 'REJECTED' || d.detection_status === 'REJECTED';
+                        const color = isApproved ? '#22c55e' : isRejected ? '#ef4444' : '#f59e0b';
+                        const label = d.asset_tag || d.asset_type;
+
+                        return (
+                          <g
+                            key={d.id}
+                            style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedId(d.id);
+                              cardRefs.current[d.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }}
+                          >
+                            <rect
+                              x={x}
+                              y={y}
+                              width={w}
+                              height={h}
+                              fill={color}
+                              fillOpacity={isSel ? 0.25 : 0.12}
+                              stroke={color}
+                              strokeWidth={isSel ? 2.5 : 1.2}
+                              vectorEffect="non-scaling-stroke"
+                              strokeDasharray={isSel ? undefined : '4 2'}
+                              rx={1}
+                            />
+                            {/* Label Tag Header */}
+                            <rect
+                              x={x}
+                              y={y > 18 ? y - 14 : y + h + 2}
+                              width={Math.min(100, Math.max(w, 40))}
+                              height={12}
+                              rx={2}
+                              fill={color}
+                              opacity={0.95}
+                            />
+                            <text
+                              x={x + 3}
+                              y={(y > 18 ? y - 14 : y + h + 2) + 9}
+                              fill="#fff"
+                              fontSize={8}
+                              fontFamily="ui-monospace, monospace"
+                              fontWeight={isSel ? 700 : 500}
+                            >
+                              {label.slice(0, 15)}
+                            </text>
+                          </g>
+                        );
+                      })}
+                  </svg>
+                )}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--foreground-muted)', fontSize: 13 }}>Pilih dokumen P&ID untuk ditampilkan</div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Compact Cards List (Legend Preview Layout) */}
+        <aside
+          style={{
+            ...cardStyle,
+            width: 380,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            flexShrink: 0,
+          }}
+        >
+          {/* List Header & Search */}
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === filteredDetections.length}
+                  onChange={handleSelectAll}
+                  style={{ cursor: 'pointer' }}
+                  title="Select all on this page"
+                />
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>Detected Assets</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {counts.untagged > 0 && (
+                  <button
+                    onClick={handleAutoTag}
+                    disabled={autoTagging}
+                    title="Auto-generate incrementing equipment tags for untagged assets (e.g. FLT-001, GTV-001)"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid #7c3aed',
+                      background: 'rgba(124,58,237,0.1)',
+                      color: '#7c3aed',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      cursor: autoTagging ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Tag size={11} weight="bold" />
+                    {autoTagging ? 'Tagging…' : `Auto-Tag (${counts.untagged})`}
+                  </button>
+                )}
+                <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: 999 }}>
+                  {filteredDetections.length} / {pageDetections.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tag, type, service…"
+              style={{
+                width: '100%',
+                padding: '5px 8px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: 'var(--background)',
+                color: 'var(--foreground)',
+                fontSize: 12,
+                boxSizing: 'border-box',
+              }}
+            />
+
+            {/* Filter Tabs */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['all', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((t) => {
+                const count = t === 'all' ? counts.total : t === 'PENDING' ? counts.pending : t === 'APPROVED' ? counts.approved : counts.rejected;
+                const active = statusTab === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setStatusTab(t)}
+                    style={{
+                      flex: 1,
+                      padding: '3px 0',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      borderRadius: 999,
+                      border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                      background: active ? 'var(--primary)' : 'var(--surface)',
+                      color: active ? '#fff' : 'var(--foreground-muted)',
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {t} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Selected Asset Banner */}
+            {selectedItem && (
+              <div
+                style={{
+                  border: '1px solid var(--primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: 8,
+                  background: 'var(--surface)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>
+                    {selectedItem.asset_tag || '(No Tag)'}
+                  </span>
+                  <StatusBadge status={selectedItem.review_status} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
+                  Type: <strong>{selectedItem.asset_type}</strong> · Confidence: <strong>{Math.round((selectedItem.confidence ?? 0) * 100)}%</strong>
+                </div>
+                {selectedItem.service && (
+                  <div style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
+                    Service: {selectedItem.service}
+                  </div>
+                )}
+                {/* Actions on selected item */}
+                <div style={{ display: 'flex', gap: 6, paddingTop: 2 }}>
+                  <button
+                    onClick={(e) => handleApprove(selectedItem.id, e)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      borderRadius: 'var(--radius-sm)',
+                      border: 'none',
+                      background: 'var(--success)',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <CheckCircle size={12} weight="fill" /> Approve
+                  </button>
+                  <button
+                    onClick={(e) => handleReject(selectedItem.id, e)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      borderRadius: 'var(--radius-sm)',
+                      border: 'none',
+                      background: 'var(--danger-soft)',
+                      color: 'var(--danger)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <XCircle size={12} weight="fill" /> Reject
+                  </button>
+                  <button
+                    onClick={(e) => handleOpenEdit(selectedItem, e)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                      color: 'var(--foreground)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <PencilSimple size={12} /> Edit
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Scrollable List of Asset Cards */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {loadingDets ? (
+              <p style={{ fontSize: 11, color: 'var(--foreground-muted)', textAlign: 'center', padding: 20 }}>
+                Loading detections…
+              </p>
+            ) : filteredDetections.length === 0 ? (
+              <p style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 24 }}>
+                No assets found on this page.
+              </p>
+            ) : (
+              filteredDetections.map((d) => {
+                const isSelected = d.id === selectedId;
+                const isChecked = selectedIds.has(d.id);
+                const isApproved = d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
+                const isRejected = d.review_status === 'REJECTED' || d.detection_status === 'REJECTED';
+
+                return (
+                  <div
+                    key={d.id}
+                    ref={(el) => {
+                      cardRefs.current[d.id] = el;
+                    }}
+                    onClick={() => setSelectedId(d.id)}
+                    style={{
+                      ...cardStyle,
+                      padding: '7px 9px',
+                      cursor: 'pointer',
+                      borderColor: isSelected ? 'var(--primary)' : 'var(--border)',
+                      background: isApproved
+                        ? 'rgba(34,197,94,0.06)'
+                        : isRejected
+                        ? 'rgba(239,68,68,0.06)'
+                        : 'var(--surface)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => toggleSelect(d.id, e as unknown as React.MouseEvent)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {d.asset_tag || '(No Tag)'}
+                          </span>
+                          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
+                            {d.asset_type}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>
+                          Confidence: {Math.round((d.confidence ?? 0) * 100)}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Micro Action Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <button
+                        onClick={(e) => handleApprove(d.id, e)}
+                        title="Approve"
+                        style={{
+                          background: isApproved ? 'var(--success)' : 'var(--surface-muted)',
+                          color: isApproved ? '#fff' : 'var(--foreground-muted)',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '3px 6px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Check size={11} weight="bold" />
+                      </button>
+                      <button
+                        onClick={(e) => handleReject(d.id, e)}
+                        title="Reject"
+                        style={{
+                          background: isRejected ? 'var(--danger)' : 'var(--surface-muted)',
+                          color: isRejected ? '#fff' : 'var(--foreground-muted)',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '3px 6px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <X size={11} weight="bold" />
+                      </button>
+                      <button
+                        onClick={(e) => handleOpenEdit(d, e)}
+                        title="Edit"
+                        style={{
+                          background: 'var(--surface-muted)',
+                          color: 'var(--foreground-muted)',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '3px 6px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <PencilSimple size={11} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {/* ── Edit Asset Dialog Modal ────────────────────────────────────── */}
+      {editingItem && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditingItem(null);
+          }}
+        >
+          <div style={{ ...cardStyle, padding: 20, width: 400, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>Edit Asset Details</h2>
+              <button onClick={() => setEditingItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--foreground-muted)' }}>
+                &times;
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Asset Tag</span>
+                <input
+                  type="text"
+                  value={editForm.asset_tag}
+                  onChange={(e) => setEditForm((p) => ({ ...p, asset_tag: e.target.value }))}
+                  placeholder="e.g. 30756-PT-1020A"
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Asset Type</span>
+                <input
+                  type="text"
+                  value={editForm.asset_type}
+                  onChange={(e) => setEditForm((p) => ({ ...p, asset_type: e.target.value }))}
+                  placeholder="e.g. PUMP, VALVE, VESSEL"
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Size / Specs</span>
+                <input
+                  type="text"
+                  value={editForm.size}
+                  onChange={(e) => setEditForm((p) => ({ ...p, size: e.target.value }))}
+                  placeholder={'e.g. 1/2", 2", 4"'}
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Service / Duty</span>
+                <input
+                  type="text"
+                  value={editForm.service}
+                  onChange={(e) => setEditForm((p) => ({ ...p, service: e.target.value }))}
+                  placeholder="e.g. Production line pressure"
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13 }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)', textTransform: 'uppercase' }}>Description</span>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="Optional equipment description…"
+                  rows={2}
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 13, resize: 'none' }}
+                />
+              </label>
+
+              <div style={{ display: 'flex', gap: 8, paddingTop: 6 }}>
+                <button
+                  onClick={() => setEditingItem(null)}
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={editSaving}
+                  style={{
+                    flex: 1,
+                    padding: '7px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    background: 'var(--primary)',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: editSaving ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
                   }}
                 >
-                  Approve All Pending
+                  <FloppyDisk size={13} /> {editSaving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
             </div>
-            <div style={{ overflowX: "auto", padding: "0 8px 8px" }}>
-              <DetectionsTable
-                detections={detections}
-                selectedId={selectedId}
-                onBulkAction={handleBulkAction}
-                onMdoAction={handleMdoAction}
-                approvingMdoId={approving}
-                onSelect={(d) => {
-                  setSelectedDetection(d);
-                  setShowDetail(true);
-                  if (d.pid_page !== null && d.pid_page !== safePage)
-                    setCurrentPage(d.pid_page);
-                }}
-              />
-            </div>
-          </section>
-        </div>
-      ) : (
-        !currentJobId && (
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "2px dashed var(--border)",
-              borderRadius: "var(--radius-md)",
-              color: "var(--foreground-muted)",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <svg
-                style={{ width: 48, height: 48, margin: "0 auto 12px" }}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"
-                />
-              </svg>
-              <p style={{ fontSize: "14px", fontWeight: "500" }}>
-                Select a document and run detection
-              </p>
-              <p style={{ fontSize: "12px", marginTop: "4px" }}>
-                AI will analyze your P&ID and detect assets
-              </p>
-            </div>
           </div>
-        )
+        </div>
       )}
     </div>
   );
 }
 
-// Need Suspense for useSearchParams
 export default function DetectionPage() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ padding: 24, color: "var(--foreground-muted)" }}>
-          Loading...
-        </div>
-      }
-    >
-      <DetectionWorkspace />
+    <Suspense fallback={<div style={{ padding: 32, textAlign: 'center', color: 'var(--foreground-muted)' }}>Loading Detection Workspace…</div>}>
+      <DetectionContent />
     </Suspense>
   );
 }

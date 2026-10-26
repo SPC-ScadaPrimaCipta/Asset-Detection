@@ -69,7 +69,8 @@ const SORT_OPTS = [
 const cardStyle: React.CSSProperties = {
   background: 'var(--surface)',
   border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-md)',
+  borderRadius: 'var(--radius-card, 20px)',
+  boxShadow: 'var(--shadow-card)',
 };
 
 const fieldLabelStyle: React.CSSProperties = {
@@ -81,10 +82,11 @@ const fieldLabelStyle: React.CSSProperties = {
 };
 
 const controlStyle: React.CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: 'var(--radius-sm)',
+  height: 40,
+  padding: '0 12px',
+  borderRadius: 'var(--radius-input, 10px)',
   border: '1px solid var(--border)',
-  background: 'var(--background)',
+  background: 'var(--surface-2)',
   color: 'var(--foreground)',
   fontSize: '13px',
   fontFamily: 'inherit',
@@ -94,7 +96,7 @@ const controlStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: '10px 12px',
+  padding: '12px 16px',
   fontSize: '11px',
   fontWeight: '600',
   color: 'var(--foreground-muted)',
@@ -103,15 +105,15 @@ const thStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-const tdBase: React.CSSProperties = { padding: '10px 12px' };
+const tdBase: React.CSSProperties = { padding: '12px 16px' };
 
 const badgeBase: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  padding: '2px 8px',
-  borderRadius: '999px',
-  fontSize: '12px',
-  fontWeight: '500',
+  padding: '3px 8px',
+  borderRadius: 'var(--radius-chip, 6px)',
+  fontSize: '11px',
+  fontWeight: '600',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
