@@ -216,7 +216,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const rows = await db.query(
     `SELECT m.id, m.detection_id, m.document_id, m.location_prefix,
             m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
-            m.from_value, m.to_value, m.of_value, m.description,
+            m.from_value, m.to_value, m.of_value, m.at_value, m.description,
             m.approval_status, m.approved_at, m.approved_by, m.rejection_reason,
             d.asset_tag, d.asset_type, d.confidence, d.bbox_x, d.bbox_y, d.bbox_w, d.bbox_h, d.pid_page,
             m.created_at, m.updated_at

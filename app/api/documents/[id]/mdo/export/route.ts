@@ -10,6 +10,7 @@ const HEADERS = [
   'From',
   'To',
   'Of',
+  'At',
   'Description',
 ];
 
@@ -22,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // Fetch records for approved detections
     let rows = (await db.query(
        `SELECT m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
-               m.from_value, m.to_value, m.of_value, m.description
+               m.from_value, m.to_value, m.of_value, m.at_value, m.description
         FROM detection_mdo_records m
         JOIN detections d ON d.id = m.detection_id
         WHERE m.document_id=$1 
@@ -36,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (rows.length === 0) {
       rows = (await db.query(
         `SELECT m.tag_no_proposed, m.equipment_type_short, m.equipment_name, m.size,
-                m.from_value, m.to_value, m.of_value, m.description
+                m.from_value, m.to_value, m.of_value, m.at_value, m.description
          FROM detection_mdo_records m
          JOIN detections d ON d.id = m.detection_id
          WHERE m.document_id=$1 
@@ -61,6 +62,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         row.from_value ?? '-',
         row.to_value ?? '-',
         row.of_value ?? '-',
+        row.at_value ?? '-',
         row.description ?? '-',
       ]);
     }
@@ -76,7 +78,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     sheet.autoFilter = { from: 'A1', to: `${String.fromCharCode(64 + HEADERS.length)}1` };
 
     // Set column widths
-    const widths = [22, 16, 26, 16, 24, 26, 24, 46];
+    const widths = [24, 16, 26, 16, 24, 26, 24, 18, 50];
     sheet.columns.forEach((col, idx) => {
       col.width = widths[idx] ?? 20;
     });
