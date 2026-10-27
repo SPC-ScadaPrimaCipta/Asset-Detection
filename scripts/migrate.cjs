@@ -342,15 +342,15 @@ async function migrate() {
       console.warn('  016 migration warning (non-fatal):', e.message);
     }
 
-    // Migration 017: narrowed MDO fields and independent MDO approval workflow
+    // Migration 018: Add component_name and description to detections
     try {
-      const mdoV3Sql = join(__dirname, '..', 'sql', 'migrate-mdo-v3.sql');
-      if (existsSync(mdoV3Sql)) {
-        await p.query(readFileSync(mdoV3Sql, 'utf-8'));
-        console.log('  017: narrowed MDO + approval workflow OK');
+      const descSql = join(__dirname, '..', 'sql', 'migrate-detection-desc.sql');
+      if (existsSync(descSql)) {
+        await p.query(readFileSync(descSql, 'utf-8'));
+        console.log('  018: detections component_name/description OK');
       }
     } catch (e) {
-      console.warn('  017 migration warning (non-fatal):', e.message);
+      console.warn('  018 migration warning (non-fatal):', e.message);
     }
 
     // Migration 018: Accenture 8-column MDO fields
@@ -363,6 +363,7 @@ async function migrate() {
     } catch (e) {
       console.warn('  018 migration warning (non-fatal):', e.message);
     }
+
 
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");

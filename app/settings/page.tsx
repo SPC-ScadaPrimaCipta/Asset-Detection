@@ -1023,9 +1023,9 @@ export default function SettingsPage() {
                   onChange={v => setTuningValue(['model', 'circuitCooldownMs'], v)}
                 />
                 <NumberField
-                  label="Requests per minute ceiling"
-                  hint="Enforced across Scan Legend and Run Detection together. Free tier is 15; the 429s in a region sweep are almost always this being too low."
-                  value={tuning.model?.requestsPerMinute} min={1} max={600}
+                  label="Requests per minute ceiling (GEMINI_REQUESTS_PER_MINUTE)"
+                  hint="Enforced process-wide across Scan Legend and Run Detection together. Free tier = 15 (default). Paid tier = 60–2000+. Raise this first if detection is slow or you get 429 errors. No restart required — takes effect within 30 seconds."
+                  value={tuning.model?.requestsPerMinute} min={1} max={2000}
                   onChange={v => setTuningValue(['model', 'requestsPerMinute'], v)}
                 />
               </div>

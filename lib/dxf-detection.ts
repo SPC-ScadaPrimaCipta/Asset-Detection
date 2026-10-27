@@ -146,7 +146,7 @@ export interface DxfDetectionResult {
 
 /** "SLON-...$0$Level 6" → "Level 6" */
 function shortLayer(layer: string): string {
-  const idx = layer.indexOf('$0$');
+  const idx = layer.lastIndexOf('$0$');
   return idx >= 0 ? layer.slice(idx + 3).trim() : layer.trim();
 }
 
@@ -185,16 +185,16 @@ function heuristicCategory(layer: string): LayerProfile['category'] {
   // Blank / spacer layers
   if (/^blank$|^spacer$/i.test(sl)) return 'ignore';
 
+// ... heuristicCategory (baris 173) ...
   // Known primary tag layers (equipment & instrument tags)
-  if (/^level\s*6$/i.test(sl)) return 'tag';       // equipment tags (primary)
-  if (/^level\s*4$/i.test(sl)) return 'tag';        // instrument/valve tags
-  if (/^level\s*40$/i.test(sl)) return 'tag';       // also equipment
-  if (/^equip.*tag|^p.*tag|^tag\b/i.test(sl)) return 'tag';
-  // Known equipment/symbol geometry layers in P&ID standards
-  if (/^level\s*5$/i.test(sl)) return 'equipment';  // pump/vessel circles
-  if (/^level\s*3$/i.test(sl)) return 'equipment';  // equipment polyline outlines
-  if (/^valve$/i.test(sl)) return 'equipment';       // valve symbols
-  if (/^water$/i.test(sl)) return 'equipment';
+  if (/level\s*6/i.test(sl)) return 'tag';       // equipment tags (primary)
+  if (/level\s*4/i.test(sl)) return 'tag';        // instrument/valve tags
+  if (/level\s*40/i.test(sl)) return 'tag';       // also equipment
+  if (/equip.*tag|p.*tag|tag\b/i.test(sl)) return 'tag';  // Known equipment/symbol geometry layers in P&ID standards
+  if (/level\s*5/i.test(sl)) return 'equipment';  // pump/vessel circles
+  if (/level\s*3/i.test(sl)) return 'equipment';  // equipment polyline outlines
+  if (/valve/i.test(sl)) return 'equipment';       // valve symbols
+  if (/water/i.test(sl)) return 'equipment';
   // Level N pattern — only pure "Level N" without any suffix
   const levelMatch = sl.match(/^level\s*(\d+)$/);
   if (levelMatch) {
@@ -832,6 +832,7 @@ function collectCircleCandidates(
       }
     }
   }
+  console.log("Candidate circles length:", candidates.length);
   return candidates;
 }
 
@@ -966,16 +967,17 @@ export function runDxfDetection(
     // ════════════════════════════════════════════
 
     // Helper: check if a position is in the title block / border area.
-    // P&ID title blocks are typically at the TOP of the drawing sheet.
-    // We filter the top 6% to exclude drawing number references and legend lists
-    // that appear in the header strip. Bottom and sides are NOT filtered because
-    // equipment CAN appear near the bottom of the drawing content area.
-    const TITLE_STRIP_TOP_FRACTION = 0.06;
-    const titleStripTopHeight = extents.height * TITLE_STRIP_TOP_FRACTION;
+    // P&ID title blocks are typically at the BOTTOM of the drawing sheet in
+    // most standards (ISO, ANSI). Top area frequently contains equipment header
+    // labels (P-0501, V-0601, etc.) — filtering those is wrong.
+    // Only filter BOTTOM 3% (title block strip) and skip the top entirely.
+    // Configurable via DXF_TITLE_STRIP_FRACTION env (default 0.03).
+    const TITLE_STRIP_FRACTION = parseFloat(process.env.DXF_TITLE_STRIP_FRACTION ?? '0.03');
+    const titleStripHeight = extents.height * TITLE_STRIP_FRACTION;
     const isInTitleStrip = (pos: DxfPoint): boolean => {
-      // DXF Y: larger = higher on sheet. Top of drawing = maxY.
-      const fromTop = extents.maxY - pos.y;
-      return fromTop < titleStripTopHeight;
+      // DXF Y: larger = higher on sheet. Bottom strip = pos.y near minY.
+      const fromBottom = pos.y - extents.minY;
+      return fromBottom < titleStripHeight;
     };
 
     // 1. Collect all tag texts from tag layers — excluding title block area

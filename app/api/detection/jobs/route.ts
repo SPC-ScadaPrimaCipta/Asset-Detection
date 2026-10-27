@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { document_id, legend_id, legend_ids, project_id } = await request.json();
+  const { document_id, legend_id, legend_ids, project_id, detection_mode } = await request.json();
   if (!document_id) return NextResponse.json({ error: "document_id required" }, { status: 400 });
   const id = uuidv4();
 
@@ -102,6 +102,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: resolved.error }, { status: 400 });
   }
   const { legendIds, primaryLegendId } = resolved;
+
+  const validDetectionMode = (detection_mode === 'full' || detection_mode === 'flow' || detection_mode === 'both')
+    ? detection_mode as 'full' | 'flow' | 'both'
+    : undefined;
 
   // Cleanup: delete DETECTED/PENDING detections from previous jobs for this document.
   // Confirmed (APPROVED) and Rejected detections are preserved — user already reviewed those.
@@ -120,7 +124,7 @@ export async function POST(request: NextRequest) {
   );
   // Use singleton queue — avoids creating a new Redis connection per request
   const { enqueueDetectionJob } = await import('@/lib/queue');
-  const enqueued = await enqueueDetectionJob(id, primaryLegendId, legendIds);
+  const enqueued = await enqueueDetectionJob(id, primaryLegendId, legendIds, validDetectionMode);
   if (!enqueued) {
     console.warn(`[detection] Redis unavailable, job ${id} left as PENDING — worker will recover on startup`);
   }

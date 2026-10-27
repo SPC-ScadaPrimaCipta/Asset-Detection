@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Search, Bell, Play, Menu } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { Button } from './ui/button';
@@ -18,6 +18,8 @@ export default function Header({
 }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const router = useRouter();
+  const pathname = usePathname();
+  const isDetectionPage = pathname === '/detection';
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,13 +92,15 @@ export default function Header({
 
       {/* Right: Actions, Search, Notifications, Theme */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        {/* Action Button: Run Detection */}
-        <Link href="/detection" style={{ textDecoration: 'none' }}>
-          <Button variant="primary" size="lg" style={{ gap: 8 }}>
-            <Play size={16} fill="currentColor" />
-            <span>Run Detection</span>
-          </Button>
-        </Link>
+        {/* Action Button: Run Detection — hidden when already on /detection */}
+        {!isDetectionPage && (
+          <Link href="/detection" style={{ textDecoration: 'none' }}>
+            <Button variant="primary" size="lg" style={{ gap: 8 }}>
+              <Play size={16} fill="currentColor" />
+              <span>Run Detection</span>
+            </Button>
+          </Link>
+        )}
 
         {/* Search Input */}
         <form onSubmit={handleSearch} style={{ position: 'relative' }}>

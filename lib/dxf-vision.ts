@@ -89,6 +89,15 @@ function vectorBoxIsEstimated(d: DxfDetection): boolean {
   return d.evidence.some((e) => e.includes('estimated') || e.includes('vision required'));
 }
 
+export interface DroppedVisionItem {
+  assetTag: string | null;
+  assetType: string;
+  confidence: number;
+  reason: 'invalid_tag' | 'low_quality';
+  bboxNorm: { x: number; y: number; width: number; height: number };
+  pidPage: number;
+}
+
 export interface VisionMergeStats {
   visionTotal: number;
   mergedIntoVector: number;
@@ -98,6 +107,8 @@ export interface VisionMergeStats {
   /** Rejected by validation gates (invalid tag / low-quality untagged). */
   droppedInvalidTag: number;
   droppedLowQuality: number;
+  /** Items dropped — caller may log for diagnostics. */
+  droppedItems: DroppedVisionItem[];
 }
 
 /** Merge threshold in GLOBAL 0-1000 space. */
@@ -128,6 +139,7 @@ export function mergeVisionDetections(
     boxUpgraded: 0,
     droppedInvalidTag: 0,
     droppedLowQuality: 0,
+    droppedItems: [],
   };
 
   for (const raw of vision) {
@@ -148,6 +160,7 @@ export function mergeVisionDetections(
     // Gate 1: hallucinated tags never enter the merge ("9", "X", "4"...).
     if (v.assetTag && isTagValid && !isTagValid(v.assetTag)) {
       stats.droppedInvalidTag++;
+      stats.droppedItems.push({ assetTag: v.assetTag, assetType: v.assetType, confidence: v.confidence, reason: 'invalid_tag', bboxNorm: v.bboxNorm, pidPage });
       continue;
     }
     const vTag = normTag(v.assetTag);
@@ -208,6 +221,7 @@ export function mergeVisionDetections(
       // Gate 2: untagged low-confidence vision is review-queue flooding, not signal.
       if (!vTag && v.confidence < minUntaggedConfidence) {
         stats.droppedLowQuality++;
+        stats.droppedItems.push({ assetTag: null, assetType: v.assetType, confidence: v.confidence, reason: 'low_quality', bboxNorm: v.bboxNorm, pidPage });
         continue;
       }
       stats.visionOnlyNew++;

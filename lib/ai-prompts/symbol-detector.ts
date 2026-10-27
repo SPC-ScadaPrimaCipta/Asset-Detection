@@ -87,7 +87,10 @@ Tags follow patterns like: PDT-11, PSV-101, H-001, JB-03, LCP, MCFA, PI-101, FT-
 Tags are typically: 2-6 uppercase letters + hyphen + 2-4 digits.
 Read tags even if text is small, rotated, or partially obscured.
 Write down mentally all tags you see before assigning them to symbols.
-On dense pages (>20 symbols): list tags first, then assign — do NOT skip trailing rows.
+On dense pages (>20 symbols): scan EVERY ROW from top to bottom — do NOT stop early.
+CRITICAL: You MUST detect ALL symbols on this page. Missing a symbol is a permanent data loss.
+Do NOT stop generating before you reach the bottom of the image.
+If you feel the output is getting long, that is expected — a dense P&ID has 50-100+ assets. Continue until the last row.
 
 IGNORE THESE — NOT ASSET TAGS:
 • Valve status annotations: NC, NO, FC, FO, LC, LO — these mean Normally Closed/Open, Fail Closed/Open, Lock Closed/Open. They describe valve state, NOT an asset tag.
@@ -95,7 +98,8 @@ IGNORE THESE — NOT ASSET TAGS:
 • Equipment specification blocks: multi-line text blocks containing SIZE, DESIGN PRESS, DESIGN TEMP, OPERATING PRESS, OPERATING TEMP — these are specification data for the named vessel/equipment above them, not separate asset tags.
 
 ━━━ STEP 2: DETECT ALL SYMBOLS ━━━
-Scan systematically top-left → bottom-right.
+Scan systematically top-left → bottom-right, ROW BY ROW. Do NOT stop after finding 20-30 symbols.
+IMPORTANT: A full P&ID page typically contains 40-120 distinct assets. Keep scanning until you reach the absolute bottom-right corner of the image. Stopping early = permanent data loss that cannot be recovered.
 Detect EVERY distinct equipment symbol — instruments, valves, pumps, vessels, junction boxes, panels, fire & gas devices, safety devices.
 For each symbol, look in ALL directions (above, below, left, right, diagonal) within ~100px for its associated tag.
 The tag is usually the closest alphanumeric label that is NOT a pipe size (e.g. "6\"" or "DN150") or a line number.
@@ -239,6 +243,7 @@ This crop shows region: "${regionLabel}"
   rest, and duplicates are merged afterwards.
 - A symbol may therefore be reported by more than one region. That is expected and
   handled downstream — do not try to avoid re-reporting it.
+- Scan ALL content within this crop completely, top-left → bottom-right. Do NOT stop early — even a small region crop can contain 10-30 symbols.
 
 Everything else (detection rules, field rules, JSON output format) is unchanged.`;
 }

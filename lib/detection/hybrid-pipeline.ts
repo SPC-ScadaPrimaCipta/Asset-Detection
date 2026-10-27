@@ -135,6 +135,7 @@ async function runYoloWithOcr(
       let ocrText: string | null = null;
       let ocrConf = 0;
       let isTag = false;
+      let descText: string | undefined;
 
       try {
         cropBuffer = await cropBBoxFromBuffer(pngBuffer, symbolBboxPx, 8);
@@ -148,7 +149,7 @@ async function runYoloWithOcr(
       if (ocrEnabled) {
         try {
           // New: Deep OCR for component name/description
-          const descText = await extractTextFromRegion(pngBuffer, {
+          descText = await extractTextFromRegion(pngBuffer, {
             left: Math.max(0, symbolBboxPx.x - 50),
             top: Math.max(0, symbolBboxPx.y + symbolBboxPx.height),
             width: symbolBboxPx.width + 100,
@@ -192,21 +193,21 @@ async function runYoloWithOcr(
         }
       }
 
-        results.push({
-          classId: 0,
-          rawLabel: det.legendSymbol ?? det.assetType ?? '',
-          yoloScore: det.confidence,
-          bboxPx: symbolBboxPx,
-          bboxNorm: det.bbox,
-          ocrText: ocrText,
-          ocrConfidence: ocrConf,
-          isTag,
-          ocrDescription: descText,
-          cropB64,
-          imageHash,
-        });
+      results.push({
+        classId: 0,
+        rawLabel: det.legendSymbol ?? det.assetType ?? '',
+        yoloScore: det.confidence,
+        bboxPx: symbolBboxPx,
+        bboxNorm: det.bbox,
+        ocrText: ocrText,
+        ocrConfidence: ocrConf,
+        isTag,
+        ocrDescription: (ocrEnabled && typeof descText !== 'undefined') ? descText : null,
+        cropB64,
+        imageHash,
+      });
 
-    }));
+}));
   }
 
   return results;
@@ -594,6 +595,7 @@ export async function runHybridPipeline(
               ocrText: null,
               ocrConfidence: 0,
               isTag: false,
+              ocrDescription: null,
               cropB64,
               imageHash,
             });

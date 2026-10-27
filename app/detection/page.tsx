@@ -107,6 +107,7 @@ function DetectionContent() {
   const [running, setRunning] = useState(false);
   const [jobProgress, setJobProgress] = useState<JobProgress | null>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [loadingDets, setLoadingDets] = useState(false);
 
@@ -251,16 +252,28 @@ function DetectionContent() {
   // Sync active document
   const activeDoc = documents.find((d) => d.id === documentId) ?? null;
   const isDxf = activeDoc?.file_type === 'dxf';
-  const totalPages = activeDoc?.page_count || 1;
+  // For DXF: page_count in DB is always 1 (DXF has no PDF pages).
+  // Use actual unique pid_page values from detections as "sheets".
+  const dxfPages = isDxf
+    ? [...new Set(detections.map((d) => d.pid_page ?? 1))].sort((a, b) => a - b)
+    : [];
+  const totalPages = isDxf
+    ? (dxfPages.length > 0 ? dxfPages[dxfPages.length - 1] : 1)
+    : (activeDoc?.page_count || 1);
 
   // 2. Load detections for document
-  const loadDetections = useCallback(async () => {
+  const loadDetections = useCallback(async (jobId?: string) => {
     if (!documentId) return;
     setLoadingDets(true);
     try {
-      const res = await fetch(`/api/detections?document_id=${documentId}&limit=1000`);
+      const param = jobId
+        ? `job_id=${jobId}&limit=1000`
+        : `document_id=${documentId}&limit=1000`;
+      console.log('[detection] fetch detections:', `/api/detections?${param}`);
+      const res = await fetch(`/api/detections?${param}`);
       const body = await res.json();
       const list = Array.isArray(body?.data) ? body.data : Array.isArray(body?.detections) ? body.detections : [];
+      console.log('[detection] loaded detections count:', list.length, 'jobId:', jobId);
       setDetections(list);
     } catch (err) {
       console.error('[detection] load detections failed:', err);
@@ -323,7 +336,7 @@ function DetectionContent() {
               stageText: `Detection completed! ${jData.stats?.total ?? 0} physical assets detected.`,
               stats: jData.stats,
             });
-            await loadDetections();
+            await loadDetections(jobId);
             setTimeout(() => {
               setJobProgress((prev) => (prev?.status === 'COMPLETED' ? null : prev));
             }, 4500);
@@ -348,23 +361,32 @@ function DetectionContent() {
 
   useEffect(() => {
     if (documentId) {
-      loadDetections();
       setSelectedIds(new Set());
       setSelectedId(null);
       setPage(1);
       setPan({ x: 0, y: 0 });
       setZoom(1);
 
-      // Check if there is an active job running for this document
+      // Fetch latest job for this document, load detections scoped to that job
       fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
         .then((r) => r.json())
         .then((body) => {
           const latestJob = Array.isArray(body?.data) ? body.data[0] : null;
-          if (latestJob && (latestJob.status === 'PROCESSING' || latestJob.status === 'PENDING')) {
-            monitorJob(latestJob.id);
+          if (latestJob) {
+            setActiveJobId(latestJob.id);
+            loadDetections(latestJob.id);
+            if (latestJob.status === 'PROCESSING' || latestJob.status === 'PENDING') {
+              monitorJob(latestJob.id);
+            }
+          } else {
+            // No job yet — load by document (empty or legacy)
+            loadDetections();
           }
         })
-        .catch((err) => console.warn('[detection] check active job failed:', err));
+        .catch((err) => {
+          console.warn('[detection] check active job failed:', err);
+          loadDetections();
+        });
     }
 
     return () => {
@@ -390,6 +412,7 @@ function DetectionContent() {
       if (!res.ok) throw new Error(data.error || 'Job creation failed');
 
       const jobId = data.job?.id || data.id;
+      setActiveJobId(jobId);
       monitorJob(jobId);
     } catch (err) {
       console.error('[detection] start job failed:', err);
@@ -1138,9 +1161,8 @@ function DetectionContent() {
             }}
           >
             {isDxf ? (
-              <div style={{ width: '100%', height: '100%' }}>
-                <DxfViewer
-                  url={`/api/documents/${documentId}/file`}
+              <DxfViewer
+                  url={`/api/documents/${documentId}/raw`}
                   detections={pageDetections}
                   selectedId={selectedId}
                   onSelectAsset={(id: string) => {
@@ -1148,8 +1170,8 @@ function DetectionContent() {
                     cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   }}
                   activeSheet={page}
+                  style={{ position: 'absolute', inset: 0, minHeight: 0 }}
                 />
-              </div>
             ) : imgSrc ? (
               <div
                 ref={imageContainerRef}

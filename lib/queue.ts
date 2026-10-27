@@ -49,7 +49,8 @@ export function getDetectionQueue(): Queue {
 export async function enqueueDetectionJob(
   jobId: string,
   legendId: string | null,
-  legendIds?: string[] | null
+  legendIds?: string[] | null,
+  detectionMode?: 'full' | 'flow' | 'both',
 ): Promise<boolean> {
   try {
     const q = getDetectionQueue();
@@ -57,7 +58,7 @@ export async function enqueueDetectionJob(
       'detection',
       // legendId stays for readers that have not been migrated yet; legendIds
       // is authoritative when present.
-      { jobId, legendId, legendIds: legendIds ?? (legendId ? [legendId] : []) },
+      { jobId, legendId, legendIds: legendIds ?? (legendId ? [legendId] : []), detectionMode },
       { jobId, removeOnComplete: true, removeOnFail: 100 }
     );
     return true;

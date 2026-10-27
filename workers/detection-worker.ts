@@ -1,6 +1,7 @@
 import { Worker, Queue, type Job, type WorkerOptions } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
+import sharp from "sharp";
 import db from "@/lib/db";
 import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
@@ -179,10 +180,11 @@ export const detectionQueue = new Queue("detection", { connection });
 export const worker = new Worker(
   "detection",
   async (job: Job<{ jobId: string; legendId?: string; legendIds?: string[] }>) => {
-    const { jobId, legendId, legendIds: payloadLegendIds } = job.data as {
+    const { jobId, legendId, legendIds: payloadLegendIds, detectionMode: payloadDetectionMode } = job.data as {
       jobId: string;
       legendId?: string;
       legendIds?: string[];
+      detectionMode?: 'full' | 'flow' | 'both';
     };
     const start = Date.now();
     const log = (msg: string, extra?: Record<string, unknown>) =>
@@ -242,6 +244,9 @@ export const worker = new Worker(
           : effectiveJobLegendIds(jrow);
       const effectiveLegendId = effectiveLegendIds[0] ?? legendId ?? jrow.legend_id ?? null;
 
+      // Detection mode: 'full' (symbol detection only), 'flow' (P&ID graph only), 'both' (default)
+      const detectionMode: 'full' | 'flow' | 'both' = payloadDetectionMode ?? 'both';
+
       // Infer drawing type from filename for company knowledge Level 1 hierarchy
       const drawingType = inferDrawingType(doc.filename);
 
@@ -253,7 +258,7 @@ export const worker = new Worker(
       // Re-parse from raw file (not cached entities) for accuracy.
       // Optional Gemini fallback runs post-sync for unmatched blocks only.
       if (doc.file_type === 'dxf') {
-        log("dxf pipeline start", { documentId: doc.id });
+        log("dxf pipeline start", { documentId: doc.id, detectionMode });
         const tuningForDxf = await getTuning();
 
         // Build legend symbol refs for DXF block matching.
@@ -340,13 +345,38 @@ export const worker = new Worker(
                   });
                 }
               }
-              log("ai layer pre-pass done", { classified: aiResults.length });
+              // FIX 3: Persist high-confidence layer classification ke dxf_layer_profiles
+              // agar run berikutnya tidak perlu panggil Gemini layer pre-pass lagi.
+              // ON CONFLICT DO NOTHING — hanya tulis sekali; human override aman.
+              if (jrow.project_id) {
+                for (const r of aiResults) {
+                  if (r.confidence >= 0.75 && r.category !== 'unknown') {
+                    try {
+                      await db.query(
+                        `INSERT INTO dxf_layer_profiles
+                           (project_id, layer_name, short_name, category, tag_priority, ai_classified, ai_confidence, notes)
+                         VALUES ($1,$2,$3,$4,$5,TRUE,$6,'AI pre-pass')
+                         ON CONFLICT (project_id, layer_name) DO NOTHING`,
+                        [
+                          jrow.project_id,
+                          r.layerName,
+                          r.shortName,
+                          r.category,
+                          r.category === 'tag' ? 3 : 99,
+                          r.confidence,
+                        ],
+                      );
+                    } catch { /* non-fatal — table may not exist on old schema */ }
+                  }
+                }
+              }
+              }
+            } catch (prePassErr) {
+              log("ai layer pre-pass skipped", {
+                reason: prePassErr instanceof Error ? prePassErr.message.slice(0, 100) : String(prePassErr),
+              });
             }
-          } catch (prePassErr) {
-            log("ai layer pre-pass skipped", {
-              reason: prePassErr instanceof Error ? prePassErr.message.slice(0, 100) : String(prePassErr),
-            });
-          }
+
         } else if (layerProfiles.length === 0) {
           // Load from dxf_layer_analysis final_category instead
           try {
@@ -445,7 +475,7 @@ export const worker = new Worker(
 
         // ── Rule-validator enrichment: UNKNOWN-typed tagged detections ──
         // Lap 1 vektor tidak lagi menebak tipe dari prefix; rantai
-        // Legend > KB > ISA > ISO yang memutuskan. Non-fatal, cap 150/job.
+        // Legend > KB > ISA > ISO yang memutuskan. Non-fatal, cap 500/job.
         if (dxfResult.detections.length > 0 && dxfLegendSymbols.length > 0) {
           try {
             const { validateDetection, extractTagPrefix } = await import('@/lib/rule-validator');
@@ -454,7 +484,7 @@ export const worker = new Worker(
             // Blok 9: kandidat enrichment paralel (pool 8) — isinya query DB I/O-bound.
             const enrichCands = dxfResult.detections.filter(
               (det) => det.assetType !== 'UNKNOWN' || !det.assetTag ? false : isTagOk(det.assetTag),
-            ).slice(0, 150);
+            ).slice(0, 500);
             let enriched = 0;
             const ENRICH_POOL = 8;
             for (let w = 0; w < enrichCands.length; w += ENRICH_POOL) {
@@ -503,7 +533,30 @@ export const worker = new Worker(
         // resolved; vision menambah simbol tak-bertag + koreksi box estimasi.
         // Sepenuhnya non-fatal: gagal = Lap-1 vektor tetap persist utuh.
         // Matikan via DXF_VISION_ENABLED=false bila biaya/latensi keberatan.
-        if (process.env.DXF_VISION_ENABLED !== 'false' && parsedDxf && dxfLegendSymbols.length > 0) {
+        //
+        // FIX 1: Skip Vision Lap-2 bila vector layer sudah resolve cukup tags.
+        // Threshold: textTagsFound / max(insertCount,1) > DXF_VISION_SKIP_RATIO (default 0.7).
+        // Artinya: kalau 70%+ block sudah punya tag dari TEXT layer, Gemini tidak perlu.
+        // Override dengan DXF_VISION_SKIP_RATIO=0 untuk selalu jalankan vision.
+        const visionSkipRatio = parseFloat(process.env.DXF_VISION_SKIP_RATIO ?? '0.7');
+        const textTagRatio = dxfResult.parseStats.insertCount > 0
+          ? dxfResult.parseStats.textTagsFound / dxfResult.parseStats.insertCount
+          : (dxfResult.parseStats.textTagsFound > 0 ? 1.0 : 0.0);
+        const skipVisionBecauseTextSufficient = visionSkipRatio > 0 && textTagRatio >= visionSkipRatio;
+        if (skipVisionBecauseTextSufficient) {
+          log('dxf vision lap-2 skipped — text tags sufficient', {
+            textTagsFound: dxfResult.parseStats.textTagsFound,
+            insertCount: dxfResult.parseStats.insertCount,
+            textTagRatio: Math.round(textTagRatio * 100),
+            threshold: Math.round(visionSkipRatio * 100),
+          });
+        }
+        // FIX 2: Max PNG size for Gemini — resize region PNG ke max 1024px sisi terpanjang.
+        // DXF region bisa render ke 2000-4000px; Gemini tidak butuh resolusi itu.
+        // Hemat token + waktu round-trip tanpa kehilangan akurasi deteksi simbol.
+        const DXF_VISION_MAX_PX = parseInt(process.env.DXF_VISION_MAX_PX ?? '1024', 10);
+
+        if (process.env.DXF_VISION_ENABLED !== 'false' && !skipVisionBecauseTextSufficient && detectionMode !== 'flow' && parsedDxf && dxfLegendSymbols.length > 0) {
           try {
             const { renderDxfRegionToPng } = await import('@/lib/dxf-svg-renderer');
             const { runHybridPipeline } = await import('@/lib/detection/hybrid-pipeline');
@@ -519,7 +572,21 @@ export const worker = new Worker(
             // Merge ke Lap-1 dilakukan SEQUENSIAL setelahnya (hindari race push).
             const regionOutputs = await Promise.all(visionRegions.map(async (vr) => {
               try {
-                const { png, width, height, view } = await renderDxfRegionToPng(parsedDxf, vr, { theme: 'light' });
+                const { png: rawPng, width: rawW, height: rawH, view } = await renderDxfRegionToPng(parsedDxf, vr, { theme: 'light' });
+                // FIX 2: Resize PNG ke max DXF_VISION_MAX_PX bila terlalu besar.
+                // Proporsi dipertahankan. Width/height dilaporkan ke pipeline
+                // sesuai ukuran resize — bbox normalisasi tetap akurat.
+                let png = rawPng;
+                let width = rawW;
+                let height = rawH;
+                const maxSide = Math.max(rawW, rawH);
+                if (maxSide > DXF_VISION_MAX_PX) {
+                  const scale = DXF_VISION_MAX_PX / maxSide;
+                  width = Math.round(rawW * scale);
+                  height = Math.round(rawH * scale);
+                  png = await sharp(rawPng).resize(width, height, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+                  log(`dxf-vision r${vr.index + 1} png resized`, { from: `${rawW}×${rawH}`, to: `${width}×${height}` });
+                }
                 const hybrid = await runHybridPipeline(
                   {
                     pngBuffer: png,
@@ -571,6 +638,12 @@ export const worker = new Worker(
                 merged: st.mergedIntoVector,
                 new: st.visionOnlyNew,
               });
+              // Log dropped items for diagnostics (non-fatal)
+              if (st.droppedItems && st.droppedItems.length > 0) {
+                for (const dropped of st.droppedItems) {
+                  log(`[dxf-vision-drop] region=${out.vr.index + 1} reason=${dropped.reason} tag=${dropped.assetTag ?? 'null'} type=${dropped.assetType} conf=${Math.round(dropped.confidence * 100)}%`);
+                }
+              }
               // Progress per region — UI tidak macet di 45% selama vision berjalan.
               const doneCount = regionOutputs.indexOf(out) + 1;
               await db.query('UPDATE detection_jobs SET progress_pct=$1 WHERE id=$2', [
@@ -598,7 +671,227 @@ export const worker = new Worker(
           [jobId]
         );
 
-        // Ensure document_pages rows exist — satu per sheet region DXF
+        // ── FIX 4+5: PID Graph — FROM/TO/AT topology dari LINE/POLYLINE entities ──
+        // Bangun graph dari semua segmen pipa, pasangkan ke equipment nodes,
+        // generate relasi terarah FROM→TO berdasarkan koneksi graph + label
+        // destination ("TO WASH TANK 1 T-0101"). Simpan ke dxf_pipe_relations.
+        // Non-fatal: kegagalan tidak membatalkan deteksi.
+        if (parsedDxf && dxfResult.detections.length > 0 && detectionMode !== 'full') {
+          try {
+            const { buildPidGraph, nearestGraphNode, graphRelationEvidence } = await import('@/lib/pid-graph');
+            const { extractPipingLinesFromEntities } = await import('@/lib/dxf-detection');
+            const { parseLineSpecText } = await import('@/lib/piping-parser');
+
+            const allEntities = parsedDxf.entities;
+            const allTexts = allEntities.filter(
+              (e): e is import('@/lib/dxf-parser').DxfTextEntity => e.kind === 'TEXT' || e.kind === 'MTEXT',
+            );
+            const ext = parsedDxf.extents;
+            const drawingSize = Math.max(ext.width, ext.height);
+            // Snap tolerance: 0.2% of drawing — fine enough for DXF precision.
+            const snapTol = drawingSize * 0.002;
+            // Equipment association radius: 2% of drawing.
+            const equipAssocRadius = drawingSize * 0.02;
+
+            const graph = buildPidGraph(allEntities, snapTol);
+
+            // Collect tagged detections with world position
+            interface DetWorld {
+              tag: string;
+              worldX: number;
+              worldY: number;
+              det: typeof dxfResult.detections[0];
+            }
+            const taggedEquip: DetWorld[] = dxfResult.detections
+              .filter((d) => d.assetTag)
+              .map((d) => ({
+                tag: d.assetTag as string,
+                worldX: d.rawPosition.x,
+                worldY: d.rawPosition.y,
+                det: d,
+              }));
+
+            if (taggedEquip.length >= 2) {
+              // Annex each equipment to its nearest graph node
+              const equipNodes = taggedEquip.map((eq) => ({
+                ...eq,
+                node: nearestGraphNode(graph, { x: eq.worldX, y: eq.worldY }, equipAssocRadius),
+              })).filter((eq) => eq.node);
+
+              // Collect piping line specs for label evidence
+              const pipeLines = extractPipingLinesFromEntities(allEntities, allTexts, drawingSize * 0.05);
+
+              // FIX 5: Destination label relations — "TO T-0101" / "FROM P-0301"
+              // Extract directed topology from off-page continuation labels.
+              // DEST_LABEL_RE matches labels like "TO WASH TANK 1 T-0101".
+              const DEST_LABEL_RE = /^(TO|FROM|AT|OF)\s+.+?\b([A-Z]{1,6}[-_][0-9]{2,6}[A-Z]{0,2})\s*$/i;
+              const destRelations: Array<{
+                keyword: string;
+                refTag: string;
+                labelPos: import('@/lib/dxf-parser').DxfPoint;
+                labelText: string;
+              }> = [];
+              for (const t of allTexts) {
+                const raw = t.text.trim();
+                if (raw.length <= 8) continue;
+                const m = DEST_LABEL_RE.exec(raw);
+                if (!m) continue;
+                destRelations.push({
+                  keyword: m[1].toUpperCase(),
+                  refTag: m[2].trim(),
+                  labelPos: t.position,
+                  labelText: raw,
+                });
+              }
+
+              // Build pipe_relations rows
+              interface PipeRelRow {
+                from_tag: string | null;
+                to_tag: string | null;
+                pipe_line_id: string | null;
+                pipe_size: string | null;
+                pipe_service: string | null;
+                pipe_spec: string | null;
+                direction_keyword: string;
+                confidence: number;
+                graph_path_length: number | null;
+                evidence: string[];
+              }
+              const relations: PipeRelRow[] = [];
+              const relSet = new Set<string>();
+              const addRelation = (r: PipeRelRow) => {
+                const key = `${r.from_tag ?? ''}→${r.to_tag ?? ''}`;
+                if (!relSet.has(key)) { relSet.add(key); relations.push(r); }
+              };
+
+              // Graph-based: for each equipment pair that shares graph connectivity
+              // (path exists through pipe nodes), create a CONNECTED relation.
+              // We use a simple BFS on the graph edges. Cap at 50 pairs to avoid O(n²).
+              const MAX_PAIRS = 50;
+              let pairsChecked = 0;
+              for (let i = 0; i < equipNodes.length && pairsChecked < MAX_PAIRS; i++) {
+                for (let j = i + 1; j < equipNodes.length && pairsChecked < MAX_PAIRS; j++) {
+                  pairsChecked++;
+                  const a = equipNodes[i], b = equipNodes[j];
+                  if (!a.node || !b.node) continue;
+                  // BFS from a.node to b.node
+                  const visited = new Set<string>();
+                  const queue: Array<{ nodeId: string; depth: number }> = [{ nodeId: a.node.id, depth: 0 }];
+                  let found = false, pathLen = 0;
+                  const MAX_DEPTH = 20;
+                  while (queue.length > 0 && !found) {
+                    const { nodeId, depth } = queue.shift()!;
+                    if (nodeId === b.node.id) { found = true; pathLen = depth; break; }
+                    if (depth >= MAX_DEPTH || visited.has(nodeId)) continue;
+                    visited.add(nodeId);
+                    for (const edge of graph.edges) {
+                      if (edge.from === nodeId && !visited.has(edge.to)) queue.push({ nodeId: edge.to, depth: depth + 1 });
+                      if (edge.to === nodeId && !visited.has(edge.from)) queue.push({ nodeId: edge.from, depth: depth + 1 });
+                    }
+                  }
+                  if (!found) continue;
+
+                  // Find closest pipe line between them for size annotation
+                  const midX = (a.worldX + b.worldX) / 2, midY = (a.worldY + b.worldY) / 2;
+                  const nearPipe = pipeLines
+                    .map((pl) => {
+                      const mx = (pl.start.x + pl.end.x) / 2, my = (pl.start.y + pl.end.y) / 2;
+                      return { pl, d: Math.hypot(mx - midX, my - midY) };
+                    })
+                    .sort((x, y) => x.d - y.d)[0]?.pl ?? null;
+                  const pipeParsed = nearPipe?.text ? parseLineSpecText(nearPipe.text) : null;
+
+                  const ev = graphRelationEvidence(graph, { x: a.worldX, y: a.worldY }, equipAssocRadius);
+                  ev.push(`Connected to ${b.tag} via ${pathLen} pipe segment(s)`);
+                  if (pipeParsed) ev.push(`Pipe: ${pipeParsed.rawText}`);
+
+                  // Direction: assign FROM=lower pidPage or first in document order
+                  addRelation({
+                    from_tag: a.tag,
+                    to_tag: b.tag,
+                    pipe_line_id: pipeParsed?.rawText ?? null,
+                    pipe_size: pipeParsed?.pipeSize ?? nearPipe?.size ?? null,
+                    pipe_service: pipeParsed?.service ?? null,
+                    pipe_spec: pipeParsed?.spec ?? null,
+                    direction_keyword: 'CONNECTED',
+                    confidence: 0.75,
+                    graph_path_length: pathLen,
+                    evidence: ev,
+                  });
+                }
+              }
+
+              // FIX 5: Destination label relations
+              for (const dr of destRelations) {
+                // Find the equipment nearest to the label position
+                const nearEquip = taggedEquip
+                  .map((eq) => ({ eq, d: Math.hypot(eq.worldX - dr.labelPos.x, eq.worldY - dr.labelPos.y) }))
+                  .sort((a, b) => a.d - b.d)[0]?.eq ?? null;
+                if (!nearEquip) continue;
+                const fromTag = dr.keyword === 'FROM' ? dr.refTag : nearEquip.tag;
+                const toTag = dr.keyword === 'TO' || dr.keyword === 'AT' ? dr.refTag : nearEquip.tag;
+                addRelation({
+                  from_tag: fromTag,
+                  to_tag: toTag,
+                  pipe_line_id: null,
+                  pipe_size: null,
+                  pipe_service: null,
+                  pipe_spec: null,
+                  direction_keyword: dr.keyword,
+                  confidence: 0.65,
+                  graph_path_length: null,
+                  evidence: [
+                    `Destination label: "${dr.labelText}"`,
+                    `Keyword "${dr.keyword}" indicates flow direction`,
+                    `Local equipment: ${nearEquip.tag}`,
+                  ],
+                });
+                // Also annotate the detection evidence
+                nearEquip.det.evidence.push(`${dr.keyword} ${dr.refTag} (from label: "${dr.labelText}")`);
+              }
+
+              // Persist relations
+              if (relations.length > 0) {
+                try {
+                  for (const rel of relations) {
+                    await db.query(
+                      `INSERT INTO dxf_pipe_relations
+                         (job_id, document_id, pid_page,
+                          from_tag, to_tag,
+                          pipe_line_id, pipe_size, pipe_service, pipe_spec,
+                          direction_keyword, confidence, graph_path_length, evidence)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                       ON CONFLICT DO NOTHING`,
+                      [
+                        jobId, doc.id, 1,
+                        rel.from_tag, rel.to_tag,
+                        rel.pipe_line_id, rel.pipe_size, rel.pipe_service, rel.pipe_spec,
+                        rel.direction_keyword, rel.confidence, rel.graph_path_length,
+                        JSON.stringify(rel.evidence),
+                      ],
+                    );
+                  }
+                  log('dxf pid-graph relations persisted', { count: relations.length });
+                } catch (relErr) {
+                  log('dxf pid-graph relation persist failed (non-fatal)', {
+                    reason: relErr instanceof Error ? relErr.message.slice(0, 120) : String(relErr),
+                  });
+                }
+              }
+            }
+            log('dxf pid-graph pass done', {
+              nodes: graph.nodes.length,
+              edges: graph.edges.length,
+              equip: taggedEquip.length,
+            });
+          } catch (graphErr) {
+            log('dxf pid-graph pass skipped (non-fatal)', {
+              reason: graphErr instanceof Error ? graphErr.message.slice(0, 120) : String(graphErr),
+            });
+          }
+        }
+
+
         // (pid_page = region index + 1). Fallback 1 row bila regions kosong.
         const regionPages = dxfResult.regions.length > 0
           ? dxfResult.regions.map((r) => r.pidPage)
@@ -632,6 +925,13 @@ export const worker = new Worker(
             }
           }
           log("document_pages rows ensured for DXF regions", { pages: regionPages });
+
+          // Update page_count in documents to reflect actual DXF sheet count.
+          const maxRegionPage = Math.max(...regionPages);
+          await db.query(
+            'UPDATE documents SET page_count=$1 WHERE id=$2 AND (page_count IS NULL OR page_count < $1)',
+            [maxRegionPage, doc.id],
+          );
         } catch (pgErr) {
           log("document_pages insert failed (non-fatal)", {
             reason: pgErr instanceof Error ? pgErr.message.slice(0, 120) : String(pgErr),
