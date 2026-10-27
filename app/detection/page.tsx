@@ -453,6 +453,27 @@ function DetectionContent() {
     }
   };
 
+  // Keyboard shortcut: Del or Backspace to reject currently selected detection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+      if (isInput || editingItem) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        e.preventDefault();
+        handleReject(selectedId);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, editingItem]);
+
   const handleOpenEdit = (item: Detection, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setEditingItem(item);

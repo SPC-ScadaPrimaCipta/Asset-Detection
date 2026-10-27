@@ -537,6 +537,31 @@ export default function LegendReviewPage() {
     } catch (e: any) { setError(e.message); }
   };
 
+  // Keyboard shortcut: Del or Backspace to delete currently selected symbol
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+      if (isInput || editingId || addModalOpen || confirmDeleteId || rejectModalId) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        e.preventDefault();
+        const sym = symbols.find(s => s.id === selectedId);
+        const name = sym?.symbol_name || sym?.asset_type || 'Simbol';
+        handleDeleteSymbol(selectedId);
+        setSuccessMsg(`${name} berhasil dihapus (Del)`);
+        setTimeout(() => setSuccessMsg(''), 2000);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, editingId, addModalOpen, confirmDeleteId, rejectModalId, symbols, legendId]);
+
   const handleReparse = async () => {
     setReparsing(true); setError('');
     try {
