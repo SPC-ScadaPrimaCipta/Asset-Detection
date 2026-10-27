@@ -29,7 +29,15 @@ export async function POST(request: NextRequest) {
     if (v) return NextResponse.json({ error: v }, { status: 400 });
 
     const buf = Buffer.from(await file.arrayBuffer());
-    await getPdfPageCountFromBuffer(buf);
+    const pageCount = await getPdfPageCountFromBuffer(buf);
+    if (pageCount !== 1) {
+      return NextResponse.json(
+        {
+          error: `Dokumen Legend harus tepat 1 halaman. File yang diunggah memiliki ${pageCount} halaman. Harap pisahkan halaman legend terlebih dahulu sebelum diunggah.`,
+        },
+        { status: 400 }
+      );
+    }
 
     const legendId = uuidv4();
     await saveFile(`legend-${legendId}.pdf`, buf);

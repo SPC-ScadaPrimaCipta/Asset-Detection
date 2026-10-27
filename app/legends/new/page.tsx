@@ -134,9 +134,42 @@ export default function NewLegendPage() {
   };
 
   // ── PDF upload submit ────────────────────────────────────────────────────────
+  const [pageCount, setPageCount] = useState<number | null>(null);
+
+  const handleFileSelect = async (file: File | null) => {
+    setUploadFile(file);
+    setUploadError('');
+    setPageCount(null);
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setUploadError('File harus berupa dokumen PDF.');
+      return;
+    }
+
+    try {
+      const pdfjsLib = await import('pdfjs-dist');
+      if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      }
+      const arrayBuffer = await file.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      setPageCount(doc.numPages);
+      if (doc.numPages !== 1) {
+        setUploadError(`File Legend harus tepat 1 halaman. File yang dipilih memiliki ${doc.numPages} halaman.`);
+      }
+    } catch (err: any) {
+      console.warn('[legend/new] Page count inspection warning:', err);
+    }
+  };
+
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadFile || !uploadName.trim()) return;
+    if (pageCount !== null && pageCount !== 1) {
+      setUploadError(`File Legend harus tepat 1 halaman. File memiliki ${pageCount} halaman.`);
+      return;
+    }
     setUploading(true);
     setUploadError('');
     try {
@@ -278,19 +311,24 @@ export default function NewLegendPage() {
           {/* File input */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={fieldLabelStyle}>
-              PDF File <span style={{ color: 'var(--danger)' }}>*</span>
+              PDF File (Tepat 1 Halaman) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <input
               ref={fileInputRef}
               type="file"
               accept="application/pdf"
               disabled={uploading}
-              onChange={e => setUploadFile(e.target.files?.[0] ?? null)}
+              onChange={e => handleFileSelect(e.target.files?.[0] ?? null)}
               style={{ width: '100%', fontSize: '14px', color: 'var(--foreground)', opacity: uploading ? 0.5 : 1 }}
             />
             {uploadFile && (
-              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0 }}>{uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)</p>
+              <p style={{ fontSize: '12px', color: pageCount && pageCount !== 1 ? 'var(--danger)' : 'var(--foreground-muted)', margin: 0 }}>
+                {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB){pageCount ? ` · ${pageCount} halaman` : ''}
+              </p>
             )}
+            <p style={{ fontSize: '11px', color: 'var(--foreground-subtle)', margin: 0 }}>
+              * Dokumen Legend wajib 1 halaman. Pisahkan halaman legend terlebih dahulu jika PDF memiliki beberapa halaman.
+            </p>
           </div>
 
           {/* Error */}
@@ -304,8 +342,12 @@ export default function NewLegendPage() {
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               type="submit"
-              disabled={uploading || !uploadFile || !uploadName.trim()}
-              style={{ ...primaryButtonStyle, opacity: (uploading || !uploadFile || !uploadName.trim()) ? 0.4 : 1, cursor: (uploading || !uploadFile || !uploadName.trim()) ? 'not-allowed' : 'pointer' }}
+              disabled={uploading || !uploadFile || !uploadName.trim() || (pageCount !== null && pageCount !== 1)}
+              style={{
+                ...primaryButtonStyle,
+                opacity: (uploading || !uploadFile || !uploadName.trim() || (pageCount !== null && pageCount !== 1)) ? 0.4 : 1,
+                cursor: (uploading || !uploadFile || !uploadName.trim() || (pageCount !== null && pageCount !== 1)) ? 'not-allowed' : 'pointer',
+              }}
             >
               {uploading && <Spinner />}
               {uploading ? 'Analyzing…' : 'Analyze PDF'}
