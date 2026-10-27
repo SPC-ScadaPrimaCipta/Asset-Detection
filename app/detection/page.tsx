@@ -35,12 +35,18 @@ const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 interface Document {
   id: string;
   filename: string;
   page_count: number;
   status: string;
   file_type?: string;
+  project_id?: string | null;
 }
 
 interface Detection {
@@ -100,6 +106,8 @@ function DetectionContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [documentId, setDocumentId] = useState<string>('');
   const [selectedLegendId, setSelectedLegendId] = useState<string | null>(null);
@@ -232,7 +240,17 @@ function DetectionContent() {
     };
   }, []);
 
-  // 1. Load initial documents list
+  // 1a. Load projects list
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setProjects(data);
+      })
+      .catch((err) => console.error('[detection] load projects failed:', err));
+  }, []);
+
+  // 1b. Load initial documents list (default: kosong, tidak auto-select)
   useEffect(() => {
     fetch('/api/documents')
       .then((r) => r.json())
@@ -240,14 +258,25 @@ function DetectionContent() {
         const docs = Array.isArray(data) ? data : data.documents || [];
         setDocuments(docs);
         const queryDocId = searchParams.get('document_id');
+        const queryProjectId = searchParams.get('project_id');
+
+        if (queryProjectId) setSelectedProjectId(queryProjectId);
+
         if (queryDocId && docs.some((d: Document) => d.id === queryDocId)) {
           setDocumentId(queryDocId);
-        } else if (docs.length > 0) {
-          setDocumentId(docs[0].id);
+          const found = docs.find((d: Document) => d.id === queryDocId);
+          if (found?.project_id) setSelectedProjectId(found.project_id);
         }
+        // Default: kosong — user pilih sendiri
       })
       .catch((err) => console.error('[detection] load docs failed:', err));
   }, [searchParams]);
+
+  // Filter documents by selected project
+  const filteredDocuments = useMemo(() => {
+    if (!selectedProjectId) return documents;
+    return documents.filter((d) => d.project_id === selectedProjectId);
+  }, [documents, selectedProjectId]);
 
   // Sync active document
   const activeDoc = documents.find((d) => d.id === documentId) ?? null;
@@ -618,9 +647,50 @@ function DetectionContent() {
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+          {/* Project Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>Project:</span>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => {
+                const pId = e.target.value;
+                setSelectedProjectId(pId);
+                if (documentId) {
+                  const curDoc = documents.find((d) => d.id === documentId);
+                  if (pId && curDoc && curDoc.project_id !== pId) setDocumentId('');
+                }
+              }}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                color: 'var(--foreground)',
+                fontSize: 12,
+                fontWeight: 600,
+                maxWidth: 160,
+              }}
+            >
+              <option value="">Semua Project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>📁 {p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Document Selector */}
           <select
             value={documentId}
-            onChange={(e) => setDocumentId(e.target.value)}
+            onChange={(e) => {
+              const newId = e.target.value;
+              setDocumentId(newId);
+              if (newId) {
+                const doc = documents.find((d) => d.id === newId);
+                if (doc?.project_id && (!selectedProjectId || selectedProjectId !== doc.project_id)) {
+                  setSelectedProjectId(doc.project_id);
+                }
+              }
+            }}
             style={{
               padding: '6px 12px',
               borderRadius: 'var(--radius-sm)',
@@ -632,7 +702,8 @@ function DetectionContent() {
               maxWidth: 240,
             }}
           >
-            {documents.map((d) => (
+            <option value="">— Pilih Dokumen —</option>
+            {filteredDocuments.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.filename}
               </option>
