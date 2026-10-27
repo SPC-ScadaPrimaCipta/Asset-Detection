@@ -275,6 +275,7 @@ function DetectionContent() {
       const list = Array.isArray(body?.data) ? body.data : Array.isArray(body?.detections) ? body.detections : [];
       console.log('[detection] loaded detections count:', list.length, 'jobId:', jobId);
       setDetections(list);
+      checkDuplicates(documentId);
     } catch (err) {
       console.error('[detection] load detections failed:', err);
     } finally {
@@ -540,7 +541,22 @@ function DetectionContent() {
     }
   };
 
-  // 5b. Auto-tagging for missing tags
+  // 5b. Duplicate detection count
+  const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
+  const checkDuplicates = useCallback(async (docId: string) => {
+    if (!docId) { setDuplicateCount(null); return; }
+    try {
+      const res = await fetch(`/api/detections/deduplicate?document_id=${docId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDuplicateCount(data.duplicate_count ?? 0);
+      }
+    } catch (err) {
+      console.error('[detection] checkDuplicates failed:', err);
+    }
+  }, []);
+
+  // 5c. Auto-tagging for missing tags
   const [autoTagging, setAutoTagging] = useState(false);
   const handleAutoTag = async () => {
     if (!documentId) return;

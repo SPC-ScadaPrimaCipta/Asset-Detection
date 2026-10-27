@@ -1,5 +1,6 @@
 import type { Detection } from "./ai-schemas";
 import { env } from "./env";
+import { typeCompatible } from "./detection/duplicate-detection";
 
 export interface RawSymbol { bbox: { x: number; y: number; width: number; height: number }; label: string }
 export interface RawTag { text: string; bbox: { x: number; y: number; width: number; height: number } }
@@ -232,17 +233,30 @@ export function applyNMS<T extends {
     kept.push(cur);
     const curTag = (cur.assetTag ?? '').toUpperCase().trim();
     const curType = (cur.assetType ?? '').toUpperCase().trim();
-    // No tag → only suppress by IoU + type (not tag alone)
     for (let j = i + 1; j < sorted.length; j++) {
       if (suppressed[j]) continue;
       const nxt = sorted[j];
       const nxtTag = (nxt.assetTag ?? '').toUpperCase().trim();
       const nxtType = (nxt.assetType ?? '').toUpperCase().trim();
-      // Different asset type = different component → never suppress
-      if (curType && nxtType && curType !== nxtType) continue;
-      // Both have tags but different → different physical assets → never suppress
+
+      // Both have explicit non-empty tags that are different → distinct physical assets
       if (curTag && nxtTag && curTag !== nxtTag) continue;
-      if (bboxIoU(cur.bbox, nxt.bbox) > iouThreshold) {
+
+      const iou = bboxIoU(cur.bbox, nxt.bbox);
+
+      // Near-identical geometry (IoU >= 0.8): definitely the same physical symbol on drawing,
+      // regardless of wording differences between YOLO and Gemini (e.g. "Valve" vs "Gate Valve")
+      if (iou >= 0.8) {
+        suppressed[j] = true;
+        continue;
+      }
+
+      // If types are explicitly defined and incompatible → different component (e.g. tap instrument)
+      if (curType && nxtType && !typeCompatible(cur.assetType, nxt.assetType)) {
+        continue;
+      }
+
+      if (iou > iouThreshold) {
         suppressed[j] = true;
       }
     }
