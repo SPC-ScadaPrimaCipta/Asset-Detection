@@ -1,9 +1,9 @@
-# Task Tracker: Accenture 9-Column MDO Flow Enhancement
+# Task Tracker: Legend QA Revisions
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Enhance description engine & enrichment with `At` and intelligent fallback (`lib/mdo-description.ts`, `lib/mdo-enrichment.ts`) | DONE |
-| TASK-02 | Implement batching & `At` extraction in Vision AI flow analyzer (`lib/mdo-ai-analyzer.ts`) | DONE |
-| TASK-03 | Update MDO API & Excel export to include all 9 columns (`app/api/documents/[id]/mdo/route.ts`, `app/api/documents/[id]/mdo/export/route.ts`) | DONE |
-| TASK-04 | Update MDO UI table & edit modal with 9 columns (`app/mdo/page.tsx`) | DONE |
-| TASK-05 | Verification & Next.js production build validation (`npm run build`) | DONE |
+| TASK-01 | Enforce strict 1-page validation on legend upload (Server & Client) | PENDING |
+| TASK-02 | Implement Delete/Backspace keyboard shortcut to remove selected bbox (Legend Review & Detection) | PENDING |
+| TASK-03 | Add Re-parse confirmation modal & wrap reparse in atomic PostgreSQL transaction | PENDING |
+| TASK-04 | Optimize region grid to 2x2 and parallelize symbol crop saving for fast parsing | PENDING |
+| TASK-05 | Verification & TypeScript check (`npx tsc --noEmit`) | PENDING |
