@@ -1,0 +1,430 @@
+{
+  "document": "INTAN_GS_SHEET_5.dxf",
+  "page": 4,
+  "gtCount": 10,
+  "detCount": 67,
+  "tp": 10,
+  "fp": 57,
+  "fn": 0,
+  "precision": 0.14925373134328357,
+  "recall": 1,
+  "f1": 0.2597402597402597,
+  "truePositives": [
+    {
+      "gtTag": "LSLL-0601",
+      "detTag": "LSLL-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "V-0601",
+      "detTag": "V-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "FE-0104",
+      "detTag": "FE-0104",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "FQI-0104",
+      "detTag": "FQI-0104",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "LSH-0601",
+      "detTag": "LSH-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "LSN-0601",
+      "detTag": "LSN-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "LG-0104",
+      "detTag": "LG-0104",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "PI-0601",
+      "detTag": "PI-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "LS-0601",
+      "detTag": "LS-0601",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    },
+    {
+      "gtTag": "P-0301",
+      "detTag": "P-0301",
+      "iou": null,
+      "matched": true,
+      "reason": "tag match (no bbox)"
+    }
+  ],
+  "falsePositives": [
+    {
+      "tag": "V-0601",
+      "assetType": "Vessel",
+      "confidence": 0.89,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "V-0601",
+      "assetType": "Vessel",
+      "confidence": 0.89,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "V-0601",
+      "assetType": "Vessel",
+      "confidence": 0.89,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "W-0101",
+      "assetType": "Equipment",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0104",
+      "assetType": "Pump",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0101",
+      "assetType": "Vent Stack",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0104",
+      "assetType": "Equipment",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0104",
+      "assetType": "Equipment",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0104",
+      "assetType": "Flare Stack",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "W-0104",
+      "assetType": "Equipment",
+      "confidence": 0.84,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "LSL-0601",
+      "assetType": "Level Switch",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "PSV-0601",
+      "assetType": "Pressure Safety Valve",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "LI-0601",
+      "assetType": "Level Indicator",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "V-0104",
+      "assetType": "VERTICAL VESSEL",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "P-0301",
+      "assetType": "Centrifugal Pump",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "M-0301",
+      "assetType": "Electric Motor",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "LSLL-8601",
+      "assetType": "Level Switch",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "PI-0301",
+      "assetType": "Pressure Indicator",
+      "confidence": 0.7,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "W-0103",
+      "assetType": "Waste Pit",
+      "confidence": 0.65,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "T-0101",
+      "assetType": "Tank",
+      "confidence": 0.65,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "P-0301",
+      "assetType": "Centrifugal Pump",
+      "confidence": 0.61,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "P-380184",
+      "assetType": "Centrifugal Pump",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "DV-017",
+      "assetType": "Diaphragm Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-013",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-014",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-015",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-074",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-075",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-076",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-077",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-078",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-080",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-081",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "M-305",
+      "assetType": "Electric Motor",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-082",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NRV-003",
+      "assetType": "Check Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-024",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-083",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-085",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-086",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "PSV-380027",
+      "assetType": "Pressure Safety Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-016",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-017",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-018",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-019",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "BV-028",
+      "assetType": "Ball Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-020",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "PSV-380028",
+      "assetType": "Pressure Safety Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-021",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-084",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "GV-079",
+      "assetType": "Gate Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-022",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "NDV-023",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "W-0102",
+      "assetType": "Waste Pit",
+      "confidence": 0.55,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "M-306",
+      "assetType": "Electric Motor",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    },
+    {
+      "tag": "W-0102",
+      "assetType": "Waste Pit",
+      "confidence": 0.55,
+      "validationStatus": "NEEDS_REVIEW"
+    },
+    {
+      "tag": "NDV-025",
+      "assetType": "Needle Valve",
+      "confidence": 0.55,
+      "validationStatus": "VALID"
+    }
+  ],
+  "falseNegatives": [],
+  "timestamp": "2026-10-27T07:16:31.193Z"
+}

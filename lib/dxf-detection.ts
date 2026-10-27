@@ -329,7 +329,25 @@ function matchTagToLegend(tag: string, legend: LegendSymbolRef[]): LegendSymbolR
     if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
     try { if (buildTagRegex(sym.tag_pattern).test(tag)) return sym; } catch { /* skip */ }
   }
-  // TANPA fallback prefix: tidak ada pola cocok → null (UNKNOWN).
+
+  // Fallback 1: match tag prefix (letters before first dash/number) against aliases.
+  // e.g. tag "GV-068" → prefix "GV" → match alias "GV" in Gate Valve symbol.
+  const prefixMatch = tag.match(/^([A-Za-z]{1,6})/);
+  const prefix = prefixMatch?.[1]?.toUpperCase() ?? '';
+  if (prefix.length >= 1) {
+    for (const sym of legend) {
+      if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
+      const aliases: string[] = Array.isArray(sym.aliases)
+        ? (sym.aliases as string[]).map((a: string) => a.trim().toUpperCase())
+        : [];
+      if (aliases.includes(prefix)) return sym;
+      // Also try symbol_name starts-with prefix
+      const sn = (sym.symbol_name ?? '').toUpperCase();
+      if (sn && (sn === prefix || sn.startsWith(prefix + ' ') || sn.startsWith(prefix + '-'))) return sym;
+    }
+  }
+
+  // TANPA fallback lebih jauh: tidak ada pola dan tidak ada alias cocok → null (UNKNOWN).
   return null;
 }
 
@@ -356,14 +374,27 @@ function levenshteinSim(a: string, b: string): number {
 function matchBlockSuffixToLegend(suffix: string, legend: LegendSymbolRef[]): LegendSymbolRef | null {
   if (!suffix || !legend.length) return null;
   const bt = tokenise(suffix);
+  const suffixUpper = suffix.toUpperCase();
+
+  // Pass 1: exact alias match (fastest, highest confidence)
+  for (const sym of legend) {
+    if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
+    const aliases: string[] = Array.isArray(sym.aliases)
+      ? (sym.aliases as string[]).map((a: string) => a.trim().toUpperCase())
+      : [];
+    if (aliases.includes(suffixUpper)) return sym;
+  }
+
+  // Pass 2: fuzzy token match — lowered threshold 0.75 → 0.65 for better recall
   let best: { sym: LegendSymbolRef; score: number } | null = null;
   for (const sym of legend) {
+    if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
     const cands = [sym.symbol_name ?? '', sym.asset_type, ...(sym.aliases ?? [])].filter(Boolean);
     for (const cand of cands) {
       const ct = tokenise(cand);
       let score = 0;
       for (const b of bt) for (const c of ct) score = Math.max(score, levenshteinSim(b, c));
-      if (score >= 0.75 && (!best || score > best.score)) best = { sym, score };
+      if (score >= 0.65 && (!best || score > best.score)) best = { sym, score };
     }
   }
   return best?.sym ?? null;
@@ -756,9 +787,22 @@ function deduplicate(
 // ── ATTRIB picker ─────────────────────────────────────────────────────────────
 
 const EQUIP_TAG_ATTRIB_NAMES = new Set([
+  // Standard / common
   'TAG','TAGNO','TAG_NO','TAG NO','EQUIP_TAG','EQUIPMENT_TAG',
   'EQUIP_NO','EQUIPMENT_NO','ITEM_NO','ITEM','INST_TAG','INSTRUMENT_TAG',
   'ID','ITEM_TAG','TAG_NUMBER','TAGNUMBER','INSTRUMENT_NO','VALVE_TAG','PUMP_TAG',
+  // Extended — plant/contractor variations
+  'ASSET_TAG','ASSET_NO','ASSET_ID','ASSET_NUMBER',
+  'LOOP_TAG','LOOP_NO','LOOP_ID',
+  'KKS','KKS_NO',               // German KKS coding
+  'FKZ','FUNKTIONSTEIL',        // German P&ID
+  'PROCESS_TAG','PROCESS_NO',
+  'LINE_NO','LINE_NUMBER','LINE_TAG',
+  'SIGNAL_TAG','SIGNAL_NO',
+  'IDENT','IDENTIFIK',
+  'POSITION','POS','POS_NO',
+  'NUMBER','NO',                // last resort — only if value matches tag pattern
+  'FUNCTION','FUNCTION_NO',
 ]);
 
 function pickAttribTag(attribs: Array<{tag:string;value:string}>): string | null {
@@ -873,14 +917,64 @@ function isUsableTagCluster(
   tag: DxfTextEntity,
   medianTextHeight?: number,
 ): boolean {
-  if (cluster.members < 3) return false;
+  // Lowered from 3 → 2: instrument bubbles (circle + 1 arc/line) are 2 items.
+  if (cluster.members < 2) return false;
   if (!medianTextHeight || medianTextHeight <= 0) return true;
   const width = cluster.maxX - cluster.minX;
   const height = cluster.maxY - cluster.minY;
   const tagHeight = Math.max(tag.height, medianTextHeight * 0.5);
-  // A cluster nearly identical to label height is usually tag glyph/pipe text,
-  // not equipment symbol geometry.
-  return Math.max(width, height) >= tagHeight * 1.8;
+  // Lowered from 1.8× → 1.5×: slightly smaller symbol clusters are valid.
+  return Math.max(width, height) >= tagHeight * 1.5;
+}
+
+// ── Description text helpers ─────────────────────────────────────────────────
+
+const TAG_FRAGMENT_RE_SHARED = /\b[A-Z]{1,6}[-_][0-9]{2,6}\b/i;
+
+/**
+ * Collect candidate description texts from a set of entities.
+ * Shared by TEXT-FIRST and ATTRIB pipelines.
+ */
+function buildDescTexts(
+  allTexts: DxfTextEntity[],
+  lookup: Map<string, LayerProfile>,
+  legendTagRegexes: RegExp[],
+  medTextH: number | undefined,
+): DxfTextEntity[] {
+  return allTexts.filter(t => {
+    if (!isDescLayer(t.layer, lookup)) return false;
+    if (isExcludedLayer(t.layer, lookup)) return false;
+    const txt = t.text.trim();
+    if (isTagText(t.text, legendTagRegexes)) return false;
+    if (txt.length < 5 || txt.length > 80) return false;
+    if (medTextH && t.height > medTextH * 3) return false;
+    if (STATUS_RE.test(txt)) return false;
+    if (TAG_FRAGMENT_RE_SHARED.test(txt)) return false;
+    if (!txt.includes(' ') && txt.length < 8) return false;
+    if (/^[~MBI\d]/.test(txt)) return false;
+    if (/^['"(]/.test(txt)) return false;
+    return true;
+  });
+}
+
+/**
+ * Find nearest description text to a position, within maxDist × radiusMultiplier.
+ * Marks matched entity in pairedDescs to avoid double-pairing.
+ */
+function findNearestDesc(
+  pos: DxfPoint,
+  descTexts: DxfTextEntity[],
+  pairedDescs: Set<DxfTextEntity>,
+  maxDist: number,
+  radiusMultiplier = 2,
+): DxfTextEntity | null {
+  const match = descTexts
+    .filter(d => !pairedDescs.has(d))
+    .map(d => ({ d, dist: dist(d.position, pos) }))
+    .filter(({ dist: dd }) => dd <= maxDist * radiusMultiplier)
+    .sort((a, b) => a.dist - b.dist)[0]?.d ?? null;
+  if (match) pairedDescs.add(match);
+  return match;
 }
 
 // ── Main detection ────────────────────────────────────────────────────────────
@@ -1028,25 +1122,7 @@ export function runDxfDetection(
     }
 
     // 2. Description texts — layer ignore/title tidak boleh jadi deskripsi.
-    // Syarat kualitas: tolak kode status (R-ST/PIT), tolak teks yang mengandung
-    // pola tag (label ganda "V-0101 B"), dan wajib frasa bermakna (ada spasi
-    // atau cukup panjang) — sebelumnya "R-ST"/"PIT" ditempel jadi description.
-    const TAG_FRAGMENT_RE = /\b[A-Z]{1,6}[-_][0-9]{2,6}\b/i;
-    const descTexts = allTexts.filter(t => {
-      if (!isDescLayer(t.layer, lookup)) return false;
-      if (isExcludedLayer(t.layer, lookup)) return false;
-      const txt = t.text.trim();
-      if (isTagText(t.text, legendTagRegexes)) return false;
-      if (txt.length < 5 || txt.length > 80) return false;
-      // Huruf title-block jauh lebih besar dari label — bukan deskripsi equipment.
-      if (medTextH && t.height > medTextH * 3) return false;
-      if (STATUS_RE.test(txt)) return false;
-      if (TAG_FRAGMENT_RE.test(txt)) return false;
-      if (!txt.includes(' ') && txt.length < 8) return false;
-      if (/^[~MBI\d]/.test(txt)) return false;
-      if (/^['"(]/.test(txt)) return false;
-      return true;
-    });
+    const descTexts = buildDescTexts(allTexts, lookup, legendTagRegexes, medTextH);
 
     // 3. Deduplicate tag texts: same tag at same position across layers → keep best
     const dedupedTags: DxfTextEntity[] = [];
@@ -1086,12 +1162,7 @@ export function runDxfDetection(
 
       // Find nearest description — radius ketat (2×, bukan 4×) agar tidak
       // mencomot teks yang tidak berhubungan di gambar padat.
-      const descMatch = descTexts
-        .filter(d => !pairedDescs.has(d))
-        .map(d => ({ d, dist: dist(d.position, pos) }))
-        .filter(({ dist: dd }) => dd <= maxDist * 2)
-        .sort((a, b) => a.dist - b.dist)[0]?.d ?? null;
-      if (descMatch) pairedDescs.add(descMatch);
+      const descMatch = findNearestDesc(pos, descTexts, pairedDescs, maxDist, 2);
 
       // Legend / type — TANPA tebak prefix. Tanpa match → UNKNOWN,
       // rule-validator / review manusia yang memutuskan.
@@ -1165,10 +1236,14 @@ export function runDxfDetection(
           }
         }
       } else {
-        // No INSERT — try circle candidates near pos
+        // No INSERT — try circle candidates near pos.
+        // Expanded search radius: up to medTextH*20 (was maxDist*3) before estimateBbox.
+        const circleSearchRadius = medTextH
+          ? Math.min(maxDist * 6, medTextH * 20)
+          : maxDist * 4;
         const nearCircle = circleCandidates
           .map(c => ({ c, d: dist(c.center, pos) }))
-          .filter(({ d }) => d <= maxDist * 3)
+          .filter(({ d }) => d <= circleSearchRadius)
           .sort((a, b) => a.d - b.d)[0]?.c ?? null;
 
         if (nearCircle) {
@@ -1331,10 +1406,14 @@ export function runDxfDetection(
         continue;
       }
 
+      // Description: look for nearest desc text around circle center
+      const circleMaxDist = Math.max(extents.width, extents.height) * maxAssocDistFraction;
+      const circleDescMatch = findNearestDesc(cc.center, descTexts, pairedDescs, circleMaxDist, 3);
+
       detections.push({
         assetTag: tag,
         assetType,
-        description: null,
+        description: circleDescMatch ? circleDescMatch.text.trim() : null,
         confidence,
         bbox,
         evidence: [
@@ -1343,6 +1422,7 @@ export function runDxfDetection(
           legendMatch
             ? `Legend match: ${legendMatch.symbol_name ?? legendMatch.asset_type}`
             : 'No legend match',
+          ...(circleDescMatch ? [`Description: ${circleDescMatch.text.trim()}`] : []),
         ],
         blockName: null,
         layer: cc.layer,
@@ -1393,6 +1473,10 @@ export function runDxfDetection(
       const needsAi = !lgMatch;
       if (needsAi) { unmatchedInserts++; aiCandidates++; }
 
+      // Description: nearest desc text to INSERT position
+      const insertMaxDist = Math.max(extents.width, extents.height) * maxAssocDistFraction;
+      const untaggedDescMatch = findNearestDesc(ins.position, descTexts, pairedDescs, insertMaxDist, 3);
+
       const signals: FusionSignals = {
         legendTagMatch: false,
         legendTypeMatch: false,
@@ -1400,7 +1484,7 @@ export function runDxfDetection(
         tagLayerPriority: 99,
         insertFound: true,
         bboxFromGeometry,
-        descriptionPaired: false,
+        descriptionPaired: !!untaggedDescMatch,
         blockSuffixMatch: !!lgMatch,
         sourceIsText: false,
       };
@@ -1409,13 +1493,14 @@ export function runDxfDetection(
       detections.push({
         assetTag: null,
         assetType: lgMatch?.asset_type ?? UNKNOWN_ASSET_TYPE,
-        description: null,
+        description: untaggedDescMatch ? untaggedDescMatch.text.trim() : null,
         confidence,
         bbox,
         evidence: [
           `DXF INSERT block: ${suffix}`,
           lgMatch ? `Legend block match: ${lgMatch.symbol_name ?? lgMatch.asset_type}` : 'No legend match — untagged',
           ...bboxEvid,
+          ...(untaggedDescMatch ? [`Description: ${untaggedDescMatch.text.trim()}`] : []),
         ],
         blockName: suffix,
         layer: ins.layer,
@@ -1443,6 +1528,10 @@ export function runDxfDetection(
     // ════════════════════════════════════════════
     // ATTRIB-FIRST PIPELINE (standard DXF)
     // ════════════════════════════════════════════
+
+    // Description texts for this region (shared with insert loop below)
+    const descTexts = buildDescTexts(allTexts, lookup, legendTagRegexes, medTextH);
+    const pairedDescs = new Set<DxfTextEntity>();
 
     const insertTagMap = new Map<DxfInsertEntity, { tag: string; fromAttrib: boolean }>();
     for (const ins of inserts) {
@@ -1508,6 +1597,10 @@ export function runDxfDetection(
       const needsAi = !lm;
       if (needsAi) { unmatchedInserts++; aiCandidates++; }
 
+      // Description: nearest desc text around INSERT position
+      const attribMaxDist = Math.max(extents.width, extents.height) * maxAssocDistFraction;
+      const attribDescMatch = findNearestDesc(ins.position, descTexts, pairedDescs, attribMaxDist, 3);
+
       const signals: FusionSignals = {
         legendTagMatch: !!tm && !!tm.tag_pattern,
         legendTypeMatch: !!tm && !tm.tag_pattern,
@@ -1515,7 +1608,7 @@ export function runDxfDetection(
         tagLayerPriority: 99,
         insertFound: true,
         bboxFromGeometry,
-        descriptionPaired: false,
+        descriptionPaired: !!attribDescMatch,
         blockSuffixMatch: !!bm,
         sourceIsText: false,
       };
@@ -1531,7 +1624,7 @@ export function runDxfDetection(
       detections.push({
         assetTag: tag,
         assetType,
-        description: null,
+        description: attribDescMatch ? attribDescMatch.text.trim() : null,
         confidence,
         bbox,
         evidence: [
@@ -1539,6 +1632,7 @@ export function runDxfDetection(
           tag ? (te?.fromAttrib ? `ATTRIB tag: ${tag}` : `Spatial text: ${tag}`) : 'No tag',
           lm ? `Legend: ${lm.symbol_name ?? lm.asset_type}` : 'No legend match — type UNKNOWN, needs rule validation',
           ...bboxDimsEvid,
+          ...(attribDescMatch ? [`Description: ${attribDescMatch.text.trim()}`] : []),
         ],
         blockName: suffix,
         layer: ins.layer,
@@ -1570,8 +1664,57 @@ export function runDxfDetection(
   );
   associatePipingLinesToValves(allDetections, pipeLines);
 
+  // ── Fix 3: Filter detections whose rawPosition lies outside their region extents.
+  // A tolerance of 2% of the region span handles entities exactly on the border.
+  // This eliminates cross-sheet false positives picked up when region boundaries
+  // don't perfectly separate adjacent sheets.
+  const filteredDetections = allDetections.filter(det => {
+    const ri = det.regionIndex;
+    const regionInfo = regionsInfo[ri];
+    if (!regionInfo) return true; // no info → keep
+    const ext = regionInfo.extents;
+    const tolX = ext.width * 0.02;
+    const tolY = ext.height * 0.02;
+    const px = det.rawPosition.x, py = det.rawPosition.y;
+    return (
+      px >= ext.minX - tolX &&
+      px <= ext.maxX + tolX &&
+      py >= ext.minY - tolY &&
+      py <= ext.maxY + tolY
+    );
+  });
+
+  // ── Fix 1: Cross-region dedup.
+  // Per-region dedup may miss duplicates when the same tag appears in adjacent
+  // region boundaries. Run a second pass over all detections with a larger
+  // merge threshold (2× the default).
+  function deduplicateCrossRegion(dets: DxfDetection[]): DxfDetection[] {
+    const sorted = [...dets].sort((a, b) => {
+      const order: Record<DxfDetection['source'], number> = { TEXT: 0, CIRCLE: 1, ATTRIBUTE: 2, INSERT: 3, VISION: 4 };
+      const so = (order[a.source] ?? 9) - (order[b.source] ?? 9);
+      if (so !== 0) return so;
+      return (b.confidence ?? 0) - (a.confidence ?? 0);
+    });
+    const crossMergeDist = DEFAULT_MERGE_DIST_NORM * 2;
+    const kept: DxfDetection[] = [];
+    for (const det of sorted) {
+      const cx = det.bbox.x + det.bbox.width / 2;
+      const cy = det.bbox.y + det.bbox.height / 2;
+      const isDup = kept.some(k => {
+        if (!det.assetTag || !k.assetTag) return false;
+        if (det.assetTag !== k.assetTag) return false;
+        const kx = k.bbox.x + k.bbox.width / 2, ky = k.bbox.y + k.bbox.height / 2;
+        return Math.hypot(cx - kx, cy - ky) <= crossMergeDist;
+      });
+      if (!isDup) kept.push(det);
+    }
+    return kept;
+  }
+
+  const finalDetections = deduplicateCrossRegion(filteredDetections);
+
   return {
-    detections: allDetections,
+    detections: finalDetections,
     page: 1,
     regions: regionsInfo,
     units: parsed.units,
@@ -1849,7 +1992,10 @@ export interface DxfPipeLineRef {
   start: DxfPoint;
   end: DxfPoint;
   text?: string;
+  /** Nominal pipe size only, e.g. '3/4"', '8"' */
   size: string;
+  /** Full raw spec text as it appears in DXF, e.g. '3/4"-800# Drain', '8"-150#' */
+  rawSpec?: string;
 }
 
 /**
@@ -1875,6 +2021,7 @@ export function distancePointToSegment(p: DxfPoint, a: DxfPoint, b: DxfPoint): n
 
 /**
  * Extracts piping lines from entities and texts using parseLineSpecText.
+ * Also includes pipe spec texts that have no nearby LINE entity (text-only specs).
  */
 export function extractPipingLinesFromEntities(
   entities: import('@/lib/dxf-parser').DxfEntity[],
@@ -1905,6 +2052,17 @@ export function extractPipingLinesFromEntities(
         end: closestLine.end,
         text: parsed.rawText,
         size: parsed.pipeSize,
+        rawSpec: parsed.rawText,
+      });
+    } else {
+      // No nearby LINE — include as text-only spec anchored at text position.
+      // associatePipingLinesToValves will match by proximity to rawPosition.
+      pipeLines.push({
+        start: t.position,
+        end: t.position,
+        text: parsed.rawText,
+        size: parsed.pipeSize,
+        rawSpec: parsed.rawText,
       });
     }
   }
@@ -1914,11 +2072,12 @@ export function extractPipingLinesFromEntities(
 
 /**
  * Associates valves with collinear/intersecting piping line segments and assigns nominal size.
+ * For text-only specs (start === end), uses Euclidean distance to rawPosition.
  */
 export function associatePipingLinesToValves<T extends DxfDetection>(
   valves: T[],
   lines: DxfPipeLineRef[],
-  maxDistance: number = 60
+  maxDistance: number = 120
 ): T[] {
   for (const v of valves) {
     if (v.size) continue;
@@ -1936,8 +2095,8 @@ export function associatePipingLinesToValves<T extends DxfDetection>(
     }
 
     if (bestLine) {
-      v.size = bestLine.size;
-      v.evidence.push(`[Line-Size] Inferred ${bestLine.size} from collinear piping line ${bestLine.text ?? ''}`.trim());
+      v.size = bestLine.rawSpec ?? bestLine.size;
+      v.evidence.push(`[Line-Size] Inferred ${bestLine.rawSpec ?? bestLine.size} from collinear piping line`.trim());
     }
   }
   return valves;

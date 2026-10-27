@@ -143,6 +143,14 @@ async function main() {
   const gtPath = process.argv[2] ?? path.join('eval', 'ground-truth.json');
   const absGtPath = path.resolve(process.cwd(), gtPath);
 
+  // Parse optional flags (--job-id <uuid>)
+  let forcedJobId: string | null = null;
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === '--job-id' && process.argv[i + 1]) {
+      forcedJobId = process.argv[i + 1];
+    }
+  }
+
   if (!fs.existsSync(absGtPath)) {
     console.error(`Ground truth file not found: ${absGtPath}`);
     console.error('Create eval/ground-truth.json from the template, or pass a path as first argument.');
@@ -187,12 +195,35 @@ async function main() {
   const documentId = docResult.rows[0].id as string;
   console.log(`Document ID: ${documentId}`);
 
+  // Use --job-id if specified, else job with most detections for this page
+  let jobId: string | null = forcedJobId;
+  if (!jobId) {
+    const bestJob = await db.query(
+      `SELECT j.id, COUNT(d.id) AS det_count
+       FROM detection_jobs j
+       LEFT JOIN detections d ON d.job_id = j.id AND COALESCE(d.pid_page, 1) = $2
+       WHERE j.document_id = $1 AND j.status = 'COMPLETED'
+       GROUP BY j.id
+       ORDER BY det_count DESC, j.created_at DESC
+       LIMIT 1`,
+      [documentId, gt.page],
+    );
+    jobId = bestJob.rows.length > 0 ? (bestJob.rows[0].id as string) : null;
+  }
+  const jobFilter = jobId ? `AND job_id = '${jobId}'` : '';
+  if (jobId) {
+    console.log(`Using job: ${jobId}`);
+  } else {
+    console.warn('No completed job found — querying all detections for document.');
+  }
+
   const detResult = await db.query<DetectionRow>(
     `SELECT asset_tag, asset_type, bbox_x, bbox_y, bbox_w, bbox_h, confidence, validation_status
        FROM detections
       WHERE document_id = $1
-        AND page = $2
+        AND COALESCE(pid_page, 1) = $2
         AND detection_status != 'REJECTED'
+        ${jobFilter}
       ORDER BY confidence DESC NULLS LAST`,
     [documentId, gt.page],
   );

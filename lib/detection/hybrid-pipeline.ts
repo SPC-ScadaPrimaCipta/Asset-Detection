@@ -159,7 +159,10 @@ async function runYoloWithOcr(
           const { buffer: tagCropBuffer } = await cropAdaptiveTagRegionFromBuffer(
             pngBuffer,
             symbolBboxPx,
-            { expandX: 70, expandY: 90 },
+            {
+              expandX: Math.round(env.CROP_EXPAND_MAX_UNITS * 0.7),  // ~70% of max → horizontal
+              expandY: env.CROP_EXPAND_MAX_UNITS,                    // full max → vertical (tag usually above/below)
+            },
           );
 
           if (env.OCR_ENGINE === 'cv-service' && CV_SERVICE_AVAILABLE()) {
@@ -316,7 +319,7 @@ async function runAiVerifier(
     const { createVerifierSession } = await getVerifier();
     const labels = legendSymbols.map(s => ({ symbolId: s.id, label: s.symbol_name ?? s.asset_type }));
 
-    const session = createVerifierSession({ maxCallsPerPage: 1 });
+    const session = createVerifierSession({ maxCallsPerPage: env.VERIFIER_MAX_CALLS_PER_PAGE });
 
     const verifierReq = {
       candidateId: det.imageHash ?? 'unknown',

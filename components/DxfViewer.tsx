@@ -5,14 +5,13 @@ import * as THREE from 'three';
 import { DxfViewer as DxfViewerEngine, type LayerInfo } from 'dxf-viewer';
 import { ArrowsOutSimple, Eye, EyeSlash, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
 
-// ── Bbox color — matches cadBboxColor in detection/page.tsx ──────────────────
-function bboxColor(d: { review_status: string; confidence: number | null }): string {
-  if (d.review_status === 'APPROVED') return '#00e676';
-  if (d.review_status === 'REJECTED') return '#ff5252';
-  const conf = d.confidence ?? 0;
-  if (conf >= 0.9) return '#00bcd4';
-  if (conf >= 0.7) return '#ffd600';
-  return '#ff6d00';
+import { getAssetTypeColor } from '@/lib/asset-type-colors';
+
+// ── Bbox color — per asset type, override for review status ──────────────────
+function bboxColor(d: { asset_type: string; review_status: string; detection_status: string }): string {
+  if (d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED') return '#00e676';
+  if (d.review_status === 'REJECTED' || d.detection_status === 'REJECTED') return '#ff5252';
+  return getAssetTypeColor(d.asset_type).stroke;
 }
 
 export interface DxfViewerProps {
@@ -181,7 +180,7 @@ export default function DxfViewer({
     for (const d of sorted) {
       const isSelected = d.id === selectedId;
       const isReviewCandidate = d.candidate_status === 'REVIEW_CANDIDATE';
-      const color = isReviewCandidate ? '#f5b942' : bboxColor(d);
+      const color = bboxColor(d);
 
       // 0-1000 → DXF world
       const activeRegion = activeSheet == null ? null : regions.find((r) => r.pidPage === activeSheet);
@@ -769,20 +768,19 @@ export default function DxfViewer({
         </div>
       )}
 
-      {/* Color legend (bottom-left) */}
+      {/* Color legend (bottom-left) — per asset type + status overrides */}
       {!loading && !error && (
         <div style={{
           position: 'absolute', bottom: 10, left: 12, zIndex: 5,
-          display: 'flex', gap: 6, flexWrap: 'wrap',
+          display: 'flex', gap: 4, flexWrap: 'wrap',
           pointerEvents: 'none',
+          maxWidth: 'calc(100% - 24px)',
         }}>
-          {([
+          {/* Status overrides first */}
+          {[
             { color: '#00e676', label: 'Confirmed' },
-            { color: '#00bcd4', label: 'High conf' },
-            { color: '#ffd600', label: 'Medium' },
-            { color: '#ff6d00', label: 'Review' },
             { color: '#ff5252', label: 'Rejected' },
-          ] as const).map(({ color, label }) => (
+          ].map(({ color, label }) => (
             <div key={label} style={{
               background: 'rgba(24,40,50,0.92)', backdropFilter: 'blur(4px)',
               padding: '2px 7px', borderRadius: 4,
@@ -790,10 +788,29 @@ export default function DxfViewer({
               border: '1px solid #30424E',
               display: 'flex', alignItems: 'center', gap: 4,
             }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: color, display: 'inline-block',
-              }} />
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+              {label}
+            </div>
+          ))}
+          {/* Per-type colors from actual detections */}
+          {Array.from(
+            new Map(
+              activeDetections
+                .filter(d => d.review_status !== 'APPROVED' && d.detection_status !== 'CONFIRMED' && d.review_status !== 'REJECTED' && d.detection_status !== 'REJECTED')
+                .map(d => {
+                  const c = getAssetTypeColor(d.asset_type);
+                  return [c.stroke, { color: c.stroke, label: c.label !== 'Other' ? c.label : d.asset_type }];
+                })
+            ).values()
+          ).map(({ color, label }) => (
+            <div key={color} style={{
+              background: 'rgba(24,40,50,0.92)', backdropFilter: 'blur(4px)',
+              padding: '2px 7px', borderRadius: 4,
+              fontSize: 10, color: '#9ca3af',
+              border: `1px solid ${color}55`,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
               {label}
             </div>
           ))}

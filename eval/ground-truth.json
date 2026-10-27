@@ -1,13 +1,17 @@
 {
-  "_instructions": "Fill in 'document' (exact filename as uploaded), 'page' number, and manually annotated assets. Run: npm run benchmark",
-  "document": "YOUR_DOCUMENT_FILENAME.pdf",
-  "page": 1,
+  "_instructions": "Ground truth for INTAN_GS_SHEET_5.dxf page 4. Verify each entry against the actual drawing. Remove or correct anything wrong. bbox optional (null = match by tag only).",
+  "document": "INTAN_GS_SHEET_5.dxf",
+  "page": 4,
   "assets": [
-    {
-      "_comment": "Example entry — replace with real assets from your P&ID. bbox is optional (null = match by tag only).",
-      "assetTag": "TAG-001",
-      "assetType": "Pump",
-      "bbox": null
-    }
+    { "assetTag": "LSLL-0601", "assetType": "Level Switch",        "bbox": null },
+    { "assetTag": "V-0601",    "assetType": "Vessel",               "bbox": null },
+    { "assetTag": "FE-0104",   "assetType": "Flow Element",         "bbox": null },
+    { "assetTag": "FQI-0104",  "assetType": "Flow Indicator",       "bbox": null },
+    { "assetTag": "LSH-0601",  "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "LSN-0601",  "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "LG-0104",   "assetType": "Level Indicator",      "bbox": null },
+    { "assetTag": "PI-0601",   "assetType": "Pressure Indicator",   "bbox": null },
+    { "assetTag": "LS-0601",   "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "P-0301",    "assetType": "Centrifugal Pump",     "bbox": null }
   ]
 }

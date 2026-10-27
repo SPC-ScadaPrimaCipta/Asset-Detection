@@ -23,6 +23,7 @@ import {
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
 import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
+import { getAssetTypeColor } from '@/lib/asset-type-colors';
 
 const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
   ssr: false,
@@ -124,6 +125,9 @@ function DetectionContent() {
   const [statusTab, setStatusTab] = useState<'all' | 'PENDING' | 'APPROVED' | 'REJECTED'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showAllPages, setShowAllPages] = useState(true); // default: show all sheets
+  const [listPage, setListPage] = useState(1); // pagination for right-side list
+  const LIST_PAGE_SIZE = 10;
 
   // Multi-selection (Bulk Action)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -239,6 +243,9 @@ function DetectionContent() {
       container.removeEventListener('wheel', onWheel);
     };
   }, []);
+
+  // Reset list pagination when filter/search/tab/mode changes
+  useEffect(() => { setListPage(1); }, [searchQuery, statusTab, showAllPages, documentId]);
 
   // 1a. Load projects list
   useEffect(() => {
@@ -627,7 +634,8 @@ function DetectionContent() {
 
   // 6. Filtering & Search
   const pageDetections = detections.filter((d) => (d.pid_page ?? 1) === page);
-  const filteredDetections = pageDetections.filter((d) => {
+  const listSource = showAllPages ? detections : pageDetections;
+  const filteredDetections = listSource.filter((d) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matches =
@@ -644,12 +652,24 @@ function DetectionContent() {
   });
 
   const counts = {
-    total: pageDetections.length,
-    pending: pageDetections.filter((d) => d.review_status === 'PENDING').length,
-    approved: pageDetections.filter((d) => d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED').length,
-    rejected: pageDetections.filter((d) => d.review_status === 'REJECTED' || d.detection_status === 'REJECTED').length,
+    total: listSource.length,
+    pending: listSource.filter((d) => d.review_status === 'PENDING').length,
+    approved: listSource.filter((d) => d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED').length,
+    rejected: listSource.filter((d) => d.review_status === 'REJECTED' || d.detection_status === 'REJECTED').length,
     untagged: detections.filter((d) => !d.asset_tag || d.asset_tag.trim() === '').length,
   };
+
+  // Pagination for list panel
+  const totalListPages = Math.max(1, Math.ceil(filteredDetections.length / LIST_PAGE_SIZE));
+  const safeListPage = Math.min(listPage, totalListPages);
+  const paginatedDetections = filteredDetections.slice(
+    (safeListPage - 1) * LIST_PAGE_SIZE,
+    safeListPage * LIST_PAGE_SIZE
+  );
+
+  // Bboxes for viewer: always all detections on current sheet (viewer is per-sheet by design)
+  // But labels/highlights still cross-reference selectedId from any sheet
+  const viewerDetections = pageDetections;
 
   const selectedItem = detections.find((d) => d.id === selectedId) ?? null;
 
@@ -1271,13 +1291,19 @@ function DetectionContent() {
             {isDxf ? (
               <DxfViewer
                   url={`/api/documents/${documentId}/raw`}
-                  detections={pageDetections}
+                  detections={detections}
                   selectedId={selectedId}
                   onSelectAsset={(id: string) => {
                     setSelectedId(id);
-                    cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    // find which list-page this detection is on and scroll to it
+                    const idx = filteredDetections.findIndex((d) => d.id === id);
+                    if (idx >= 0) {
+                      const targetListPage = Math.floor(idx / LIST_PAGE_SIZE) + 1;
+                      setListPage(targetListPage);
+                    }
+                    setTimeout(() => cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
                   }}
-                  activeSheet={page}
+                  activeSheet={null}
                   style={{ position: 'absolute', inset: 0, minHeight: 0 }}
                 />
             ) : imgSrc ? (
@@ -1335,8 +1361,13 @@ function DetectionContent() {
                         const h = Math.max(10, d.bbox_h || 25);
                         const isApproved = d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
                         const isRejected = d.review_status === 'REJECTED' || d.detection_status === 'REJECTED';
-                        const color = isApproved ? '#22c55e' : isRejected ? '#ef4444' : '#f59e0b';
+                        // Per-asset-type color; override for approved/rejected status
+                        const typeColor = getAssetTypeColor(d.asset_type);
+                        const stroke = isRejected ? '#ef4444' : isApproved ? '#22c55e' : typeColor.stroke;
+                        const fillOpacity = isSel ? 0.35 : 0.10;
+                        const strokeWidth = isSel ? 3 : isRejected ? 1.5 : 1.2;
                         const label = d.asset_tag || d.asset_type;
+                        const labelBg = isRejected ? '#ef4444' : isApproved ? '#22c55e' : typeColor.stroke;
 
                         return (
                           <g
@@ -1345,20 +1376,40 @@ function DetectionContent() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedId(d.id);
-                              cardRefs.current[d.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                              const idx = filteredDetections.findIndex((fd) => fd.id === d.id);
+                              if (idx >= 0) {
+                                const targetListPage = Math.floor(idx / LIST_PAGE_SIZE) + 1;
+                                setListPage(targetListPage);
+                              }
+                              setTimeout(() => cardRefs.current[d.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
                             }}
                           >
+                            {/* Selected glow ring */}
+                            {isSel && (
+                              <rect
+                                x={x - 3}
+                                y={y - 3}
+                                width={w + 6}
+                                height={h + 6}
+                                fill="none"
+                                stroke={stroke}
+                                strokeWidth={1}
+                                strokeOpacity={0.4}
+                                vectorEffect="non-scaling-stroke"
+                                rx={3}
+                              />
+                            )}
                             <rect
                               x={x}
                               y={y}
                               width={w}
                               height={h}
-                              fill={color}
-                              fillOpacity={isSel ? 0.25 : 0.12}
-                              stroke={color}
-                              strokeWidth={isSel ? 2.5 : 1.2}
+                              fill={stroke}
+                              fillOpacity={fillOpacity}
+                              stroke={stroke}
+                              strokeWidth={strokeWidth}
                               vectorEffect="non-scaling-stroke"
-                              strokeDasharray={isSel ? undefined : '4 2'}
+                              strokeDasharray={isSel || isApproved ? undefined : '4 2'}
                               rx={1}
                             />
                             {/* Label Tag Header */}
@@ -1368,19 +1419,43 @@ function DetectionContent() {
                               width={Math.min(100, Math.max(w, 40))}
                               height={12}
                               rx={2}
-                              fill={color}
-                              opacity={0.95}
+                              fill={labelBg}
+                              opacity={isSel ? 1 : 0.88}
                             />
                             <text
                               x={x + 3}
                               y={(y > 18 ? y - 14 : y + h + 2) + 9}
                               fill="#fff"
-                              fontSize={8}
+                              fontSize={isSel ? 9 : 8}
                               fontFamily="ui-monospace, monospace"
                               fontWeight={isSel ? 700 : 500}
                             >
                               {label.slice(0, 15)}
                             </text>
+                            {/* Asset type sub-label when selected */}
+                            {isSel && d.asset_tag && (
+                              <>
+                                <rect
+                                  x={x}
+                                  y={y > 18 ? y - 28 : y + h + 16}
+                                  width={Math.min(120, Math.max(w, 50))}
+                                  height={12}
+                                  rx={2}
+                                  fill={stroke}
+                                  opacity={0.7}
+                                />
+                                <text
+                                  x={x + 3}
+                                  y={(y > 18 ? y - 28 : y + h + 16) + 9}
+                                  fill="#fff"
+                                  fontSize={8}
+                                  fontFamily="ui-sans-serif, sans-serif"
+                                  fontWeight={400}
+                                >
+                                  {d.asset_type.slice(0, 18)}
+                                </text>
+                              </>
+                            )}
                           </g>
                         );
                       })}
@@ -1453,6 +1528,25 @@ function DetectionContent() {
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>Detected Assets</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => setShowAllPages((v) => !v)}
+                  title={showAllPages ? 'Tampilkan hanya sheet/halaman aktif' : 'Tampilkan semua deteksi lintas sheet/halaman'}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${showAllPages ? 'var(--primary)' : 'var(--border)'}`,
+                    background: showAllPages ? 'var(--primary)' : 'var(--surface)',
+                    color: showAllPages ? '#fff' : 'var(--foreground-muted)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  {showAllPages ? 'All Sheets' : 'Current Sheet'}
+                </button>
                 {counts.untagged > 0 && (
                   <button
                     onClick={handleAutoTag}
@@ -1477,7 +1571,7 @@ function DetectionContent() {
                   </button>
                 )}
                 <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: 999 }}>
-                  {filteredDetections.length} / {pageDetections.length}
+                  {filteredDetections.length} / {listSource.length}
                 </span>
               </div>
             </div>
@@ -1529,26 +1623,45 @@ function DetectionContent() {
             </div>
 
             {/* Selected Asset Banner */}
-            {selectedItem && (
+            {selectedItem && (() => {
+              const selColor = getAssetTypeColor(selectedItem.asset_type);
+              const selIsApproved = selectedItem.review_status === 'APPROVED' || selectedItem.detection_status === 'CONFIRMED';
+              const selIsRejected = selectedItem.review_status === 'REJECTED' || selectedItem.detection_status === 'REJECTED';
+              const selAccent = selIsRejected ? '#ef4444' : selIsApproved ? '#22c55e' : selColor.stroke;
+              return (
               <div
                 style={{
-                  border: '1px solid var(--primary)',
+                  border: `1px solid ${selAccent}`,
+                  borderLeft: `4px solid ${selAccent}`,
                   borderRadius: 'var(--radius-sm)',
                   padding: 8,
-                  background: 'var(--surface)',
+                  background: `${selAccent}0d`,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 6,
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>
-                    {selectedItem.asset_tag || '(No Tag)'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>
+                      {selectedItem.asset_tag || '(No Tag)'}
+                    </span>
+                    <span style={{
+                      fontSize: 10,
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: `${selAccent}22`,
+                      color: selAccent,
+                      fontWeight: 700,
+                      border: `1px solid ${selAccent}44`,
+                    }}>
+                      {selectedItem.asset_type}
+                    </span>
+                  </div>
                   <StatusBadge status={selectedItem.review_status} />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
-                  Type: <strong>{selectedItem.asset_type}</strong> · Confidence: <strong>{Math.round((selectedItem.confidence ?? 0) * 100)}%</strong>
+                  Confidence: <strong>{Math.round((selectedItem.confidence ?? 0) * 100)}%</strong>
                 </div>
                 {selectedItem.service && (
                   <div style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
@@ -1617,7 +1730,8 @@ function DetectionContent() {
                   </button>
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
 {/*  */}
           {/* Scrollable List of Asset Cards */}
@@ -1628,10 +1742,10 @@ function DetectionContent() {
               </p>
             ) : filteredDetections.length === 0 ? (
               <p style={{ fontSize: 11, color: 'var(--foreground-subtle)', textAlign: 'center', padding: 24 }}>
-                No assets found on this page.
+                No assets found{showAllPages ? ' across any sheet.' : ' on this sheet.'}
               </p>
             ) : (
-              filteredDetections.map((d) => {
+              paginatedDetections.map((d) => {
                 const isSelected = d.id === selectedId;
                 const isChecked = selectedIds.has(d.id);
                 const isApproved = d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
@@ -1661,6 +1775,14 @@ function DetectionContent() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      {/* Per-type color strip */}
+                      <div style={{
+                        width: 3,
+                        alignSelf: 'stretch',
+                        borderRadius: 2,
+                        background: isRejected ? '#ef4444' : isApproved ? '#22c55e' : getAssetTypeColor(d.asset_type).stroke,
+                        flexShrink: 0,
+                      }} />
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1673,12 +1795,25 @@ function DetectionContent() {
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {d.asset_tag || '(No Tag)'}
                           </span>
-                          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-muted)', color: 'var(--foreground-muted)' }}>
+                          <span style={{
+                            fontSize: 10,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            background: isRejected ? 'rgba(239,68,68,0.15)' : isApproved ? 'rgba(34,197,94,0.15)' : `${getAssetTypeColor(d.asset_type).stroke}22`,
+                            color: isRejected ? '#ef4444' : isApproved ? '#22c55e' : getAssetTypeColor(d.asset_type).stroke,
+                            fontWeight: 600,
+                            border: `1px solid ${isRejected ? '#ef444440' : isApproved ? '#22c55e40' : `${getAssetTypeColor(d.asset_type).stroke}44`}`,
+                          }}>
                             {d.asset_type}
                           </span>
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--foreground-muted)' }}>
                           Confidence: {Math.round((d.confidence ?? 0) * 100)}%
+                          {d.size && (
+                            <span style={{ marginLeft: 6, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-muted)', color: 'var(--foreground-muted)', fontWeight: 600 }}>
+                              {d.size}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1739,6 +1874,83 @@ function DetectionContent() {
               })
             )}
           </div>
+
+          {/* ── Pagination Bar ── */}
+          {totalListPages > 1 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                borderTop: '1px solid var(--border)',
+                background: 'var(--surface-muted)',
+                flexShrink: 0,
+                gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 10, color: 'var(--foreground-muted)', whiteSpace: 'nowrap' }}>
+                {(safeListPage - 1) * LIST_PAGE_SIZE + 1}–{Math.min(safeListPage * LIST_PAGE_SIZE, filteredDetections.length)} of {filteredDetections.length}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  onClick={() => setListPage(1)}
+                  disabled={safeListPage === 1}
+                  style={{ padding: '2px 6px', fontSize: 10, border: '1px solid var(--border)', background: 'var(--surface)', cursor: safeListPage === 1 ? 'not-allowed' : 'pointer', borderRadius: 'var(--radius-sm)', opacity: safeListPage === 1 ? 0.4 : 1 }}
+                >
+                  «
+                </button>
+                <button
+                  onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                  disabled={safeListPage === 1}
+                  style={{ padding: '2px 6px', fontSize: 10, border: '1px solid var(--border)', background: 'var(--surface)', cursor: safeListPage === 1 ? 'not-allowed' : 'pointer', borderRadius: 'var(--radius-sm)', opacity: safeListPage === 1 ? 0.4 : 1 }}
+                >
+                  ‹
+                </button>
+                {Array.from({ length: Math.min(5, totalListPages) }, (_, i) => {
+                  // Show pages around current
+                  let start = Math.max(1, safeListPage - 2);
+                  const end = Math.min(totalListPages, start + 4);
+                  start = Math.max(1, end - 4);
+                  const p = start + i;
+                  if (p > totalListPages) return null;
+                  const active = p === safeListPage;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setListPage(p)}
+                      style={{
+                        padding: '2px 7px',
+                        fontSize: 10,
+                        border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                        background: active ? 'var(--primary)' : 'var(--surface)',
+                        color: active ? '#fff' : 'var(--foreground)',
+                        cursor: 'pointer',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: active ? 700 : 400,
+                      }}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+                  disabled={safeListPage === totalListPages}
+                  style={{ padding: '2px 6px', fontSize: 10, border: '1px solid var(--border)', background: 'var(--surface)', cursor: safeListPage === totalListPages ? 'not-allowed' : 'pointer', borderRadius: 'var(--radius-sm)', opacity: safeListPage === totalListPages ? 0.4 : 1 }}
+                >
+                  ›
+                </button>
+                <button
+                  onClick={() => setListPage(totalListPages)}
+                  disabled={safeListPage === totalListPages}
+                  style={{ padding: '2px 6px', fontSize: 10, border: '1px solid var(--border)', background: 'var(--surface)', cursor: safeListPage === totalListPages ? 'not-allowed' : 'pointer', borderRadius: 'var(--radius-sm)', opacity: safeListPage === totalListPages ? 0.4 : 1 }}
+                >
+                  »
+                </button>
+              </div>
+            </div>
+          )}
         </aside>
       </div>
 

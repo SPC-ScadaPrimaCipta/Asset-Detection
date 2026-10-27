@@ -17,7 +17,9 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "cleanup": "ts-node --project tsconfig.worker.json -r tsconfig-paths/register scripts/cleanup-storage.ts",
-    "benchmark": "tsx --env-file=.env.local scripts/benchmark-gemini.ts"
+    "benchmark": "tsx --env-file=.env.local scripts/benchmark-gemini.ts",
+    "benchmark:job": "tsx --env-file=.env.local scripts/benchmark-gemini.ts eval/ground-truth.json --job-id",
+    "rerun:dxf": "tsx --env-file=.env.local scripts/rerun-dxf-detection.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
