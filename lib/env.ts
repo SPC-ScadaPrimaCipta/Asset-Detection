@@ -140,10 +140,10 @@ const envSchema = z.object({
 
   // ── Scan Legend region grid ──
   // 0 = derive from page aspect ratio (see legend-extract.ts).
-  LEGEND_REGION_COLS_LANDSCAPE: z.coerce.number().int().min(0).max(12).default(6),
-  LEGEND_REGION_COLS_SQUARISH: z.coerce.number().int().min(0).max(12).default(4),
-  LEGEND_REGION_COLS_PORTRAIT: z.coerce.number().int().min(0).max(12).default(3),
-  LEGEND_REGION_ROWS: z.coerce.number().int().min(0).max(12).default(4),
+  LEGEND_REGION_COLS_LANDSCAPE: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_COLS_SQUARISH: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_COLS_PORTRAIT: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_ROWS: z.coerce.number().int().min(0).max(12).default(2),
   LEGEND_REGION_OVERLAP: z.coerce.number().min(0).max(0.5).default(0.15),
   LEGEND_RENDER_SCALE: z.coerce.number().positive().default(2.0),
   // Region crops are upscaled to at least this width before being sent to

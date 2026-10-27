@@ -80,50 +80,56 @@ export async function POST(request: NextRequest) {
           console.warn(`[legend/upload] page ${page} AI failed:`, (e as Error).message?.slice(0, 300));
           continue;
         }
-        for (const s of symbols) {
-          // Validasi schema + tag_pattern sebelum INSERT (cegah pattern salah ketik)
-          const parsed = LegendSymbolSchema.safeParse({
-            asset_type: s.asset_type.slice(0, 120),
-            symbol_name: s.symbol_name,
-            tag_pattern: s.tag_pattern,
-            description: s.description,
-            aliases: s.aliases ?? [],
-            status: 'DRAFT',
-            bbox_x: s.bbox_x, bbox_y: s.bbox_y, bbox_w: s.bbox_w, bbox_h: s.bbox_h,
-            pid_page: page,
-          });
-          if (!parsed.success) {
-            console.warn(`[legend/upload] page ${page} symbol skipped (schema):`, JSON.stringify(parsed.error.flatten()).slice(0, 200));
-            continue;
-          }
-          const patternErr = validateTagPattern(parsed.data.tag_pattern);
-          const safePattern = patternErr ? null : parsed.data.tag_pattern;
-          if (patternErr) {
-            console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" ΓåÆ nulled (${patternErr})`);
-          }
-          // Reference crop: potong simbol dari page PNG untuk few-shot detection.
-let refUrl: string | null = null;
-          let refHash: string | null = null;
-          try {
-            if (s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
-              const cropB64 = await cropPageRegion(
-                pngBase64,
-                { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
-                pngW, pngH, 0.05,
-              );
-              if (cropB64) {
-                refHash = createHash('sha256').update(cropB64).digest('hex');
-                const refName = `legend-${legendId}-p${page}-${refHash.slice(0, 12)}.png`;
-                await saveFile(refName, Buffer.from(cropB64, 'base64'));
-                refUrl = refName;
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+          const batch = symbols.slice(i, i + BATCH_SIZE);
+          await Promise.all(
+            batch.map(async (s) => {
+              // Validasi schema + tag_pattern sebelum INSERT (cegah pattern salah ketik)
+              const parsed = LegendSymbolSchema.safeParse({
+                asset_type: s.asset_type.slice(0, 120),
+                symbol_name: s.symbol_name,
+                tag_pattern: s.tag_pattern,
+                description: s.description,
+                aliases: s.aliases ?? [],
+                status: 'DRAFT',
+                bbox_x: s.bbox_x, bbox_y: s.bbox_y, bbox_w: s.bbox_w, bbox_h: s.bbox_h,
+                pid_page: page,
+              });
+              if (!parsed.success) {
+                console.warn(`[legend/upload] page ${page} symbol skipped (schema):`, JSON.stringify(parsed.error.flatten()).slice(0, 200));
+                return;
               }
-            }
-          } catch (cropErr) {
-            console.warn(`[legend/upload] page ${page} ref crop failed (non-fatal):`, (cropErr as Error).message?.slice(0, 150));
-          }
-          await db.query(
-            `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT',$13,$14)`,
-            [uuidv4(), legendId, parsed.data.asset_type, parsed.data.symbol_name, safePattern, parsed.data.description, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, parsed.data.aliases, refUrl, refHash],
+              const patternErr = validateTagPattern(parsed.data.tag_pattern);
+              const safePattern = patternErr ? null : parsed.data.tag_pattern;
+              if (patternErr) {
+                console.warn(`[legend/upload] page ${page} invalid tag_pattern "${s.tag_pattern}" → nulled (${patternErr})`);
+              }
+              // Reference crop: potong simbol dari page PNG untuk few-shot detection.
+              let refUrl: string | null = null;
+              let refHash: string | null = null;
+              try {
+                if (s.bbox_x != null && s.bbox_y != null && s.bbox_w != null && s.bbox_h != null && pngW > 0) {
+                  const cropB64 = await cropPageRegion(
+                    pngBase64,
+                    { x: s.bbox_x, y: s.bbox_y, width: s.bbox_w, height: s.bbox_h },
+                    pngW, pngH, 0.05,
+                  );
+                  if (cropB64) {
+                    refHash = createHash('sha256').update(cropB64).digest('hex');
+                    const refName = `legend-${legendId}-p${page}-${refHash.slice(0, 12)}.png`;
+                    await saveFile(refName, Buffer.from(cropB64, 'base64'));
+                    refUrl = refName;
+                  }
+                }
+              } catch (cropErr) {
+                console.warn(`[legend/upload] page ${page} ref crop failed (non-fatal):`, (cropErr as Error).message?.slice(0, 150));
+              }
+              await db.query(
+                `INSERT INTO legend_symbols (id, legend_id, asset_type, symbol_name, tag_pattern, description, bbox_x, bbox_y, bbox_w, bbox_h, pid_page, aliases, status, reference_image_url, reference_crop_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'DRAFT',$13,$14)`,
+                [uuidv4(), legendId, parsed.data.asset_type, parsed.data.symbol_name, safePattern, parsed.data.description, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, page, parsed.data.aliases, refUrl, refHash],
+              );
+            })
           );
         }
         draft.push(...symbols.map(s => ({ asset_type: s.asset_type, symbol_name: s.symbol_name })));
