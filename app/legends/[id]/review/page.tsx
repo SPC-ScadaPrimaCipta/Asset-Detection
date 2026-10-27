@@ -103,6 +103,7 @@ export default function LegendReviewPage() {
   const [confirmValidateAll, setConfirmValidateAll] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmReparse, setConfirmReparse] = useState(false);
 
   // ΓöÇΓöÇ Manual draw-to-add symbol ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [drawMode, setDrawMode] = useState(false);
@@ -789,7 +790,7 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
 <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={handleReparse} disabled={reparsing}
+          <button onClick={() => setConfirmReparse(true)} disabled={reparsing}
             style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: reparsing ? 'not-allowed' : 'pointer', opacity: reparsing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <ArrowCounterClockwise size={13} />{reparsing ? 'Re-parsing…' : 'Re-parse'}
           </button>
@@ -1232,6 +1233,40 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
             <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
               <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><FloppyDisk size={13} />Save</button>
               <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><X size={13} />Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Re-parse confirmation modal */}
+      {confirmReparse && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ ...cardStyle, padding: 24, width: '100%', maxWidth: 440, boxShadow: '0 20px 40px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>
+              Konfirmasi Re-parse Legend
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1.5, margin: 0 }}>
+              Apakah Anda yakin ingin mengekstrak ulang dokumen Legend ini?
+            </p>
+            <div style={{ padding: '10px 12px', background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--danger)', lineHeight: 1.4 }}>
+              <strong>Perhatian:</strong> Tindakan ini akan <strong>menghapus seluruh {symbols.length} simbol</strong> (termasuk hasil review & editan) dan menggantikannya dengan hasil analisis AI yang baru dari dokumen PDF.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+              <button
+                onClick={() => setConfirmReparse(false)}
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmReparse(false);
+                  handleReparse();
+                }}
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <ArrowCounterClockwise size={14} /> Ya, Jalankan Re-parse
+              </button>
             </div>
           </div>
         </div>
