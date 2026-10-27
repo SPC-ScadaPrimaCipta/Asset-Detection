@@ -1527,7 +1527,7 @@ function DetectionContent() {
               </div>
             )}
           </div>
-
+{/*  */}
           {/* Scrollable List of Asset Cards */}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {loadingDets ? (
