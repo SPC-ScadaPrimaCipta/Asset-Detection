@@ -4,6 +4,7 @@ import React from 'react';
 import { usePathname } from 'next/navigation';
 import SidebarNav from '@/app/sidebar-nav';
 import Header from '@/components/Header';
+import Breadcrumbs from '@/components/Breadcrumbs';
 import { useUser } from '@/components/UserContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -78,6 +79,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <Header operatorName={user?.name || 'Operator'} />
+        <Breadcrumbs />
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>{children}</div>
       </main>
     </div>

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 const MENU_ITEMS = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/detection', label: 'Detection', icon: ScanSearch },
   { href: '/mdo', label: 'MDO Flow', icon: GitFork },
