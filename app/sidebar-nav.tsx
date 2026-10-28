@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -13,6 +13,8 @@ import {
   Settings,
   Sparkles,
   ExternalLink,
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -27,6 +29,24 @@ const MENU_ITEMS = [
 
 export default function SidebarNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : { user: null }))
+      .then((data) => setUser(data.user))
+      .catch(() => setUser(null));
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setUser(null);
+      router.push('/login');
+      router.refresh();
+    } catch {}
+  };
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -228,6 +248,107 @@ export default function SidebarNav() {
             <ExternalLink size={12} />
           </button>
         </Link>
+      </div>
+
+      {/* User Account / Auth Section */}
+      <div
+        style={{
+          marginTop: 12,
+          padding: '10px 12px',
+          background: 'rgba(255, 255, 255, 0.08)',
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+        }}
+      >
+        {user ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'var(--primary, #3451D1)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                }}
+              >
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'block',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#FFFFFF',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {user.name}
+                </span>
+                <span style={{ display: 'block', fontSize: 11, color: 'rgba(255, 255, 255, 0.65)' }}>
+                  {user.role === 'ADMIN' ? 'Administrator' : 'User'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(255, 255, 255, 0.7)',
+                cursor: 'pointer',
+                padding: 6,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'color 150ms ease-out',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#FFFFFF';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+              }}
+            >
+              <LogOut size={16} />
+            </button>
+          </>
+        ) : (
+          <Link
+            href="/login"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              width: '100%',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#FFFFFF',
+              textDecoration: 'none',
+              padding: '6px 0',
+            }}
+          >
+            <UserIcon size={14} />
+            <span>Sign In / Login</span>
+          </Link>
+        )}
       </div>
     </div>
   );
