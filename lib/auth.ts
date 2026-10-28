@@ -12,11 +12,11 @@ export interface AuthUser {
   role: UserRole;
 }
 
-export function isSuperAdmin(user?: AuthUser | null): boolean {
+export function isSuperAdmin(user?: AuthUser | null): user is AuthUser {
   return user?.role === 'SUPERADMIN';
 }
 
-export function isPrivileged(user?: AuthUser | null): boolean {
+export function isPrivileged(user?: AuthUser | null): user is AuthUser {
   return user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 }
 
