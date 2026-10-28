@@ -4,9 +4,11 @@ import React from 'react';
 import { usePathname } from 'next/navigation';
 import SidebarNav from '@/app/sidebar-nav';
 import Header from '@/components/Header';
+import { useUser } from '@/components/UserContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user } = useUser();
   const isAuthPage = pathname === '/login' || pathname === '/register';
 
   if (isAuthPage) {
@@ -75,7 +77,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           boxSizing: 'border-box',
         }}
       >
-        <Header operatorName="Operator" />
+        <Header operatorName={user?.name || 'Operator'} />
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>{children}</div>
       </main>
     </div>

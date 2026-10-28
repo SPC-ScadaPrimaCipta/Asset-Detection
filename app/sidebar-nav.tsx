@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useUser } from '@/components/UserContext';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -30,19 +31,12 @@ const MENU_ITEMS = [
 export default function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => (res.ok ? res.json() : { user: null }))
-      .then((data) => setUser(data.user))
-      .catch(() => setUser(null));
-  }, [pathname]);
+  const { user, refreshUser } = useUser();
 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      setUser(null);
+      await refreshUser();
       router.push('/login');
       router.refresh();
     } catch {}
@@ -299,7 +293,7 @@ export default function SidebarNav() {
                   {user.name}
                 </span>
                 <span style={{ display: 'block', fontSize: 11, color: 'rgba(255, 255, 255, 0.65)' }}>
-                  {user.role === 'ADMIN' ? 'Administrator' : 'User'}
+                  {user.role === 'SUPERADMIN' ? 'Super Admin' : user.role === 'ADMIN' ? 'Administrator' : 'User'}
                 </span>
               </div>
             </div>

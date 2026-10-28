@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { UserProvider } from "@/components/UserContext";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -44,7 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }}
       >
         <ThemeProvider>
-          <AppShell>{children}</AppShell>
+          <UserProvider>
+            <AppShell>{children}</AppShell>
+          </UserProvider>
         </ThemeProvider>
       </body>
     </html>
