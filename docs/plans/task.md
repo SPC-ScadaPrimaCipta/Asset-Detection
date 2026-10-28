@@ -1,12 +1,11 @@
-# Task Tracker: Auth, Multi-User Projects, Scoped Legends, and Clone/Share Mechanism
+# Task Tracker: Superadmin User CRUD, Dynamic User Greeting, and Global Breadcrumbs
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Database migration (`sql/migrate-auth-and-visibility.sql`, `scripts/migrate-auth.ts`): users table, owner_id, visibility, share_code, scoped legends, admin seeding, and existing data migration to PUBLIC | DONE |
-| TASK-02 | Core authentication logic (`lib/auth.ts`): password hashing with native `crypto.scrypt`, secure HTTP-only session cookies, token signing, and `getCurrentUser` helper | DONE |
-| TASK-03 | Auth API routes (`/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`) | DONE |
-| TASK-04 | Auth UI pages (`/login`, `/register`) and sidebar user profile status + logout button (`app/sidebar-nav.tsx`) | DONE |
-| TASK-05 | Project visibility & Scoped Legend backend API (filter public vs private, toggle visibility, project-scoped legends query) | DONE |
-| TASK-06 | Clone & Share API: clone project to private workspace (`/api/projects/[id]/clone`), join via share code (`/api/projects/join-code`), and generate share code (`/api/projects/[id]/share-code`) | DONE |
-| TASK-07 | Projects Page UI overhaul (`app/projects/page.tsx`): Private vs Public tabs, Creator badge, Clone to Private button, Share modal with share code generation & Make Public toggle | DONE |
-| TASK-08 | Detection Page integration with scoped legends & End-to-end verification (`app/detection/page.tsx`, `npx tsc --noEmit`, `npm run build`) | DONE |
+| TASK-01 | Database migration (`sql/migrate-superadmin.sql`, `scripts/migrate-superadmin.ts`): users check constraint update and new Superadmin account seeding (`superadmin@assetdetection.local`) | PENDING |
+| TASK-02 | Auth helpers & public registration lockdown (`lib/auth.ts`, `middleware.ts`, `app/login/page.tsx`, `app/api/auth/register/route.ts`): add `isSuperAdmin` & `isPrivileged`, redirect `/register` to `/login`, remove self-register links | PENDING |
+| TASK-03 | User Context & Dynamic Greeting (`components/UserContext.tsx`, `app/layout.tsx`, `components/AppShell.tsx`, `components/Header.tsx`, `app/sidebar-nav.tsx`): display logged-in username in Header ("Welcome Back, [Username]") | PENDING |
+| TASK-04 | Global Breadcrumbs system & Sidebar rename (`components/Breadcrumbs.tsx`, `components/AppShell.tsx`, `app/sidebar-nav.tsx`): rename "Overview" to "Dashboard", auto-map route breadcrumbs | PENDING |
+| TASK-05 | Superadmin User Management API (`app/api/admin/users/route.ts`, `app/api/admin/users/[id]/route.ts`): endpoints for list, create, edit, delete user with guards | PENDING |
+| TASK-06 | Superadmin User Management UI (`app/users/page.tsx`, `app/sidebar-nav.tsx`): dedicated `/users` page with user table, search, filter, Add/Edit/Delete modals, and sidebar link | PENDING |
+| TASK-07 | Full system verification and build test (`npx tsc --noEmit`, `npm run build`, regression testing for ordinary users vs superadmin) | PENDING |
