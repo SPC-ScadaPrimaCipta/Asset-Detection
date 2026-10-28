@@ -364,7 +364,16 @@ async function migrate() {
       console.warn('  018 migration warning (non-fatal):', e.message);
     }
 
-
+    // Migration 019: Auth, Project Visibility, and Scoped Legends
+    try {
+      const authSql = join(__dirname, '..', 'sql', 'migrate-auth-and-visibility.sql');
+      if (existsSync(authSql)) {
+        await p.query(readFileSync(authSql, 'utf-8'));
+        console.log('  019: Auth & project visibility OK');
+      }
+    } catch (e) {
+      console.warn('  019 migration warning (non-fatal):', e.message);
+    }
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
