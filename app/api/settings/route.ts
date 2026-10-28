@@ -175,14 +175,29 @@ export async function PUT(req: NextRequest) {
 
     if (updates.length <= 1) return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
 
-    const query = `UPDATE settings SET ${updates.join(', ')} WHERE id = 1 RETURNING ai_provider, gemini_model, tuning`;
+    const query = `UPDATE settings SET ${updates.join(', ')} WHERE id = 1 RETURNING 
+      ai_provider, gemini_model, deepseek_model, openai_model, openai_base_url, anthropic_model,
+      gemini_api_key, deepseek_api_key, openai_api_key, anthropic_api_key, tuning`;
     const result = await pool.query(query, values.slice(0, -1));
 
     clearAiConfigCache();
     clearTuningCache();
+    const row = result.rows[0];
+    const tuningRes = await getTuning({ force: true });
     return NextResponse.json({
-      ...result.rows[0],
-      tuning: (await getTuning({ force: true })),
+      ai_provider: row?.ai_provider || env.AI_PROVIDER,
+      gemini_model: row?.gemini_model || env.GEMINI_MODEL,
+      deepseek_model: row?.deepseek_model || env.DEEPSEEK_MODEL,
+      openai_model: row?.openai_model || env.OPENAI_MODEL,
+      openai_base_url: row?.openai_base_url || env.OPENAI_BASE_URL || '',
+      anthropic_model: row?.anthropic_model || env.ANTHROPIC_MODEL,
+      has_gemini_key: Boolean(row?.gemini_api_key || env.GEMINI_API_KEY),
+      has_openai_key: Boolean(row?.openai_api_key || env.OPENAI_API_KEY),
+      has_anthropic_key: Boolean(row?.anthropic_api_key || env.ANTHROPIC_API_KEY),
+      has_deepseek_key: Boolean(row?.deepseek_api_key || env.DEEPSEEK_API_KEY),
+      tuning: serializableTuning(tuningRes),
+      editable_groups: EDITABLE_GROUPS,
+      tuning_overrides: serializableTuning((row?.tuning ?? {}) as Record<string, never>) as never,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Update failed';

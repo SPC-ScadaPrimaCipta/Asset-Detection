@@ -225,6 +225,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const [activeTab, setActiveTab] = useState<'gemini' | 'openai' | 'anthropic'>('gemini');
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
   const [openaiModels, setOpenaiModels] = useState<{ id: string; name: string }[]>([]);
   const [anthropicModels, setAnthropicModels] = useState<{ id: string; name: string }[]>([]);
@@ -259,6 +260,9 @@ export default function SettingsPage() {
           deepseek_model: data.deepseek_model,
         }));
         setTuning(data.tuning ?? null);
+        if (data.ai_provider === 'openai' || data.ai_provider === 'anthropic' || data.ai_provider === 'gemini') {
+          setActiveTab(data.ai_provider);
+        }
         // Offer the configured model even before a scan, so the select is never
         // empty and a stale saved value is visible.
         if (data.gemini_model) {
@@ -419,6 +423,9 @@ export default function SettingsPage() {
       // Re-sync from the server's resolved values so the UI shows what a job
       // will actually use, not what was typed.
       if (updated.tuning) setTuning(updated.tuning);
+      if (updated.ai_provider === 'openai' || updated.ai_provider === 'anthropic' || updated.ai_provider === 'gemini') {
+        setActiveTab(updated.ai_provider);
+      }
       setSuccess('Settings saved.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -457,34 +464,78 @@ export default function SettingsPage() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        {/* Provider Selection */}
+        {/* Provider Tabs */}
         <div style={cardStyle}>
-          <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', marginBottom: '16px' }}>AI Provider</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div>
+              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>AI Provider Engine</h2>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: '4px 0 0' }}>
+                Select and configure the multimodal AI vision provider for P&amp;ID asset detection.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '12px' }}>
+              <span style={{ color: 'var(--foreground-muted)' }}>Active Engine:</span>
+              <span style={{
+                fontWeight: 600,
+                color: 'var(--primary)',
+                background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+                padding: '2px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--primary)',
+              }}>
+                {formData.ai_provider === 'openai' ? 'OpenAI (ChatGPT)' : formData.ai_provider === 'anthropic' ? 'Anthropic (Claude)' : 'Google Gemini'}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
             {([
-              { id: 'gemini', label: 'Google Gemini' },
-              { id: 'openai', label: 'OpenAI (ChatGPT)' },
-              { id: 'anthropic', label: 'Anthropic (Claude)' },
-              { id: 'deepseek', label: 'DeepSeek' },
-            ] as const).map(p => (
-              <button
-                key={p.id}
-                onClick={() => setFormData(f => ({ ...f, ai_provider: p.id }))}
-                style={{
-                  ...buttonStyle,
-                  background: formData.ai_provider === p.id ? 'var(--primary-soft)' : 'var(--surface)',
-                  color: formData.ai_provider === p.id ? 'var(--primary)' : 'var(--foreground)',
-                  fontWeight: formData.ai_provider === p.id ? '600' : '500',
-                  border: formData.ai_provider === p.id ? '1px solid var(--primary)' : '1px solid var(--border)',
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
+              { id: 'gemini', label: 'Google Gemini', desc: 'Default multimodal vision model' },
+              { id: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT-4o or custom OpenAI gateway' },
+              { id: 'anthropic', label: 'Anthropic (Claude)', desc: 'Claude 3.5 / 3.7 vision model' },
+            ] as const).map(p => {
+              const isSelected = activeTab === p.id;
+              const isActiveEngine = formData.ai_provider === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setActiveTab(p.id)}
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: 'var(--radius-input, 10px)',
+                    border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: isSelected ? 'var(--primary-soft, rgba(74, 102, 222, 0.08))' : 'var(--surface-2)',
+                    color: 'var(--foreground)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    transition: 'all 150ms ease-out',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span style={{ fontSize: '13px', fontWeight: isSelected ? '700' : '600', color: isSelected ? 'var(--primary)' : 'var(--foreground)' }}>
+                      {p.label}
+                    </span>
+                    {isActiveEngine && (
+                      <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 6px', borderRadius: '10px', fontWeight: 700 }}>
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--foreground-muted)', lineHeight: 1.3 }}>
+                    {p.desc}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Gemini Configuration */}
+        {activeTab === 'gemini' && (
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -562,8 +613,10 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+        )}
 
         {/* OpenAI Configuration */}
+        {activeTab === 'openai' && (
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -662,8 +715,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Anthropic Configuration */}
+        {activeTab === 'anthropic' && (
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -746,131 +801,51 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* DeepSeek Configuration */}
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
-                DeepSeek {settings?.has_deepseek_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
-              </h2>
-              {formData.ai_provider === 'deepseek' ? (
-                <span style={{ fontSize: '11px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
-                  Active Provider
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setFormData(f => ({ ...f, ai_provider: 'deepseek' }))}
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--primary)',
-                    background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
-                    border: '1px solid var(--primary)',
-                    padding: '2px 8px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                  }}
-                >
-                  Set as Active
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => handleScan('deepseek')}
-              disabled={scanning || (!formData.deepseek_api_key && !settings?.has_deepseek_key)}
-              style={scanning || (!formData.deepseek_api_key && !settings?.has_deepseek_key) ? { ...buttonStyle, opacity: 0.5, cursor: 'not-allowed' } : buttonStyle}
-            >
-              {scanning ? 'Scanning…' : 'Check Balance'}
-            </button>
-          </div>
+        {/* Save Button */}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={saving ? buttonDisabledStyle : { ...primaryButtonStyle, width: '100%', height: '42px', fontSize: '14px', fontWeight: 600 }}
+        >
+          {saving ? 'Saving Settings…' : 'Save Settings'}
+        </button>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <label style={labelStyle}>API Key</label>
-              <input
-                type="password"
-                placeholder={settings?.has_deepseek_key ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter DeepSeek API key'}
-                style={inputStyle}
-                value={formData.deepseek_api_key || ''}
-                onChange={e => setFormData(f => ({ ...f, deepseek_api_key: e.target.value }))}
-              />
-              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', marginTop: '6px' }}>Stored securely server-side only</p>
-            </div>
-
-            <div>
-              <label style={labelStyle}>Model</label>
-              <select
-                style={selectStyle}
-                value={formData.deepseek_model || ''}
-                onChange={e => setFormData(f => ({ ...f, deepseek_model: e.target.value }))}
-              >
-                {dsModels.length === 0 && (
-                  <option value="">Check balance to populate this list</option>
-                )}
-                {dsModels.map(m => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-              <p style={hintStyle}>
-                Text-only provider. Run Detection needs image understanding and
-                refuses DeepSeek, exactly like Scan Legend does.
-              </p>
-            </div>
-
-            {dsQuota && (
-              <div style={{ ...cardStyle, background: 'var(--info-soft)', borderColor: 'var(--info)', padding: '16px', marginTop: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--info)' }}>Account Balance</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--info)' }}>{dsQuota.balance} {dsQuota.currency}</span>
-                </div>
-
-                {dsQuota.granted && dsQuota.toppedUp && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
-                        <span style={{ color: 'var(--success)' }}>Free Quota</span>
-                        <span style={{ fontWeight: '600', color: 'var(--success)' }}>{dsQuota.granted}</span>
-                      </div>
-                      <div style={{ width: '100%', height: '4px', background: 'var(--background)', borderRadius: '2px', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            background: 'var(--success)',
-                            borderRadius: '2px',
-                            width: `${Math.min(100, (parseFloat(dsQuota.granted) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
-                        <span style={{ color: 'var(--accent)' }}>Top-up Balance</span>
-                        <span style={{ fontWeight: '600', color: 'var(--accent)' }}>{dsQuota.toppedUp}</span>
-                      </div>
-                      <div style={{ width: '100%', height: '4px', background: 'var(--background)', borderRadius: '2px', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            background: 'var(--accent)',
-                            borderRadius: '2px',
-                            width: `${Math.min(100, (parseFloat(dsQuota.toppedUp) / (parseFloat(dsQuota.granted) + parseFloat(dsQuota.toppedUp))) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Runtime tuning — resolution order: this form > .env > code fallback */}
+        {/* Advanced System Tuning (Collapsed by default) */}
         {tuning && (
-          <>
+          <details
+            style={{
+              ...cardStyle,
+              padding: 0,
+              overflow: 'hidden',
+              marginTop: '8px',
+            }}
+          >
+            <summary
+              style={{
+                padding: '16px 20px',
+                fontWeight: 600,
+                fontSize: '13px',
+                color: 'var(--foreground)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                userSelect: 'none',
+                background: 'var(--surface-2)',
+              }}
+            >
+              <span>⚙️ Advanced System Tuning (Worker Concurrency, Tiling, Penalties)</span>
+              <span style={{ fontSize: '11px', color: 'var(--foreground-muted)', fontWeight: 400 }}>
+                Click to expand / collapse
+              </span>
+            </summary>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: 0, lineHeight: 1.5 }}>
+                Advanced operational parameters for tile grids, confidence penalties, and queue locks.
+                These settings have sensible production defaults and typically do not require manual adjustments.
+              </p>
             {/* Regions & performance */}
             <div style={cardStyle}>
               <h2 style={sectionTitleStyle}>Region Detection (tiled pages)</h2>
@@ -1196,17 +1171,16 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-          </>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                style={saving ? buttonDisabledStyle : { ...primaryButtonStyle, width: '100%', marginTop: '8px' }}
+              >
+                {saving ? 'Saving…' : 'Save Advanced Tuning'}
+              </button>
+            </div>
+          </details>
         )}
-
-        {/* Save Button */}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={saving ? buttonDisabledStyle : { ...primaryButtonStyle, width: '100%' }}
-        >
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
       </div>
     </div>
   );
