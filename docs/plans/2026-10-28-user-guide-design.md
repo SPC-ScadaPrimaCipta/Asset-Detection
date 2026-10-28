@@ -78,3 +78,4 @@ Format yang digunakan adalah **Dokumentasi Modern dengan Sticky Table of Content
 1. `app/guide/page.tsx`: Halaman utama User Guide dengan layout dua kolom dan 8 bab dokumentasi.
 2. `app/sidebar-nav.tsx`: Menambahkan menu `User Guide` dengan ikon `BookOpenCheck`.
 3. `components/Breadcrumbs.tsx`: Memastikan rute `/guide` dipetakan dengan label `"User Guide"`.
+

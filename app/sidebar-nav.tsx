@@ -11,6 +11,7 @@ import {
   GitFork,
   FileText,
   BookOpen,
+  BookOpenCheck,
   Settings,
   Sparkles,
   ExternalLink,
@@ -26,6 +27,7 @@ const MENU_ITEMS = [
   { href: '/mdo', label: 'MDO Flow', icon: GitFork },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/legends', label: 'Legends', icon: BookOpen },
+  { href: '/guide', label: 'User Guide', icon: BookOpenCheck },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

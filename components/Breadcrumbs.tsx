@@ -15,6 +15,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   review: 'Review',
   settings: 'Settings',
   users: 'User Management',
+  guide: 'User Guide',
 };
 
 function formatSegmentLabel(segment: string, prevSegment?: string): string {
