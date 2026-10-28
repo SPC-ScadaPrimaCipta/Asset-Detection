@@ -5,12 +5,14 @@ import { usePathname } from 'next/navigation';
 import SidebarNav from '@/app/sidebar-nav';
 import Header from '@/components/Header';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import ThemeToggle from '@/components/ThemeToggle';
 import { useUser } from '@/components/UserContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useUser();
   const isAuthPage = pathname === '/login' || pathname === '/register';
+  const isDashboard = pathname === '/';
 
   if (isAuthPage) {
     return (
@@ -64,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <SidebarNav />
       </aside>
 
-      {/* Main Content Area with Header */}
+      {/* Main Content Area */}
       <main
         style={{
           flex: 1,
@@ -78,8 +80,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           boxSizing: 'border-box',
         }}
       >
-        <Header operatorName={user?.name || 'Operator'} />
-        <Breadcrumbs />
+        {isDashboard ? (
+          <Header operatorName={user?.name || 'Operator'} />
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              flexWrap: 'wrap',
+              gap: 12,
+              minHeight: 44,
+            }}
+          >
+            <Breadcrumbs style={{ marginBottom: 0 }} />
+            <ThemeToggle />
+          </div>
+        )}
+
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>{children}</div>
       </main>
     </div>

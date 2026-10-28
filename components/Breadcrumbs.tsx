@@ -37,25 +37,22 @@ function formatSegmentLabel(segment: string, prevSegment?: string): string {
     .join(' ');
 }
 
-export default function Breadcrumbs() {
+export default function Breadcrumbs({ style }: { style?: React.CSSProperties } = {}) {
   const pathname = usePathname();
-
-  // Do not show on auth pages
-  if (pathname === '/login' || pathname === '/register') {
-    return null;
-  }
 
   const rawSegments = pathname.split('/').filter(Boolean);
 
-  // If at root '/'
-  const isRoot = rawSegments.length === 0;
+  // Do not show on auth pages or dashboard root
+  if (pathname === '/login' || pathname === '/register' || rawSegments.length === 0) {
+    return null;
+  }
 
   // Build breadcrumb items
   const items = [
     {
       label: 'Dashboard',
       href: '/',
-      isCurrent: isRoot,
+      isCurrent: false,
     },
   ];
 
@@ -78,10 +75,10 @@ export default function Breadcrumbs() {
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '6px',
-        marginBottom: '18px',
         fontSize: '12px',
         color: 'var(--foreground-muted)',
         lineHeight: 1,
+        ...style,
       }}
     >
       {items.map((item, index) => {
