@@ -16,6 +16,7 @@ import {
   ExternalLink,
   LogOut,
   User as UserIcon,
+  Users,
 } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -132,7 +133,10 @@ export default function SidebarNav() {
 
         {/* Navigation Items */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {MENU_ITEMS.map(({ href, label, icon: Icon }) => {
+          {[
+            ...MENU_ITEMS,
+            ...(user?.role === 'SUPERADMIN' ? [{ href: '/users', label: 'User Management', icon: Users }] : []),
+          ].map(({ href, label, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link
