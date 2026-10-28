@@ -32,7 +32,7 @@ export default function RegisterPage() {
         throw new Error(data.error || 'Pendaftaran gagal');
       }
 
-      router.push('/projects');
+      router.push('/');
       router.refresh();
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat pendaftaran');

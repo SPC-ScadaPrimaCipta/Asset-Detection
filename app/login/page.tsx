@@ -31,8 +31,8 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login gagal');
       }
 
-      // Redirect to home/projects
-      router.push('/projects');
+      // Redirect to dashboard
+      router.push('/');
       router.refresh();
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat login');
