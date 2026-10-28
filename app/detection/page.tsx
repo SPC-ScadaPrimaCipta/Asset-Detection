@@ -21,9 +21,11 @@ import {
   Tag,
   ArrowClockwise,
   Trash,
+  Stack,
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
 import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
+import DedupModal from '@/components/detection/DedupModal';
 import { getAssetTypeColor } from '@/lib/asset-type-colors';
 
 const DxfViewer = dynamic(() => import('@/components/DxfViewer'), {
@@ -651,8 +653,9 @@ function DetectionContent() {
     }
   };
 
-  // 5b. Duplicate detection count
+  // 5b. Duplicate detection count & modal state
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
+  const [isDedupOpen, setIsDedupOpen] = useState(false);
   const checkDuplicates = useCallback(async (docId: string) => {
     if (!docId) { setDuplicateCount(null); return; }
     try {
@@ -864,6 +867,28 @@ function DetectionContent() {
             <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--warning-soft)', color: 'var(--warning)' }}>
               Pending: <strong>{counts.pending}</strong>
             </span>
+            {duplicateCount !== null && duplicateCount > 0 && (
+              <button
+                onClick={() => setIsDedupOpen(true)}
+                title="Duplicates detected! Click to review and deduplicate"
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: 999,
+                  background: 'rgba(234, 179, 8, 0.15)',
+                  color: '#b45309',
+                  border: '1px solid #facc15',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <Stack size={12} weight="bold" />
+                Duplicates: <strong>{duplicateCount}</strong>
+              </button>
+            )}
           </div>
 
           <Link
@@ -1770,6 +1795,32 @@ function DetectionContent() {
                     {autoTagging ? 'Tagging…' : `Auto-Tag (${counts.untagged})`}
                   </button>
                 )}
+                {documentId && (
+                  <button
+                    onClick={() => setIsDedupOpen(true)}
+                    title={
+                      duplicateCount && duplicateCount > 0
+                        ? `Ditemukan ${duplicateCount} potensi deteksi duplikat. Klik untuk meninjau dan menggabungkan.`
+                        : 'Pindai dan satukan deteksi duplikat yang tumpang tindih'
+                    }
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: `1px solid ${duplicateCount && duplicateCount > 0 ? '#eab308' : 'var(--border)'}`,
+                      background: duplicateCount && duplicateCount > 0 ? 'rgba(234, 179, 8, 0.12)' : 'var(--surface)',
+                      color: duplicateCount && duplicateCount > 0 ? '#b45309' : 'var(--foreground-muted)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Stack size={11} weight="bold" />
+                    {duplicateCount && duplicateCount > 0 ? `Deduplicate (${duplicateCount})` : 'Deduplicate'}
+                  </button>
+                )}
                 <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', background: 'var(--surface-muted)', padding: '1px 6px', borderRadius: 999 }}>
                   {filteredDetections.length} / {listSource.length}
                 </span>
@@ -2274,6 +2325,19 @@ function DetectionContent() {
           setSelectedId(newDetection.id);
         }}
       />
+      {/* ── Deduplicate Modal ─────────────────────────────────────────── */}
+      {documentId && (
+        <DedupModal
+          isOpen={isDedupOpen}
+          documentId={documentId}
+          documentName={activeDoc?.filename}
+          onClose={() => setIsDedupOpen(false)}
+          onSuccess={(_deletedCount) => {
+            loadDetections();
+            if (documentId) checkDuplicates(documentId);
+          }}
+        />
+      )}
     </div>
   );
 }
