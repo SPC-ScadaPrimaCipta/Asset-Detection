@@ -1488,8 +1488,9 @@ function DetectionContent() {
                     preserveAspectRatio="none"
                     style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
                   >
-                    {pageDetections
+                    {[...pageDetections]
                       .filter((d) => d.bbox_x !== null && d.bbox_y !== null && (showAllBboxes || d.id === selectedId))
+                      .sort((a, b) => (a.id === selectedId ? 1 : b.id === selectedId ? -1 : 0))
                       .map((d) => {
                         const isSel = d.id === selectedId;
                         const isDraggingThis = dragBbox?.id === d.id;
@@ -1579,25 +1580,33 @@ function DetectionContent() {
                               rx={1}
                             />
                             {/* Label Tag Header */}
-                            <rect
-                              x={x}
-                              y={y > 18 ? y - 14 : y + h + 2}
-                              width={Math.min(100, Math.max(w, 40))}
-                              height={12}
-                              rx={2}
-                              fill={labelBg}
-                              opacity={isSel ? 1 : 0.88}
-                            />
-                            <text
-                              x={x + 3}
-                              y={(y > 18 ? y - 14 : y + h + 2) + 9}
-                              fill="#fff"
-                              fontSize={isSel ? 9 : 8}
-                              fontFamily="ui-monospace, monospace"
-                              fontWeight={isSel ? 700 : 500}
-                            >
-                              {label.slice(0, 15)}
-                            </text>
+                            {(() => {
+                              const labelWidth = Math.max(w, Math.min(80, Math.max(26, label.slice(0, 15).length * 5.4 + 6)));
+                              const labelY = y > 16 ? y - 13 : y + h + 2;
+                              return (
+                                <>
+                                  <rect
+                                    x={x}
+                                    y={labelY}
+                                    width={labelWidth}
+                                    height={11}
+                                    rx={2}
+                                    fill={labelBg}
+                                    opacity={isSel ? 1 : 0.88}
+                                  />
+                                  <text
+                                    x={x + 3}
+                                    y={labelY + 8.5}
+                                    fill="#fff"
+                                    fontSize={isSel ? 8.5 : 7.5}
+                                    fontFamily="ui-monospace, monospace"
+                                    fontWeight={isSel ? 700 : 500}
+                                  >
+                                    {label.slice(0, 15)}
+                                  </text>
+                                </>
+                              );
+                            })()}
                             {/* Asset type sub-label when selected */}
                             {isSel && d.asset_tag && (
                               <>

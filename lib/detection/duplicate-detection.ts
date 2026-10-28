@@ -260,7 +260,13 @@ export function findDuplicates(
         // Near-identical geometry is the same symbol no matter what the two
         // lanes called it. Everything below 0.85 also needs tag agreement,
         // otherwise PI-232/PT-232 (different instruments on one tap) merge.
+        const isSmallSymbol = Math.max(a.bbox.width, a.bbox.height, b.bbox.width, b.bbox.height) <= 30;
+        const closeCentroid = dist <= (isSmallSymbol ? 10 : 20);
+        const heavyOverlap = containment >= 0.25 || iou >= 0.10;
+
         if (iou >= 0.85) {
+          isDuplicate = true;
+        } else if (typeCompatible(a.assetType, b.assetType) && closeCentroid && heavyOverlap) {
           isDuplicate = true;
         } else if (iou >= cfg.strongIou && tagsAgree) {
           isDuplicate = true;

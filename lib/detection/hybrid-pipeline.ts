@@ -407,8 +407,24 @@ async function runAiFallback(
         const iou = computeIoU(
           { x1: ex.x, y1: ex.y, x2: ex.x + ex.width, y2: ex.y + ex.height },
           { x1: gdBbox.x, y1: gdBbox.y, x2: gdBbox.x + gdBbox.width, y2: gdBbox.y + gdBbox.height },
-        ) >= mergeIou;
-        return iou;
+        );
+        if (iou >= mergeIou) return true;
+
+        // Small engineering symbols (valves, instruments) have small pixel areas
+        // where standard IoU collapses even on a tiny shift. Check proximity + containment.
+        const dist = Math.hypot(
+          ex.x + ex.width / 2 - (gdBbox.x + gdBbox.width / 2),
+          ex.y + ex.height / 2 - (gdBbox.y + gdBbox.height / 2),
+        );
+        const ix0 = Math.max(ex.x, gdBbox.x);
+        const iy0 = Math.max(ex.y, gdBbox.y);
+        const ix1 = Math.min(ex.x + ex.width, gdBbox.x + gdBbox.width);
+        const iy1 = Math.min(ex.y + ex.height, gdBbox.y + gdBbox.height);
+        const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+        const minArea = Math.min(ex.width * ex.height, gdBbox.width * gdBbox.height);
+        const containment = minArea > 0 ? inter / minArea : 0;
+
+        return dist <= 12 && (iou >= 0.10 || containment >= 0.25);
       });
 
       if (!overlaps) {

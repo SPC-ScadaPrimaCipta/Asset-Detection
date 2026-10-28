@@ -285,7 +285,24 @@ export function dedupeRegionDetections(
       const effectiveThreshold = sameUntaggedType && !sameTag
         ? iouThreshold * 0.85
         : iouThreshold;
-      return bboxIou1000(k.bbox, d.bbox) > effectiveThreshold;
+      const iou = bboxIou1000(k.bbox, d.bbox);
+      if (iou > effectiveThreshold) return true;
+
+      // Small symbol proximity check: region border splits and overlapping passes
+      // can produce slight coordinate offsets on tiny symbols.
+      const dist = Math.hypot(
+        k.bbox.x + k.bbox.width / 2 - (d.bbox.x + d.bbox.width / 2),
+        k.bbox.y + k.bbox.height / 2 - (d.bbox.y + d.bbox.height / 2),
+      );
+      const ix0 = Math.max(k.bbox.x, d.bbox.x);
+      const iy0 = Math.max(k.bbox.y, d.bbox.y);
+      const ix1 = Math.min(k.bbox.x + k.bbox.width, d.bbox.x + d.bbox.width);
+      const iy1 = Math.min(k.bbox.y + k.bbox.height, d.bbox.y + d.bbox.height);
+      const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+      const minArea = Math.min(k.bbox.width * k.bbox.height, d.bbox.width * d.bbox.height);
+      const containment = minArea > 0 ? inter / minArea : 0;
+
+      return dist <= 10 && (containment >= 0.30 || iou >= 0.15);
     });
 
     if (dupIdx === -1) {
