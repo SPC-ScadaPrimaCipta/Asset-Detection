@@ -122,21 +122,9 @@ export function deriveEquipmentNaming(
     }
   }
 
-  const upperShort = shortCode.toUpperCase();
-  let equipmentName = KNOWN_EQUIPMENT_NAMES[upperShort] || KNOWN_EQUIPMENT_NAMES[normType.toUpperCase()] || normType;
-
-  // If custom description exists and is longer/more informative, prefer it if appropriate
-  if (customDescription && customDescription.trim().length > 2 && customDescription.trim() !== assetType) {
-    // Only override if not generic noise
-    const cleanDesc = customDescription.trim();
-    if (!cleanDesc.match(/^[0-9\-_.]+$/)) {
-      equipmentName = cleanDesc;
-    }
-  }
-
   return {
-    shortType: upperShort,
-    equipmentName,
+    shortType: shortCode.toUpperCase(),
+    equipmentName: normType,
   };
 }
 

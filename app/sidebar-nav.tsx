@@ -83,7 +83,7 @@ export default function SidebarNav() {
                 display: 'block',
               }}
             >
-              Neuro.
+              TagFlow.
             </span>
             <span
               style={{
@@ -95,7 +95,7 @@ export default function SidebarNav() {
                 display: 'block',
               }}
             >
-              Asset Detection
+              AI Asset Detection Intelligence
             </span>
           </div>
         </Link>

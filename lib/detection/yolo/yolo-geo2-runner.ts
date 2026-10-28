@@ -442,10 +442,10 @@ export async function runYoloGeo2Page(
       },
       // Canonical pixel space (dual-write supported by detection repository)
       symbolBboxPx: {
-        x: item.pageBox.x1,
-        y: item.pageBox.y1,
-        width: boxW,
-        height: boxH,
+        x: Math.round(item.pageBox.x1),
+        y: Math.round(item.pageBox.y1),
+        width: Math.round(boxW),
+        height: Math.round(boxH),
       },
       pageDims: {
         pageWidth,

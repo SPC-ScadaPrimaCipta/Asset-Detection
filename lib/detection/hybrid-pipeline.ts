@@ -61,10 +61,10 @@ async function getVerifier() {
 /** Convert legacy 0-1000 bbox to pixel space */
 function normToPx(norm: { x: number; y: number; width: number; height: number }, pageW: number, pageH: number) {
   return {
-    x: (norm.x / 1000) * pageW,
-    y: (norm.y / 1000) * pageH,
-    width: (norm.width / 1000) * pageW,
-    height: (norm.height / 1000) * pageH,
+    x: Math.round((norm.x / 1000) * pageW),
+    y: Math.round((norm.y / 1000) * pageH),
+    width: Math.round((norm.width / 1000) * pageW),
+    height: Math.round((norm.height / 1000) * pageH),
   };
 }
 

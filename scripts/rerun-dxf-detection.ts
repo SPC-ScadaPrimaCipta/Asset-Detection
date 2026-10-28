@@ -65,6 +65,7 @@ if (!docArg) {
   console.error('Missing required argument: <filename_or_doc_id>');
   process.exit(1);
 }
+const targetDoc = docArg;
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
@@ -84,20 +85,20 @@ async function main() {
   // ── Find document ─────────────────────────────────────────────────────────
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let docResult = { rows: [] as unknown[] };
-  if (UUID_RE.test(docArg)) {
+  if (UUID_RE.test(targetDoc)) {
     docResult = await db.query(
       `SELECT * FROM documents WHERE id = $1 LIMIT 1`,
-      [docArg],
+      [targetDoc],
     );
   }
   if (docResult.rows.length === 0) {
     docResult = await db.query(
       `SELECT * FROM documents WHERE filename ILIKE $1 ORDER BY created_at DESC LIMIT 1`,
-      [`%${docArg}%`],
+      [`%${targetDoc}%`],
     );
   }
   if (docResult.rows.length === 0) {
-    console.error(`Document not found: ${docArg}`);
+    console.error(`Document not found: ${targetDoc}`);
     process.exit(1);
   }
   const doc = docResult.rows[0] as {

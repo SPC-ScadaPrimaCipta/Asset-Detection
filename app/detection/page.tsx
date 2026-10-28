@@ -20,6 +20,7 @@ import {
   Check,
   Tag,
   ArrowClockwise,
+  Trash,
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
 import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
@@ -150,6 +151,23 @@ function DetectionContent() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showAllBboxes, setShowAllBboxes] = useState(true);
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
+
+  // Drag Bbox State (Move / Resize)
+  const [dragBbox, setDragBbox] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    origW: number;
+    origH: number;
+    mode: 'move' | 'tl' | 'tr' | 'bl' | 'br';
+  } | null>(null);
+  const suppressClickRef = useRef(false);
 
   const viewerRef = useRef<HTMLDivElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -489,7 +507,37 @@ function DetectionContent() {
     }
   };
 
-  // Keyboard shortcut: Del or Backspace to reject currently selected detection
+  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await fetch(`/api/detections/${id}`, { method: 'DELETE' });
+      setDetections((prev) => prev.filter((d) => d.id !== id));
+      if (selectedId === id) setSelectedId(null);
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (err) {
+      console.error('[detection] delete failed:', err);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    try {
+      await Promise.all(ids.map((id) => fetch(`/api/detections/${id}`, { method: 'DELETE' })));
+      setDetections((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+      if (selectedId && selectedIds.has(selectedId)) setSelectedId(null);
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('[detection] bulk delete failed:', err);
+    }
+  };
+
+  // Keyboard shortcut: Del or Backspace to delete currently selected detection(s)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -501,14 +549,19 @@ function DetectionContent() {
         Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
       if (isInput || editingItem) return;
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
-        e.preventDefault();
-        handleReject(selectedId);
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.size > 0) {
+          e.preventDefault();
+          handleBulkDelete();
+        } else if (selectedId) {
+          e.preventDefault();
+          handleDelete(selectedId);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, editingItem]);
+  }, [selectedId, selectedIds, editingItem]);
 
   const handleOpenEdit = (item: Detection, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -1056,6 +1109,25 @@ function DetectionContent() {
             >
               <X size={12} weight="bold" /> Reject Selected
             </button>
+            <button
+              onClick={handleBulkDelete}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: '#dc2626',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+              title="Delete selected assets permanently (Shortcut: Del)"
+            >
+              <Trash size={12} weight="bold" /> Delete Selected (Del)
+            </button>
           </div>
         </div>
       )}
@@ -1235,7 +1307,40 @@ function DetectionContent() {
               }
             }}
             onMouseMove={(e) => {
-              if (isDrawingMode && drawingStart) {
+              if (dragBbox && imageContainerRef.current) {
+                const rect = imageContainerRef.current.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  const dx = ((e.clientX - dragBbox.startX) / rect.width) * 1000;
+                  const dy = ((e.clientY - dragBbox.startY) / rect.height) * 1000;
+                  let nx = dragBbox.origX;
+                  let ny = dragBbox.origY;
+                  let nw = dragBbox.origW;
+                  let nh = dragBbox.origH;
+
+                  if (dragBbox.mode === 'move') {
+                    nx = Math.max(0, Math.min(1000 - nw, Math.round(dragBbox.origX + dx)));
+                    ny = Math.max(0, Math.min(1000 - nh, Math.round(dragBbox.origY + dy)));
+                  } else if (dragBbox.mode === 'br') {
+                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
+                  } else if (dragBbox.mode === 'tl') {
+                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                    nw = dragBbox.origX + dragBbox.origW - nx;
+                    nh = dragBbox.origY + dragBbox.origH - ny;
+                  } else if (dragBbox.mode === 'tr') {
+                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                    nh = dragBbox.origY + dragBbox.origH - ny;
+                  } else if (dragBbox.mode === 'bl') {
+                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                    nw = dragBbox.origX + dragBbox.origW - nx;
+                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
+                  }
+                  setDragBbox((prev) => (prev ? { ...prev, x: nx, y: ny, w: nw, h: nh } : null));
+                  suppressClickRef.current = true;
+                }
+              } else if (isDrawingMode && drawingStart) {
                 if (!imageContainerRef.current) return;
                 const rect = imageContainerRef.current.getBoundingClientRect();
                 const currentX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
@@ -1250,7 +1355,35 @@ function DetectionContent() {
               }
             }}
             onMouseUp={() => {
-              if (isDrawingMode && drawingStart && currentDrawRect) {
+              if (dragBbox) {
+                const finalBbox = dragBbox;
+                setDragBbox(null);
+                const hasChanged =
+                  finalBbox.x !== finalBbox.origX ||
+                  finalBbox.y !== finalBbox.origY ||
+                  finalBbox.w !== finalBbox.origW ||
+                  finalBbox.h !== finalBbox.origH;
+
+                if (hasChanged) {
+                  setDetections((prev) =>
+                    prev.map((d) =>
+                      d.id === finalBbox.id
+                        ? { ...d, bbox_x: finalBbox.x, bbox_y: finalBbox.y, bbox_w: finalBbox.w, bbox_h: finalBbox.h }
+                        : d
+                    )
+                  );
+                  fetch(`/api/detections/${finalBbox.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      bbox_x: finalBbox.x,
+                      bbox_y: finalBbox.y,
+                      bbox_w: finalBbox.w,
+                      bbox_h: finalBbox.h,
+                    }),
+                  }).catch((err) => console.error('[detection] save bbox failed:', err));
+                }
+              } else if (isDrawingMode && drawingStart && currentDrawRect) {
                 if (currentDrawRect.w >= 8 && currentDrawRect.h >= 8) {
                   setPendingBbox({
                     x: Math.round(currentDrawRect.x),
@@ -1268,6 +1401,9 @@ function DetectionContent() {
               }
             }}
             onMouseLeave={() => {
+              if (dragBbox) {
+                setDragBbox(null);
+              }
               if (isDrawingMode) {
                 setDrawingStart(null);
                 setCurrentDrawRect(null);
@@ -1284,7 +1420,7 @@ function DetectionContent() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: isDrawingMode ? 'crosshair' : dragging ? 'grabbing' : 'grab',
+              cursor: isDrawingMode ? 'crosshair' : dragBbox ? 'move' : dragging ? 'grabbing' : 'grab',
               userSelect: 'none',
             }}
           >
@@ -1355,10 +1491,11 @@ function DetectionContent() {
                       .filter((d) => d.bbox_x !== null && d.bbox_y !== null && (showAllBboxes || d.id === selectedId))
                       .map((d) => {
                         const isSel = d.id === selectedId;
-                        const x = d.bbox_x!;
-                        const y = d.bbox_y!;
-                        const w = Math.max(10, d.bbox_w || 25);
-                        const h = Math.max(10, d.bbox_h || 25);
+                        const isDraggingThis = dragBbox?.id === d.id;
+                        const x = isDraggingThis ? dragBbox.x : d.bbox_x!;
+                        const y = isDraggingThis ? dragBbox.y : d.bbox_y!;
+                        const w = isDraggingThis ? dragBbox.w : Math.max(10, d.bbox_w || 25);
+                        const h = isDraggingThis ? dragBbox.h : Math.max(10, d.bbox_h || 25);
                         const isApproved = d.review_status === 'APPROVED' || d.detection_status === 'CONFIRMED';
                         const isRejected = d.review_status === 'REJECTED' || d.detection_status === 'REJECTED';
                         // Per-asset-type color; override for approved/rejected status
@@ -1372,9 +1509,13 @@ function DetectionContent() {
                         return (
                           <g
                             key={d.id}
-                            style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                            style={{ pointerEvents: 'all', cursor: isSel ? 'move' : 'pointer' }}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (suppressClickRef.current) {
+                                suppressClickRef.current = false;
+                                return;
+                              }
                               setSelectedId(d.id);
                               const idx = filteredDetections.findIndex((fd) => fd.id === d.id);
                               if (idx >= 0) {
@@ -1382,6 +1523,30 @@ function DetectionContent() {
                                 setListPage(targetListPage);
                               }
                               setTimeout(() => cardRefs.current[d.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+                            }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              suppressClickRef.current = false;
+                              const handle = (e.target as Element).getAttribute?.('data-handle') as 'tl' | 'tr' | 'bl' | 'br' | null;
+                              if (handle) {
+                                setDragBbox({
+                                  id: d.id,
+                                  x, y, w, h,
+                                  startX: e.clientX, startY: e.clientY,
+                                  origX: x, origY: y, origW: w, origH: h,
+                                  mode: handle,
+                                });
+                              } else if (isSel) {
+                                setDragBbox({
+                                  id: d.id,
+                                  x, y, w, h,
+                                  startX: e.clientX, startY: e.clientY,
+                                  origX: x, origY: y, origW: w, origH: h,
+                                  mode: 'move',
+                                });
+                              } else {
+                                setSelectedId(d.id);
+                              }
                             }}
                           >
                             {/* Selected glow ring */}
@@ -1456,6 +1621,31 @@ function DetectionContent() {
                                 </text>
                               </>
                             )}
+
+                            {/* Resize Handles - 4 corners, only on selected bbox */}
+                            {isSel && ([
+                              { m: 'tl', hx: x, hy: y, c: 'nwse-resize', t: 'Resize top-left' },
+                              { m: 'tr', hx: x + w, hy: y, c: 'nesw-resize', t: 'Resize top-right' },
+                              { m: 'bl', hx: x, hy: y + h, c: 'nesw-resize', t: 'Resize bottom-left' },
+                              { m: 'br', hx: x + w, hy: y + h, c: 'nwse-resize', t: 'Resize bottom-right' },
+                            ] as const).map((handle) => (
+                              <rect
+                                key={handle.m}
+                                data-handle={handle.m}
+                                x={handle.hx - 4}
+                                y={handle.hy - 4}
+                                width={8}
+                                height={8}
+                                fill="#fff"
+                                stroke={stroke}
+                                strokeWidth={1.5}
+                                vectorEffect="non-scaling-stroke"
+                                rx={1.5}
+                                style={{ cursor: handle.c, pointerEvents: 'all' }}
+                              >
+                                <title>{handle.t}</title>
+                              </rect>
+                            ))}
                           </g>
                         );
                       })}

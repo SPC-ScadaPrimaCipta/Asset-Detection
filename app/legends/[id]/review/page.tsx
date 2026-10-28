@@ -95,6 +95,7 @@ export default function LegendReviewPage() {
   const [editForm, setEditForm] = useState<Partial<LegendSymbol>>({});
   const [finalizing, setFinalizing] = useState(false);
   const [reparsing, setReparsing] = useState(false);
+  const [reparseProgress, setReparseProgress] = useState<{ pct: number; message: string } | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
   const [validatingAll, setValidatingAll] = useState(false);
   const [error, setError] = useState('');
@@ -564,16 +565,73 @@ export default function LegendReviewPage() {
   }, [selectedId, editingId, addModalOpen, confirmDeleteId, rejectModalId, symbols, legendId]);
 
   const handleReparse = async () => {
-    setReparsing(true); setError('');
+    setReparsing(true);
+    setError('');
+    setReparseProgress({ pct: 5, message: 'Memulai proses Re-parse...' });
     try {
-      const r = await fetch(`/api/legends/${legendId}/reparse`, { method: 'POST' });
-      const d = await r.json() as any; if (!r.ok) throw new Error(d.error || 'Re-parse failed');
-      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`); if (sr.ok) { const j = await sr.json(); setSymbols(Array.isArray(j) ? j : []); }
-      setSelectedId(null); setEditingId(null); setRecropTargetId(null); setRejectModalId(null); setConfirmDeleteId(null);
-      setDrawMode(false); setAddModalOpen(false); setAddModalBbox(null); setSymPage(1);
+      const r = await fetch(`/api/legends/${legendId}/reparse?stream=true`, {
+        method: 'POST',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        let errMsg = text.slice(0, 200);
+        try {
+          const j = JSON.parse(text);
+          errMsg = j.error || j.detail || errMsg;
+        } catch {}
+        throw new Error(errMsg || `Re-parse failed (${r.status})`);
+      }
+
+      if (r.body) {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.stage === 'error') {
+                throw new Error(data.error || data.message || 'Re-parse failed');
+              }
+              if (typeof data.pct === 'number') {
+                setReparseProgress({ pct: data.pct, message: data.message || '' });
+              }
+            } catch (jsonErr: any) {
+              if (jsonErr.message && jsonErr.message !== 'Unexpected end of JSON input') throw jsonErr;
+            }
+          }
+        }
+      }
+
+      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
+      if (sr.ok) {
+        const j = await sr.json();
+        setSymbols(Array.isArray(j) ? j : []);
+      }
+      setSelectedId(null);
+      setEditingId(null);
+      setRecropTargetId(null);
+      setRejectModalId(null);
+      setConfirmDeleteId(null);
+      setDrawMode(false);
+      setAddModalOpen(false);
+      setAddModalBbox(null);
+      setSymPage(1);
       setSuccessMsg('Legend re-parsed successfully. Symbol list refreshed.');
       setTimeout(() => setSuccessMsg(''), 2500);
-    } catch (e: any) { setError(e.message); } finally { setReparsing(false); }
+    } catch (e: any) {
+      setError(e.message || 'Re-parse failed');
+    } finally {
+      setReparsing(false);
+      setReparseProgress(null);
+    }
   };
   const handleSaveEdit = async () => {
     if (!editForm.asset_type?.trim()) { setError('Asset type required'); return; }
@@ -840,6 +898,21 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
           </button>
         </div>
       </div>
+
+      {reparsing && reparseProgress && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--primary)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+            <span style={{ color: 'var(--foreground)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ArrowCounterClockwise size={13} style={{ animation: 'spin 1s linear infinite' }} />
+              {reparseProgress.message || 'Memproses Re-parse...'}
+            </span>
+            <span style={{ color: 'var(--primary)', fontWeight: 700, fontFamily: 'monospace' }}>{reparseProgress.pct}%</span>
+          </div>
+          <div style={{ width: '100%', height: 6, background: 'var(--surface-muted)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${reparseProgress.pct}%`, background: 'var(--primary)', borderRadius: 999, transition: 'width 250ms ease-out' }} />
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>

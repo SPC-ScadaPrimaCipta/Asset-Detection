@@ -250,6 +250,8 @@ export async function ensureSizeColumn(db: DbLike): Promise<void> {
   try {
     await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
     await db.query('ALTER TABLE assets ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS component_name TEXT', []);
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS description TEXT', []);
     sizeColumnEnsured = true;
   } catch {
     // Non-fatal (e.g. read-only replica or already running)

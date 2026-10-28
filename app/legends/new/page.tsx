@@ -105,6 +105,7 @@ export default function NewLegendPage() {
   const [uploadName, setUploadName] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ pct: number; message: string } | null>(null);
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -172,22 +173,68 @@ export default function NewLegendPage() {
     }
     setUploading(true);
     setUploadError('');
+    setUploadProgress({ pct: 5, message: 'Mengunggah file PDF...' });
     try {
       const formData = new FormData();
       formData.append('file', uploadFile);
       formData.append('name', uploadName.trim());
 
-      const res = await fetch('/api/legends/upload', { method: 'POST', body: formData });
+      const res = await fetch('/api/legends/upload?stream=true', {
+        method: 'POST',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        body: formData,
+      });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Upload failed (${res.status})`);
+        const text = await res.text();
+        let errMsg = text.slice(0, 200);
+        try {
+          const j = JSON.parse(text);
+          errMsg = j.error || j.detail || errMsg;
+        } catch {}
+        throw new Error(errMsg || `Upload failed (${res.status})`);
       }
-      const data = await res.json();
-      router.push(`/legends/${data.id}/review`);
+
+      let createdId: string | null = null;
+      if (res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.stage === 'error') {
+                throw new Error(data.error || data.message || 'Scan error');
+              }
+              if (typeof data.pct === 'number') {
+                setUploadProgress({ pct: data.pct, message: data.message || '' });
+              }
+              if (data.stage === 'done' && data.result?.id) {
+                createdId = data.result.id;
+              }
+            } catch (jsonErr: any) {
+              if (jsonErr.message && jsonErr.message !== 'Unexpected end of JSON input') throw jsonErr;
+            }
+          }
+        }
+      }
+
+      if (createdId) {
+        router.push(`/legends/${createdId}/review`);
+      } else {
+        router.push('/legends');
+      }
     } catch (err: any) {
       setUploadError(err.message ?? 'Upload failed');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -330,6 +377,21 @@ export default function NewLegendPage() {
               * Dokumen Legend wajib 1 halaman. Pisahkan halaman legend terlebih dahulu jika PDF memiliki beberapa halaman.
             </p>
           </div>
+
+          {/* Progress Bar */}
+          {uploading && uploadProgress && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--primary)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                <span style={{ color: 'var(--foreground)', fontWeight: 600 }}>
+                  {uploadProgress.message || 'Memproses Legend...'}
+                </span>
+                <span style={{ color: 'var(--primary)', fontWeight: 700, fontFamily: 'monospace' }}>{uploadProgress.pct}%</span>
+              </div>
+              <div style={{ width: '100%', height: 6, background: 'var(--surface-muted)', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${uploadProgress.pct}%`, background: 'var(--primary)', borderRadius: 999, transition: 'width 250ms ease-out' }} />
+              </div>
+            </div>
+          )}
 
           {/* Error */}
           {uploadError && (

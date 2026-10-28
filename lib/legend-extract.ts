@@ -551,10 +551,19 @@ function deduplicateSymbols(
  *
  * Result: much tighter, more accurate bboxes.
  */
+export type LegendProgressCallback = (info: {
+  stage: string;
+  current: number;
+  total: number;
+  message: string;
+  pct?: number;
+}) => void;
+
 export async function extractLegendSymbolsFromPng(
   pngBase64: string,
   page: number,
   pngBuffer?: Buffer,
+  onProgress?: LegendProgressCallback,
 ): Promise<ParsedSymbol[]> {
   const { client, candidates, cfg, tuning } = await getModelWithFallback();
   if (cfg.provider === 'deepseek') throw new Error('DeepSeek cannot analyse images — switch provider to Gemini, OpenAI, or Anthropic in Settings');
@@ -599,6 +608,13 @@ export async function extractLegendSymbolsFromPng(
   // Process regions sequentially to avoid rate limiting
   for (let i = 0; i < regions.length; i++) {
     const region = regions[i];
+    onProgress?.({
+      stage: 'regions',
+      current: i + 1,
+      total: regions.length,
+      message: `Menganalisis region ${i + 1} dari ${regions.length}...`,
+      pct: Math.round(20 + ((i + 1) / regions.length) * 55),
+    });
 
     // Whole provider outage: every model has tripped its breaker. Stop the page
     // here instead of walking the remaining regions into guaranteed failures.
@@ -712,6 +728,13 @@ export async function extractLegendSymbolsFromPng(
 
   // ── Catch-up pass: full page scan to find anything missed ───────────────────
   // Send full page with list of already-detected names so model only returns NEW ones
+  onProgress?.({
+    stage: 'catchup',
+    current: 1,
+    total: 1,
+    message: 'Memindai simbol kecil / terlewat (catch-up pass)...',
+    pct: 80,
+  });
   try {
     if (cfg.provider === 'gemini' && isChainUnavailable(candidates, jsonIncompatible, guard.breaker)) {
       throw new Error('skipping catch-up: no usable model left (all circuits open)');
