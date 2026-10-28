@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getCurrentUser, generateShareCode } from '@/lib/auth';
+import { getCurrentUser, generateShareCode, isPrivileged } from '@/lib/auth';
 
 export async function POST(
   request: NextRequest,
@@ -15,7 +15,7 @@ export async function POST(
     }
 
     const ownerId = existing.rows[0].owner_id;
-    if (ownerId && user && ownerId !== user.id && user.role !== 'ADMIN') {
+    if (ownerId && user && ownerId !== user.id && !isPrivileged(user)) {
       return NextResponse.json({ error: 'Hanya pemilik yang dapat me-generate share code' }, { status: 403 });
     }
 

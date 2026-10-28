@@ -3,11 +3,21 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { pool } from './db';
 
+export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'USER';
+
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'ADMIN' | 'USER';
+  role: UserRole;
+}
+
+export function isSuperAdmin(user?: AuthUser | null): boolean {
+  return user?.role === 'SUPERADMIN';
+}
+
+export function isPrivileged(user?: AuthUser | null): boolean {
+  return user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 }
 
 export const SESSION_COOKIE_NAME = 'asset_session';

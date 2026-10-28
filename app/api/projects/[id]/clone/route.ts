@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
-import { getCurrentUser, generateShareCode } from '@/lib/auth';
+import { getCurrentUser, generateShareCode, isPrivileged } from '@/lib/auth';
 
 export async function POST(
   request: NextRequest,
@@ -26,7 +26,7 @@ export async function POST(
     const srcProj = projRes.rows[0];
 
     // Check visibility / permission
-    if (srcProj.visibility === 'PRIVATE' && srcProj.owner_id && srcProj.owner_id !== user.id && user.role !== 'ADMIN') {
+    if (srcProj.visibility === 'PRIVATE' && srcProj.owner_id && srcProj.owner_id !== user.id && !isPrivileged(user)) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Tidak memiliki izin untuk meng-clone project private ini' }, { status: 403 });
     }

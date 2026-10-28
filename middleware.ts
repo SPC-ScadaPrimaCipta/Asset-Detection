@@ -36,9 +36,14 @@ export function middleware(request: NextRequest) {
     } catch {}
   }
 
-  const isAuthPage = pathname === '/login' || pathname === '/register';
+  // If someone attempts to access /register directly, redirect to login
+  if (pathname === '/register') {
+    return NextResponse.redirect(new URL('/login?notice=registration_disabled', request.url));
+  }
 
-  // 4. If logged-in user visits /login or /register, redirect to dashboard /
+  const isAuthPage = pathname === '/login';
+
+  // 4. If logged-in user visits /login, redirect to dashboard /
   if (hasValidSession && isAuthPage) {
     return NextResponse.redirect(new URL('/', request.url));
   }

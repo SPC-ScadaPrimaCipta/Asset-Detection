@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
+import { Sparkles, ArrowRight, Lock, Mail, AlertCircle, Info } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +10,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('notice') === 'registration_disabled' || params.get('notice') === 'contact_admin') {
+        setNotice('Pendaftaran mandiri dinonaktifkan. Akun baru dikelola langsung oleh Super Administrator.');
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +95,28 @@ export default function LoginPage() {
             Platform AI Automatic Asset Detection untuk P&ID
           </p>
         </div>
+
+        {/* Notice message */}
+        {notice && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(52, 81, 209, 0.08)',
+              border: '1px solid rgba(52, 81, 209, 0.25)',
+              color: 'var(--primary, #3451D1)',
+              padding: '10px 12px',
+              borderRadius: 'var(--radius-md, 8px)',
+              fontSize: 13,
+              marginBottom: 16,
+              lineHeight: 1.4,
+            }}
+          >
+            <Info size={16} style={{ flexShrink: 0 }} />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
@@ -240,21 +271,12 @@ export default function LoginPage() {
             paddingTop: 18,
             borderTop: '1px solid var(--border)',
             textAlign: 'center',
-            fontSize: 13,
+            fontSize: 12,
             color: 'var(--foreground-muted)',
+            lineHeight: 1.5,
           }}
         >
-          Belum punya akun?{' '}
-          <Link
-            href="/register"
-            style={{
-              color: 'var(--primary, #3451D1)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            Daftar Sekarang
-          </Link>
+          Pendaftaran akun baru dikelola terpusat oleh <strong style={{ color: 'var(--foreground)' }}>Super Administrator</strong>. Hubungi administrator jika membutuhkan akses.
         </div>
       </div>
     </div>

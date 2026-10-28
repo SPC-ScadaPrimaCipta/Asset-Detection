@@ -493,7 +493,7 @@ export default function ProjectsPage() {
                 </tr>
               ) : (
                 projects.slice((page - 1) * pageSize, page * pageSize).map((p) => {
-                  const isOwner = currentUser && (p.owner_id === currentUser.id || currentUser.role === 'ADMIN');
+                  const isOwner = currentUser && (p.owner_id === currentUser.id || currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN');
                   return (
                     <tr
                       key={p.id}

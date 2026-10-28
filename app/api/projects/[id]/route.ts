@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isPrivileged } from '@/lib/auth';
 
 export async function GET(
   _request: NextRequest,
@@ -49,8 +49,8 @@ export async function PUT(
     }
 
     const currentProject = existing.rows[0];
-    // Permission check: if project has owner and logged in user is different and not admin
-    if (currentProject.owner_id && user && currentProject.owner_id !== user.id && user.role !== 'ADMIN') {
+    // Permission check: if project has owner and logged in user is different and not admin/superadmin
+    if (currentProject.owner_id && user && currentProject.owner_id !== user.id && !isPrivileged(user)) {
       return NextResponse.json({ error: 'Hanya pemilik proyek yang dapat mengubah pengaturan proyek' }, { status: 403 });
     }
 
@@ -103,7 +103,7 @@ export async function DELETE(
     }
 
     const projectOwner = existing.rows[0].owner_id;
-    if (projectOwner && user && projectOwner !== user.id && user.role !== 'ADMIN') {
+    if (projectOwner && user && projectOwner !== user.id && !isPrivileged(user)) {
       return NextResponse.json({ error: 'Hanya pemilik yang dapat menghapus proyek ini' }, { status: 403 });
     }
 
