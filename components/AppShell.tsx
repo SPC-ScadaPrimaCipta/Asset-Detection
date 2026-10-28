@@ -11,7 +11,7 @@ import { useUser } from '@/components/UserContext';
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useUser();
-  const isAuthPage = pathname === '/login' || pathname === '/register';
+  const isAuthPage = pathname === '/login';
   const isDashboard = pathname === '/';
 
   if (isAuthPage) {

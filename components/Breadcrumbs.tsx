@@ -43,7 +43,7 @@ export default function Breadcrumbs({ style }: { style?: React.CSSProperties } =
   const rawSegments = pathname.split('/').filter(Boolean);
 
   // Do not show on auth pages or dashboard root
-  if (pathname === '/login' || pathname === '/register' || rawSegments.length === 0) {
+  if (pathname === '/login' || rawSegments.length === 0) {
     return null;
   }
 
