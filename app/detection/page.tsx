@@ -805,6 +805,7 @@ function DetectionContent() {
           </select>
 
           <LegendSelector
+            projectId={selectedProjectId || undefined}
             value={selectedLegendId}
             onChange={(val) => {
               if (typeof val === 'string') setSelectedLegendId(val);

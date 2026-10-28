@@ -10,6 +10,7 @@ export interface LegendOption {
 }
 
 export interface LegendSelectorProps {
+  projectId?: string;
   legends?: LegendOption[];
   legendIds?: string[];
   onChange?: (legendIds: string[] | string | null) => void;
@@ -51,6 +52,7 @@ const fieldLabelStyle: React.CSSProperties = {
 };
 
 export function LegendSelector({
+  projectId,
   legends: propLegends,
   legendIds: propLegendIds,
   onChange,
@@ -68,7 +70,8 @@ export function LegendSelector({
   // Automatically fetch legends if none were provided via props
   useEffect(() => {
     if (!propLegends || propLegends.length === 0) {
-      fetch('/api/legends')
+      const url = projectId ? `/api/legends?project_id=${projectId}` : '/api/legends';
+      fetch(url)
         .then((r) => r.json())
         .then((data) => {
           if (Array.isArray(data)) {
@@ -83,7 +86,7 @@ export function LegendSelector({
         })
         .catch((err) => console.error('[LegendSelector] failed to load legends:', err));
     }
-  }, [propLegends]);
+  }, [propLegends, projectId]);
 
   const legends: LegendOption[] = Array.isArray(propLegends) && propLegends.length > 0
     ? propLegends
