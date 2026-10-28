@@ -2,7 +2,7 @@
 
 | Task ID | Task Description | Status |
 |---|---|---|
-| TASK-01 | Database migration (`sql/migrate-superadmin.sql`, `scripts/migrate-superadmin.ts`): users check constraint update and new Superadmin account seeding (`superadmin@assetdetection.local`) | PENDING |
+| TASK-01 | Database migration (`sql/migrate-superadmin.sql`, `scripts/migrate-superadmin.ts`): users check constraint update and new Superadmin account seeding (`superadmin@assetdetection.local`) | DONE |
 | TASK-02 | Auth helpers & public registration lockdown (`lib/auth.ts`, `middleware.ts`, `app/login/page.tsx`, `app/api/auth/register/route.ts`): add `isSuperAdmin` & `isPrivileged`, redirect `/register` to `/login`, remove self-register links | PENDING |
 | TASK-03 | User Context & Dynamic Greeting (`components/UserContext.tsx`, `app/layout.tsx`, `components/AppShell.tsx`, `components/Header.tsx`, `app/sidebar-nav.tsx`): display logged-in username in Header ("Welcome Back, [Username]") | PENDING |
 | TASK-04 | Global Breadcrumbs system & Sidebar rename (`components/Breadcrumbs.tsx`, `components/AppShell.tsx`, `app/sidebar-nav.tsx`): rename "Overview" to "Dashboard", auto-map route breadcrumbs | PENDING |
