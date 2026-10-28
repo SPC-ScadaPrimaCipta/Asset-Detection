@@ -399,3 +399,4 @@ Expected: Build succeeds with all pages static/dynamic compiled cleanly.
 ```bash
 git commit --allow-empty -m "chore: verified superadmin crud, greeting, and breadcrumbs"
 ```
+
