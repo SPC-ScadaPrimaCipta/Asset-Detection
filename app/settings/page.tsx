@@ -486,10 +486,34 @@ export default function SettingsPage() {
 
         {/* Gemini Configuration */}
         <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
-              Google Gemini {settings?.has_gemini_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
-            </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
+                Google Gemini {settings?.has_gemini_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+              </h2>
+              {formData.ai_provider === 'gemini' ? (
+                <span style={{ fontSize: '11px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  Active Provider
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormData(f => ({ ...f, ai_provider: 'gemini' }))}
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--primary)',
+                    background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+                    border: '1px solid var(--primary)',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  Set as Active
+                </button>
+              )}
+            </div>
             <button
               onClick={() => handleScan('gemini')}
               disabled={scanning || (!formData.gemini_api_key && !settings?.has_gemini_key)}
@@ -541,10 +565,34 @@ export default function SettingsPage() {
 
         {/* OpenAI Configuration */}
         <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
-              OpenAI (ChatGPT) {settings?.has_openai_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
-            </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
+                OpenAI (ChatGPT) {settings?.has_openai_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+              </h2>
+              {formData.ai_provider === 'openai' ? (
+                <span style={{ fontSize: '11px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  Active Provider
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormData(f => ({ ...f, ai_provider: 'openai' }))}
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--primary)',
+                    background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+                    border: '1px solid var(--primary)',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  Set as Active
+                </button>
+              )}
+            </div>
             <button
               onClick={() => handleScan('openai')}
               disabled={scanning || (!formData.openai_api_key && !settings?.has_openai_key)}
@@ -617,10 +665,34 @@ export default function SettingsPage() {
 
         {/* Anthropic Configuration */}
         <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
-              Anthropic (Claude) {settings?.has_anthropic_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
-            </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
+                Anthropic (Claude) {settings?.has_anthropic_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+              </h2>
+              {formData.ai_provider === 'anthropic' ? (
+                <span style={{ fontSize: '11px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  Active Provider
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormData(f => ({ ...f, ai_provider: 'anthropic' }))}
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--primary)',
+                    background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+                    border: '1px solid var(--primary)',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  Set as Active
+                </button>
+              )}
+            </div>
             <button
               onClick={() => handleScan('anthropic')}
               disabled={scanning || (!formData.anthropic_api_key && !settings?.has_anthropic_key)}
@@ -677,10 +749,34 @@ export default function SettingsPage() {
 
         {/* DeepSeek Configuration */}
         <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)' }}>
-              DeepSeek {settings?.has_deepseek_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
-            </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
+                DeepSeek {settings?.has_deepseek_key && <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 'normal', marginLeft: '6px' }}>(Key configured)</span>}
+              </h2>
+              {formData.ai_provider === 'deepseek' ? (
+                <span style={{ fontSize: '11px', background: 'var(--primary)', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                  Active Provider
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormData(f => ({ ...f, ai_provider: 'deepseek' }))}
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--primary)',
+                    background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+                    border: '1px solid var(--primary)',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  Set as Active
+                </button>
+              )}
+            </div>
             <button
               onClick={() => handleScan('deepseek')}
               disabled={scanning || (!formData.deepseek_api_key && !settings?.has_deepseek_key)}

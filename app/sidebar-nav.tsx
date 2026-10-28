@@ -33,6 +33,33 @@ export default function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, refreshUser } = useUser();
+  const [engineInfo, setEngineInfo] = React.useState<{ provider: string; model: string }>({
+    provider: 'AI Engine',
+    model: '',
+  });
+
+  React.useEffect(() => {
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.ai_provider) {
+          const prov = String(data.ai_provider);
+          const model =
+            prov === 'openai'
+              ? data.openai_model
+              : prov === 'gemini'
+              ? data.gemini_model
+              : prov === 'anthropic'
+              ? data.anthropic_model
+              : data.deepseek_model;
+          setEngineInfo({
+            provider: prov === 'openai' ? 'OpenAI' : prov.charAt(0).toUpperCase() + prov.slice(1),
+            model: model || '',
+          });
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
 
   const handleLogout = async () => {
     try {
@@ -214,7 +241,7 @@ export default function SidebarNav() {
           <span style={{ fontSize: 12, fontWeight: 600, color: '#FFFFFF' }}>AI Detection Engine</span>
         </div>
         <p style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.85)', margin: '0 0 12px', lineHeight: 1.4 }}>
-          Gemini Vision & queue worker active for P&ID extraction.
+          {engineInfo.provider} {engineInfo.model ? `(${engineInfo.model})` : ''} & queue worker active for P&ID extraction.
         </p>
         <Link href="/settings" style={{ textDecoration: 'none', display: 'block' }}>
           <button
