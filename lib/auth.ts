@@ -134,3 +134,15 @@ export const sessionCookieOptions = {
   sameSite: 'lax' as const,
   path: '/',
 };
+
+/**
+ * Generate a random 8-char share code: PRJ-XXXX
+ */
+export function generateShareCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'PRJ-';
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
