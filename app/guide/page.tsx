@@ -614,6 +614,9 @@ export default function UserGuidePage() {
             borderRadius: 'var(--radius-card, 16px)',
             boxShadow: 'var(--shadow-card)',
             padding: '20px',
+            maxHeight: 'calc(100vh - 48px)',
+            overflowY: 'auto',
+            zIndex: 10,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', paddingBottom: '10px', borderBottom: '1px solid var(--border)' }}>
