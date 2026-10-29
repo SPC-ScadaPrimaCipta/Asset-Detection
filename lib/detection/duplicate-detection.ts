@@ -79,7 +79,7 @@ export interface DuplicateResult {
 }
 
 /** Type values that carry no information and must act as a wildcard in matching. */
-const JUNK_TYPE_RE = /^(unknown|iso|pip|niso|other|misc|n\/a|-|null|undefined)$/i;
+const JUNK_TYPE_RE = /^(unknown|iso|pip|niso|other|misc|n\/a|-|null|undefined|equipment|generic|item|asset)$/i;
 
 export function isJunkAssetType(type: string | null | undefined): boolean {
   const t = (type ?? '').trim();
@@ -244,6 +244,9 @@ export function findDuplicates(
 
       const bTag = normalizeTag(b.assetTag);
       const sameTag = aTag !== '' && aTag === bTag;
+      const aPrefix = aTag.match(/^[A-Z]+/)?.[0] ?? '';
+      const bPrefix = bTag.match(/^[A-Z]+/)?.[0] ?? '';
+      const samePrefix = aPrefix !== '' && aPrefix === bPrefix;
 
       let isDuplicate = false;
 
@@ -257,31 +260,36 @@ export function findDuplicates(
           oneTagMissing ||
           (aTag !== '' && bTag !== '' && tagSimilarity(aTag, bTag) >= 0.85);
 
-        // Near-identical geometry is the same symbol no matter what the two
-        // lanes called it. Everything below 0.85 also needs tag agreement,
-        // otherwise PI-232/PT-232 (different instruments on one tap) merge.
+        // Near-identical geometry is the same symbol no matter what the two lanes called it.
         const isSmallSymbol = Math.max(a.bbox.width, a.bbox.height, b.bbox.width, b.bbox.height) <= 30;
-        const closeCentroid = dist <= (isSmallSymbol ? 10 : 20);
-        const heavyOverlap = containment >= 0.25 || iou >= 0.10;
+        const closeCentroid = dist <= (isSmallSymbol ? 15 : 25);
+        const heavyOverlap = isSmallSymbol
+          ? (containment >= 0.15 || iou >= 0.08)
+          : (containment >= 0.25 || iou >= 0.10);
 
         if (iou >= 0.85) {
+          // Strong IoU: physical symbol detected twice regardless of tag/type drift
           isDuplicate = true;
-        } else if (typeCompatible(a.assetType, b.assetType) && closeCentroid && heavyOverlap) {
+        } else if (sameTag && (dist < cfg.tagCentroid || heavyOverlap || containment >= 0.5)) {
+          // Identical tag on the same sheet within spatial proximity or overlapping.
+          // AI lanes (e.g. YOLO vs Gemini) frequently disagree on type (DIESEL ENGINE vs Equipment).
+          // If tags and page match and geometry is in proximity, they represent the same asset.
+          isDuplicate = true;
+        } else if (isSmallSymbol && samePrefix && typeCompatible(a.assetType, b.assetType) && closeCentroid && heavyOverlap) {
+          // Small equipment symbols (e.g. valves) with auto-assigned sequential tags of the same prefix (V-042 vs V-018)
+          isDuplicate = true;
+        } else if (tagsAgree && typeCompatible(a.assetType, b.assetType) && closeCentroid && heavyOverlap) {
           isDuplicate = true;
         } else if (iou >= cfg.strongIou && tagsAgree) {
           isDuplicate = true;
-        } else if (sameTag && typeCompatible(a.assetType, b.assetType)) {
-          // A nested box is only trusted when the tag agrees — otherwise it is
-          // an instrument drawn inside a vessel, not a duplicate.
-          isDuplicate = iou >= cfg.tagIou || containment >= 0.85 || dist < cfg.tagCentroid;
         } else if (aBase && aBase === (bTag ? tagBase(bTag) : '') && iou >= cfg.tagBaseIou) {
           // OCR suffix drift: PCV-003 vs PCV-003B on the same symbol.
           isDuplicate = true;
         } else if (!aTag && !bTag && iou >= cfg.untaggedIou) {
           isDuplicate = true;
         }
-      } else if (sameTag && typeCompatible(a.assetType, b.assetType)) {
-        // No geometry to disprove it — same tag + compatible type on the same page.
+      } else if (sameTag) {
+        // No geometry to disprove it — same tag on the same page.
         isDuplicate = true;
       }
 

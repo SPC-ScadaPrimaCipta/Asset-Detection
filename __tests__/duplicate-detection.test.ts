@@ -169,6 +169,15 @@ describe('findDuplicates', () => {
     ]);
     expect(res.duplicateOf.get('a')).toBe('b');
   });
+
+  it('marks duplicate with same tag on same sheet within centroid distance even when type labels disagree', () => {
+    const res = findDuplicates([
+      row({ id: 'a', assetTag: 'W-0201', assetType: 'Equipment', bbox: { x: 617, y: 553, width: 23, height: 20 }, confidence: 0.8 }),
+      row({ id: 'b', assetTag: 'W-0201', assetType: 'DIESEL ENGINE', bbox: { x: 617, y: 565, width: 20, height: 16 }, confidence: 0.98 }),
+    ]);
+    expect(res.duplicateIds.has('a')).toBe(true);
+    expect(res.groups[0].winnerId).toBe('b');
+  });
 });
 
 describe('type helpers', () => {
@@ -176,6 +185,8 @@ describe('type helpers', () => {
     expect(isJunkAssetType('iso')).toBe(true);
     expect(isJunkAssetType('niso')).toBe(true);
     expect(isJunkAssetType('UNKNOWN')).toBe(true);
+    expect(isJunkAssetType('Equipment')).toBe(true);
+    expect(isJunkAssetType('generic')).toBe(true);
     expect(isJunkAssetType('valve.general.iso')).toBe(true);
     expect(isJunkAssetType('Valve')).toBe(false);
   });

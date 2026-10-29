@@ -69,3 +69,4 @@ labels.zip
 # Scratch directory (temporary debug/test scripts)
 /scratch/
 
+/.playwright-mcp
