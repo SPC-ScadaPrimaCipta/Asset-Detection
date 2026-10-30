@@ -11,3 +11,4 @@ async function findT01() {
   console.log('Detections:', r.rows);
 }
 findT01().then(() => process.exit(0)).catch(console.error);
+
