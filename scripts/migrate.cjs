@@ -364,6 +364,17 @@ async function migrate() {
       console.warn('  018 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 020: Detection jobs user_id & queue index
+    try {
+      const queueSql = join(__dirname, '..', 'sql', 'migrate-detection-jobs-user.sql');
+      if (existsSync(queueSql)) {
+        await p.query(readFileSync(queueSql, 'utf-8'));
+        console.log('  020: Detection jobs user_id & queue index OK');
+      }
+    } catch (e) {
+      console.warn('  020 migration warning (non-fatal):', e.message);
+    }
+
     // Migration 019: Auth, Project Visibility, and Scoped Legends
     try {
       const authSql = join(__dirname, '..', 'sql', 'migrate-auth-and-visibility.sql');

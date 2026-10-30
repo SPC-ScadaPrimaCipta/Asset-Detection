@@ -67,8 +67,8 @@ export default function SidebarNav() {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
       await refreshUser();
-      router.push('/login');
-      router.refresh();
+      window.location.href = '/login';
+
     } catch {}
   };
 
@@ -100,22 +100,20 @@ export default function SidebarNav() {
             marginBottom: 20,
           }}
         >
-          {/* 3D Cube Icon */}
-          <div
+          {/* TagFlow Logo */}
+          <img
+            src="/logo.svg"
+            alt="TagFlow Logo"
+            width={42}
+            height={42}
             style={{
-              width: 38,
-              height: 38,
+              width: 42,
+              height: 42,
               borderRadius: 10,
-              background: 'linear-gradient(135deg, #6CC8F2 0%, #FFFFFF 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
               flexShrink: 0,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
             }}
-          >
-            <Sparkles size={20} style={{ color: 'var(--primary, #3451D1)' }} />
-          </div>
+          />
           <div>
             <span
               style={{
@@ -131,15 +129,17 @@ export default function SidebarNav() {
             </span>
             <span
               style={{
-                fontSize: 11,
+                fontSize: 10.5,
                 fontWeight: 500,
                 color: 'var(--sidebar-item-text, #DCE3FF)',
-                opacity: 0.8,
-                letterSpacing: '0.04em',
+                opacity: 0.85,
+                letterSpacing: '0.01em',
+                lineHeight: 1.25,
                 display: 'block',
+                marginTop: 2,
               }}
             >
-              AI Asset Detection Intelligence
+              AI Asset Detection<br />Intelligence
             </span>
           </div>
         </Link>

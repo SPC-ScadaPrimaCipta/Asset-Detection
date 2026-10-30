@@ -41,8 +41,8 @@ export default function LoginPage() {
       }
 
       // Redirect to dashboard
-      router.push('/');
-      router.refresh();
+      window.location.href = '/';
+
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat login');
     } finally {
@@ -75,24 +75,24 @@ export default function LoginPage() {
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div
             style={{
-              width: 44,
-              height: 44,
+              width: 52,
+              height: 52,
               borderRadius: 12,
-              background: 'linear-gradient(135deg, var(--primary, #3451D1) 0%, #6CC8F2 100%)',
+              background: 'transparent',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(52, 81, 209, 0.25)',
+              boxShadow: 'none',
               marginBottom: 12,
             }}
           >
-            <Sparkles size={22} style={{ color: '#FFFFFF' }} />
+            <img src="/logo.svg" alt="TagFlow Logo" width={52} height={52} style={{ width: 52, height: 52, borderRadius: 14, boxShadow: '0 6px 18px rgba(52, 81, 209, 0.25)', display: 'block' }} />
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--foreground)', margin: '0 0 6px' }}>
             Masuk ke TagFlow
           </h1>
           <p style={{ fontSize: 13, color: 'var(--foreground-muted)', margin: 0 }}>
-            Platform AI Automatic Asset Detection untuk P&ID
+            AI Asset Detection Intelligence
           </p>
         </div>
 

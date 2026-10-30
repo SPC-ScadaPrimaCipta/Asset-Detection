@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
 import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { getTuning } from "@/lib/tuning";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
   }
   const { legendIds, primaryLegendId } = resolved;
 
+  const user = await getCurrentUser(request);
   const validDetectionMode = (detection_mode === 'full' || detection_mode === 'flow' || detection_mode === 'both')
     ? detection_mode as 'full' | 'flow' | 'both'
     : undefined;
@@ -119,8 +121,8 @@ export async function POST(request: NextRequest) {
   );
 
   await db.query(
-    "INSERT INTO detection_jobs (id, document_id, legend_id, legend_ids, project_id, status, progress_pct) VALUES ($1,$2,$3,$4,$5,'PENDING',0)",
-    [id, document_id, primaryLegendId, legendIds.length > 0 ? legendIds : null, project_id ?? null],
+    "INSERT INTO detection_jobs (id, document_id, legend_id, legend_ids, project_id, status, progress_pct, user_id) VALUES ($1,$2,$3,$4,$5,'PENDING',0,$6)",
+    [id, document_id, primaryLegendId, legendIds.length > 0 ? legendIds : null, project_id ?? null, user?.id ?? null],
   );
   // Use singleton queue — avoids creating a new Redis connection per request
   const { enqueueDetectionJob } = await import('@/lib/queue');

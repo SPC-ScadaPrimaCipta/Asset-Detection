@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { AuthUser } from '@/lib/auth';
 
 interface UserContextValue {
@@ -18,6 +19,7 @@ const UserContext = createContext<UserContextValue>({
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
 
   const fetchUser = useCallback(async () => {
     try {
@@ -37,7 +39,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchUser();
-  }, [fetchUser]);
+  }, [fetchUser, pathname]);
 
   return (
     <UserContext.Provider value={{ user, loading, refreshUser: fetchUser }}>

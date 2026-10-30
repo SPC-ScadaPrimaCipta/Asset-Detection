@@ -12,8 +12,11 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Neuro. — Automatic Asset Detection",
+  title: "TagFlow — Automatic Asset Detection",
   description: "AI-Powered Industrial P&ID Asset & Symbol Detection Platform",
+  icons: {
+    icon: '/logo.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

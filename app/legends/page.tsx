@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Plus, BookOpen, PencilSimple, Trash } from '@phosphor-icons/react';
 import { Card, CardHeader, Button, Badge } from '@/components/ui';
+import UploadLegendModal from '@/components/legends/UploadLegendModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export default function LegendsPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   const fetchLegends = useCallback(async () => {
     const res = await fetch('/api/legends');
@@ -34,6 +36,12 @@ export default function LegendsPage() {
 
   useEffect(() => {
     fetchLegends().finally(() => setLoading(false));
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('action') === 'upload') {
+        setIsUploadModalOpen(true);
+      }
+    }
   }, [fetchLegends]);
 
   const handleDelete = async (legend: Legend) => {
@@ -63,12 +71,13 @@ export default function LegendsPage() {
             Manage symbol standards, tagging rules, and aliases used during P&amp;ID asset extraction.
           </p>
         </div>
-        <Link href="/legends/new" style={{ textDecoration: 'none' }}>
-          <Button style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <Plus size={16} weight="bold" />
-            <span>New Legend</span>
-          </Button>
-        </Link>
+        <Button
+          onClick={() => setIsUploadModalOpen(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+        >
+          <Plus size={16} weight="bold" />
+          <span>New Legend</span>
+        </Button>
       </div>
 
       {/* Error alert */}
@@ -93,9 +102,21 @@ export default function LegendsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
             <BookOpen size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
             <p style={{ fontSize: '14px', margin: 0 }}>No legends configured yet.</p>
-            <Link href="/legends/new" style={{ marginTop: '12px', fontSize: '13px', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
-              Create a legend standard →
-            </Link>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              style={{
+                marginTop: '12px',
+                fontSize: '13px',
+                color: 'var(--primary)',
+                fontWeight: 600,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              Upload legend standard →
+            </button>
           </div>
         ) : (
           <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -175,6 +196,11 @@ export default function LegendsPage() {
           </div>
         )}
       </Card>
+
+      <UploadLegendModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+      />
     </div>
   );
 }

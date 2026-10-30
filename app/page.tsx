@@ -10,6 +10,7 @@ import {
   ActivityChart,
   RecentDocumentsList,
   VerificationStatusCard,
+  DetectionQueueStatus,
 } from '@/components/dashboard';
 import { DocumentItem } from '@/components/dashboard/RecentDocumentsList';
 
@@ -107,6 +108,9 @@ export default function Dashboard() {
         >
           {/* Top Banner */}
           <DetectionBanner />
+
+          {/* Real-time AI Queue Status */}
+          <DetectionQueueStatus />
 
           {/* 2 Key Stat Cards with Sparklines */}
           <div

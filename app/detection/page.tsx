@@ -74,7 +74,7 @@ interface Detection {
 
 interface JobProgress {
   jobId: string;
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   progressPct: number;
   stageText: string;
   stats?: {
@@ -120,6 +120,12 @@ function DetectionContent() {
   const [jobProgress, setJobProgress] = useState<JobProgress | null>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [globalQueue, setGlobalQueue] = useState<{
+    isBusy: boolean;
+    activeJob: { id: string; documentId: string; documentName: string; user: { name: string }; progressPct: number } | null;
+    queue: Array<{ id: string; documentId: string; user: { name: string }; queuePosition: number }>;
+  } | null>(null);
+  const [cancellingJob, setCancellingJob] = useState(false);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [loadingDets, setLoadingDets] = useState(false);
 
@@ -407,6 +413,10 @@ function DetectionContent() {
               stageText: 'Detection job failed',
               errorDetail: jData.error_detail || 'Unknown error during detection',
             });
+          } else if (jData.status === 'CANCELLED') {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setRunning(false);
+            setJobProgress(null);
           }
         } catch (err) {
           console.error('[detection] poll job error:', err);
@@ -415,6 +425,57 @@ function DetectionContent() {
     },
     [loadDetections]
   );
+
+  const fetchGlobalQueue = useCallback(async () => {
+    try {
+      const res = await fetch('/api/detection/queue');
+      if (res.ok) {
+        const data = await res.json();
+        setGlobalQueue(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGlobalQueue();
+    const interval = setInterval(fetchGlobalQueue, 4000);
+    return () => clearInterval(interval);
+  }, [fetchGlobalQueue]);
+
+  const myQueueItem = useMemo(() => {
+    if (!globalQueue?.queue) return null;
+    return (
+      globalQueue.queue.find(
+        (q) => q.documentId === documentId || (jobProgress?.jobId && q.id === jobProgress.jobId)
+      ) ?? null
+    );
+  }, [globalQueue, documentId, jobProgress?.jobId]);
+
+  const handleCancelQueue = async (jobIdToCancel?: string) => {
+    const targetJobId = jobIdToCancel || jobProgress?.jobId || activeJobId;
+    if (!targetJobId) return;
+    if (!confirm('Apakah Anda yakin ingin membatalkan antrean deteksi ini?')) return;
+
+    setCancellingJob(true);
+    try {
+      const res = await fetch(`/api/detection/jobs/${targetJobId}/cancel`, { method: 'POST' });
+      if (res.ok) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setRunning(false);
+        setJobProgress(null);
+        await fetchGlobalQueue();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Gagal membatalkan antrean deteksi');
+      }
+    } catch {
+      alert('Terjadi kesalahan saat membatalkan antrean');
+    } finally {
+      setCancellingJob(false);
+    }
+  };
 
   useEffect(() => {
     if (documentId) {
@@ -842,10 +903,17 @@ function DetectionContent() {
             }}
           >
             {running ? (
-              <>
-                <ArrowClockwise size={14} weight="bold" className="animate-spin" />
-                Detecting ({jobProgress?.progressPct ?? 5}%)
-              </>
+              jobProgress?.status === 'PENDING' ? (
+                <>
+                  <ArrowClockwise size={14} weight="bold" className="animate-spin" />
+                  Antrean #{myQueueItem?.queuePosition ?? 1}
+                </>
+              ) : (
+                <>
+                  <ArrowClockwise size={14} weight="bold" className="animate-spin" />
+                  Detecting ({jobProgress?.progressPct ?? 5}%)
+                </>
+              )
             ) : (
               <>
                 <Lightning size={14} weight="fill" />
@@ -912,6 +980,48 @@ function DetectionContent() {
         </div>
       </div>
 
+      {/* ── Global Queue Banner (When another user's job is active) ── */}
+      {globalQueue?.isBusy &&
+        globalQueue.activeJob &&
+        globalQueue.activeJob.documentId !== documentId && (
+          <div
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              background: 'rgba(52, 81, 209, 0.08)',
+              border: '1px solid rgba(52, 81, 209, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: 12,
+              color: 'var(--foreground)',
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: 'var(--primary)',
+                  display: 'inline-block',
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }}
+              />
+              <span>
+                Mesin deteksi sedang memproses dokumen{' '}
+                <strong>{globalQueue.activeJob.documentName}</strong> oleh{' '}
+                <strong>{globalQueue.activeJob.user.name}</strong> ({globalQueue.activeJob.progressPct}%).
+                {globalQueue.queue.length > 0 && ` Ada ${globalQueue.queue.length} dokumen dalam antrean.`}
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--foreground-muted)' }}>
+              Dokumen baru yang dijalankan akan otomatis masuk antrean berikutnya.
+            </span>
+          </div>
+        )}
+
       {/* ── Detection Progress Bar (Active when detection is running or completed/failed recently) ── */}
       {jobProgress && (
         <div
@@ -963,6 +1073,8 @@ function DetectionContent() {
                       ? 'Detection Failed'
                       : jobProgress.status === 'COMPLETED'
                       ? 'Detection Completed'
+                      : jobProgress.status === 'PENDING'
+                      ? `Menunggu Antrean (#${myQueueItem?.queuePosition ?? 1})`
                       : `Analyzing P&ID Assets (${jobProgress.progressPct}%)`}
                   </span>
                   <span
@@ -976,16 +1088,20 @@ function DetectionContent() {
                           ? 'var(--danger-soft)'
                           : jobProgress.status === 'COMPLETED'
                           ? 'var(--success-soft)'
+                          : jobProgress.status === 'PENDING'
+                          ? 'rgba(224, 138, 38, 0.15)'
                           : 'rgba(37,99,235,0.15)',
                       color:
                         jobProgress.status === 'FAILED'
                           ? 'var(--danger)'
                           : jobProgress.status === 'COMPLETED'
                           ? 'var(--success)'
+                          : jobProgress.status === 'PENDING'
+                          ? 'var(--warning, #E08A26)'
                           : '#2563eb',
                     }}
                   >
-                    {jobProgress.status}
+                    {jobProgress.status === 'PENDING' ? `ANTREAN #${myQueueItem?.queuePosition ?? 1}` : jobProgress.status}
                   </span>
                 </div>
                 <span
@@ -997,13 +1113,39 @@ function DetectionContent() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {jobProgress.errorDetail || jobProgress.stageText}
+                  {jobProgress.status === 'PENDING'
+                    ? `Menunggu giliran... Dokumen Anda berada di urutan #${myQueueItem?.queuePosition ?? 1}. Mesin AI akan memulai deteksi otomatis begitu antrean sebelumnya selesai.`
+                    : (jobProgress.errorDetail || jobProgress.stageText)}
                 </span>
               </div>
             </div>
 
-            {/* Right side stats */}
+            {/* Right side stats & Cancel button */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {jobProgress.status === 'PENDING' && (
+                <button
+                  type="button"
+                  onClick={() => handleCancelQueue(jobProgress.jobId)}
+                  disabled={cancellingJob}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    background: 'var(--danger-soft, #fef2f2)',
+                    border: '1px solid var(--danger, #ef4444)',
+                    color: 'var(--danger, #b91c1c)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: cancellingJob ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  title="Batalkan dari antrean deteksi"
+                >
+                  <X size={12} weight="bold" />
+                  {cancellingJob ? 'Membatalkan...' : 'Batalkan Antrean'}
+                </button>
+              )}
               {jobProgress.stats && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                   <span style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--foreground)' }}>
