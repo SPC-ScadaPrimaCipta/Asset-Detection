@@ -409,8 +409,9 @@ function estimateBbox(
 ): DxfDetection['bbox'] {
   const hw = extents.width * ratio, hh = extents.height * ratio;
   const center = dxfToNorm(pos, extents);
-  const w = Math.max(12, Math.round((hw * 2 / extents.width) * 1000));
-  const h = Math.max(12, Math.round((hh * 2 / extents.height) * 1000));
+  const minBboxSize = env.DXF_MIN_BBOX_SIZE ?? 12;
+  const w = Math.max(minBboxSize, Math.round((hw * 2 / extents.width) * 1000));
+  const h = Math.max(minBboxSize, Math.round((hh * 2 / extents.height) * 1000));
   const x = Math.max(0, center.x - Math.round(w / 2));
   const y = Math.max(0, center.y - Math.round(h / 2));
   // Clamp agar tidak overflow 1000 (viewer/SVG overlay berasumsi x+w ≤ 1000).
@@ -1515,9 +1516,11 @@ export function runDxfDetection(
 
     // Merge distance anchored to label height (mm-anchored, Blok 8):
     // same-tag boxes within ~3 label-heights merge; clamped to sane bounds.
+    // Use DXF_DEDUP_MERGE_DIST env var to override (default 40, lenient mode 150)
     const scopeSpan = Math.max(extents.width, extents.height);
     const medHNorm = medTextH && scopeSpan > 0 ? (medTextH / scopeSpan) * 1000 : DEFAULT_MERGE_DIST_NORM / 3;
-    const mergeDist = Math.min(80, Math.max(20, medHNorm * 3));
+    const autoMergeDist = Math.min(80, Math.max(20, medHNorm * 3));
+    const mergeDist = env.DXF_DEDUP_MERGE_DIST ?? autoMergeDist;
     const regionDets = markRegionConflicts(deduplicate(detections, lookup, mergeDist), regionIndex);
     for (const d of regionDets) { d.regionIndex = regionIndex; d.pidPage = pidPage; }
     allDetections.push(...regionDets);

@@ -134,6 +134,10 @@ const envSchema = z.object({
   // Two detections merge when same tag (or same type when untagged) AND IoU
   // exceeds this. Higher = stricter = keeps more near-duplicates.
   DETECTION_REGION_DEDUPE_IOU: z.coerce.number().min(0).max(1).default(0.3),
+  // DXF-specific: merge distance for same-tag spatial dedup (normalized 0-1000 units)
+  DXF_DEDUP_MERGE_DIST: z.coerce.number().min(0).max(500).default(40),
+  // DXF-specific: minimum bbox size (normalized 0-1000 units)
+  DXF_MIN_BBOX_SIZE: z.coerce.number().min(5).max(100).default(20),
   // Crop upscale bounds, in pixels, before the region is sent to Gemini.
   DETECTION_CROP_MIN_WIDTH: z.coerce.number().int().positive().default(800),
   DETECTION_CROP_MAX_WIDTH: z.coerce.number().int().positive().default(2400),
