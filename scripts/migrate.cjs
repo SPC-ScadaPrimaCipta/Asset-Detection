@@ -375,6 +375,17 @@ async function migrate() {
       console.warn('  019 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 019b: Add SUPERADMIN role
+    try {
+      const superadminSql = join(__dirname, '..', 'sql', 'migrate-superadmin.sql');
+      if (existsSync(superadminSql)) {
+        await p.query(readFileSync(superadminSql, 'utf-8'));
+        console.log('  019b: SUPERADMIN role OK');
+      }
+    } catch (e) {
+      console.warn('  019b migration warning (non-fatal):', e.message);
+    }
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');

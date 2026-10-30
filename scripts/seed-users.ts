@@ -18,19 +18,19 @@ async function seedUsers() {
         email: 'superadmin@example.com',
         password: 'superadmin123',
         name: 'Super Admin',
-        role: 'superadmin',
+        role: 'SUPERADMIN',
       },
       {
         email: 'admin@example.com',
         password: 'admin123',
         name: 'Admin',
-        role: 'admin',
+        role: 'ADMIN',
       },
       {
         email: 'user@example.com',
         password: 'user123',
         name: 'User',
-        role: 'user',
+        role: 'USER',
       },
     ];
 
