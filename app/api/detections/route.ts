@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     if (status)       { conds.push(`d.detection_status=$${i++}`);  vals.push(status); }
     if (reviewStatus) { conds.push(`d.review_status=$${i++}`);     vals.push(reviewStatus); }
     if (q) {
-      conds.push(`(d.asset_tag ILIKE $${i} OR d.asset_type ILIKE $${i} OR d.description ILIKE $${i})`);
+      conds.push(`(d.asset_tag ILIKE $${i} OR d.asset_type ILIKE $${i} OR d.description ILIKE $${i} OR d.size ILIKE $${i})`);
       vals.push(`%${q}%`);
       i++;
     }
@@ -30,7 +30,14 @@ export async function GET(request: NextRequest) {
 
     const [rows, total] = await Promise.all([
       db.query(
-        `SELECT d.* FROM detections d ${where} ORDER BY d.confidence DESC, d.created_at DESC LIMIT $${i} OFFSET $${i + 1}`,
+       `SELECT d.*, m.id AS mdo_id, m.tag_no_proposed AS mdo_tag_no_proposed,
+                m.equipment_type AS mdo_equipment_type, m.component_name AS mdo_component_name,
+                m.size AS mdo_size, m.from_value AS mdo_from,
+                m.to_value AS mdo_to, m.of_value AS mdo_of, m.at_value AS mdo_at,
+                m.approval_status AS mdo_approval_status,
+                d.candidate_status, d.candidate_source
+         FROM detections d LEFT JOIN detection_mdo_records m ON m.detection_id=d.id
+         ${where} ORDER BY d.confidence DESC, d.created_at DESC LIMIT $${i} OFFSET $${i + 1}`,
         [...vals, limit, offset]
       ),
       db.query(`SELECT COUNT(*) FROM detections d ${where}`, vals),

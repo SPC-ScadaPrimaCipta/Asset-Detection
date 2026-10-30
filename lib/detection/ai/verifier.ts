@@ -105,6 +105,32 @@ async function defaultTransport(
   timeoutMs: number
 ): Promise<{ text: string; model: string }> {
   const cfg = await getAiConfig();
+  if (cfg.provider !== 'gemini') {
+    const { getVisionProvider } = await import('@/lib/ai-providers');
+    const provider = await getVisionProvider(cfg);
+    const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+    const inlineCrops = new Map<string, string>();
+    for (let i = 1; i < images.length; i++) {
+      inlineCrops.set(`context_${i}`, images[i].data);
+    }
+    const res = await Promise.race([
+      provider.generateVisionCompletion({
+        model,
+        prompt,
+        imageBase64: images[0]?.data ?? '',
+        mimeType: (images[0]?.mimeType as any) || 'image/png',
+        inlineCropCrops: inlineCrops.size > 0 ? inlineCrops : undefined,
+        maxTokens: 2048,
+        temperature: 0.1,
+        responseFormat: 'json',
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('AI verifier timeout')), timeoutMs)
+      ),
+    ]);
+    return { text: res.text, model };
+  }
+
   const client = await getGeminiClient();
   const model = client.getGenerativeModel({
     model: cfg.geminiModel,
@@ -117,7 +143,7 @@ async function defaultTransport(
   const res = await Promise.race([
     model.generateContent({
       contents: [{ role: 'user', parts: parts as never[] }],
-    }),
+    }, { timeout: timeoutMs }),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('gemini timeout')), timeoutMs)
     ),

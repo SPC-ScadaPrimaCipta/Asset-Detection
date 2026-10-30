@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { suggestAbbreviation, formatTagPattern } from '@/lib/tag-generator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -402,6 +403,284 @@ function AddSymbolForm({
   );
 }
 
+// ─── Tag Pattern Manager Modal ───────────────────────────────────────────────
+
+function TagPatternManagerModal({
+  legendId,
+  symbols,
+  onClose,
+  onSaved,
+}: {
+  legendId: string;
+  symbols: LegendSymbol[];
+  onClose: () => void;
+  onSaved: (updatedSymbols: LegendSymbol[]) => void;
+}) {
+  const [patterns, setPatterns] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const s of symbols) {
+      init[s.id] = s.tag_pattern || '';
+    }
+    return init;
+  });
+  const [defaultDigits, setDefaultDigits] = useState<number>(3);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const configuredCount = Object.values(patterns).filter(p => p.trim() !== '').length;
+
+  const handleAutoSuggestAll = () => {
+    setPatterns(prev => {
+      const next = { ...prev };
+      for (const s of symbols) {
+        if (!next[s.id] || next[s.id].trim() === '') {
+          const abbrev = suggestAbbreviation(s.asset_type, s.symbol_name);
+          next[s.id] = formatTagPattern(abbrev, defaultDigits);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleForceSuggestAll = () => {
+    setPatterns(() => {
+      const next: Record<string, string> = {};
+      for (const s of symbols) {
+        const abbrev = suggestAbbreviation(s.asset_type, s.symbol_name);
+        next[s.id] = formatTagPattern(abbrev, defaultDigits);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveAll = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updates = symbols.map(s => ({
+        id: s.id,
+        tag_pattern: patterns[s.id]?.trim() || null,
+      }));
+
+      const res = await fetch(`/api/legends/${legendId}/symbols/batch`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? 'Failed to update tag patterns');
+      }
+
+      const updatedSymbols = symbols.map(s => ({
+        ...s,
+        tag_pattern: patterns[s.id]?.trim() || null,
+      }));
+      onSaved(updatedSymbols);
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filteredSymbols = symbols.filter(s => {
+    const q = search.toLowerCase();
+    return s.asset_type.toLowerCase().includes(q) || (s.symbol_name ?? '').toLowerCase().includes(q);
+  });
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          ...cardStyle,
+          width: '100%',
+          maxWidth: '850px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'var(--surface)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+          overflow: 'hidden',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--foreground)', margin: 0 }}>
+              🏷️ Tag Patterns & Auto-Generate Manager
+            </h2>
+            <p style={{ fontSize: '12px', color: 'var(--foreground-muted)', margin: '4px 0 0' }}>
+              Atur format huruf awalan (prefix) per tipe aset untuk auto-generate tag unik per proyek (misal: <code>GTV-###</code>).
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: 'var(--foreground-muted)', fontSize: '18px', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Toolbar */}
+        <div style={{ padding: '12px 20px', backgroundColor: 'var(--surface-subtle)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--foreground)' }}>
+              Status: <strong>{configuredCount}/{symbols.length}</strong> Pola Terisi
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--foreground-muted)' }}>Format:</span>
+              <select
+                value={defaultDigits}
+                onChange={e => setDefaultDigits(parseInt(e.target.value, 10))}
+                style={{ ...inputStyle, padding: '2px 8px', fontSize: '12px', width: 'auto' }}
+              >
+                <option value={3}>3 Digit (###)</option>
+                <option value={4}>4 Digit (####)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={handleAutoSuggestAll}
+              style={{ ...secondaryButtonStyle, padding: '6px 12px', fontSize: '12px', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              title="Isi simbol yang masih kosong dengan singkatan baku ISA/industri"
+            >
+              ⚡ Auto-Suggest Empty
+            </button>
+            <button
+              type="button"
+              onClick={handleForceSuggestAll}
+              style={{ ...secondaryButtonStyle, padding: '6px 12px', fontSize: '12px' }}
+              title="Reset dan isi semua simbol dengan singkatan baku"
+            >
+              🔄 Reset All to Standards
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: '8px 20px', borderBottom: '1px solid var(--border)' }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Cari tipe aset atau nama simbol..."
+            style={{ ...inputStyle, fontSize: '13px', padding: '6px 10px' }}
+          />
+        </div>
+
+        {/* Symbols list table */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={{ ...thStyle, padding: '8px 6px' }}>Tipe Aset</th>
+                <th style={{ ...thStyle, padding: '8px 6px' }}>Nama Simbol</th>
+                <th style={{ ...thStyle, padding: '8px 6px' }}>Saran Standar</th>
+                <th style={{ ...thStyle, padding: '8px 6px', width: '180px' }}>Pola Tag (Prefix-###)</th>
+                <th style={{ ...thStyle, padding: '8px 6px', textAlign: 'center' }}>Aksi Cepat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSymbols.map(sym => {
+                const suggestion = suggestAbbreviation(sym.asset_type, sym.symbol_name);
+                const suggestedPattern = formatTagPattern(suggestion, defaultDigits);
+                const currentPattern = patterns[sym.id] ?? '';
+
+                return (
+                  <tr key={sym.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ ...tdBase, padding: '8px 6px', fontWeight: '500' }}>
+                      {sym.asset_type}
+                    </td>
+                    <td style={{ ...tdBase, padding: '8px 6px', color: 'var(--foreground-muted)' }}>
+                      {sym.symbol_name || '-'}
+                    </td>
+                    <td style={{ ...tdBase, padding: '8px 6px' }}>
+                      <span style={{ fontSize: '11px', background: 'var(--surface-subtle)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                        {suggestedPattern}
+                      </span>
+                    </td>
+                    <td style={{ ...tdBase, padding: '8px 6px' }}>
+                      <input
+                        value={currentPattern}
+                        onChange={e => {
+                          const val = e.target.value.toUpperCase();
+                          setPatterns(prev => ({ ...prev, [sym.id]: val }));
+                        }}
+                        placeholder={suggestedPattern}
+                        style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px', fontFamily: 'monospace' }}
+                      />
+                    </td>
+                    <td style={{ ...tdBase, padding: '8px 6px', textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPatterns(prev => ({ ...prev, [sym.id]: suggestedPattern }));
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                      >
+                        Gunakan Saran
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div style={{ padding: '8px 20px', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: '12px' }}>
+            {error}
+          </div>
+        )}
+
+        {/* Footer actions */}
+        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            style={secondaryButtonStyle}
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            disabled={saving}
+            style={primaryButtonStyle}
+          >
+            {saving && <Spinner size={12} />}
+            Simpan Semua Pola Tag
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LegendDetailPage() {
@@ -422,6 +701,7 @@ export default function LegendDetailPage() {
   // Symbol row state
   const [editingSymbolId, setEditingSymbolId] = useState<string | null>(null);
   const [deletingSymbolId, setDeletingSymbolId] = useState<string | null>(null);
+  const [showPatternModal, setShowPatternModal] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -516,16 +796,25 @@ export default function LegendDetailPage() {
           <span style={{ color: 'var(--foreground-subtle)', flexShrink: 0 }}>/</span>
           <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{legend.name}</h1>
         </div>
-        <Link
-          href={`/legends/${legendId}/review`}
-          style={{ ...primaryButtonStyle, textDecoration: 'none', flexShrink: 0, padding: '7px 14px', fontSize: '13px' }}
-        >
-          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Review
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setShowPatternModal(true)}
+            style={{ ...secondaryButtonStyle, flexShrink: 0, padding: '7px 14px', fontSize: '13px' }}
+          >
+            🏷️ Manage Tag Patterns
+          </button>
+          <Link
+            href={`/legends/${legendId}/review`}
+            style={{ ...primaryButtonStyle, textDecoration: 'none', flexShrink: 0, padding: '7px 14px', fontSize: '13px' }}
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Review
+          </Link>
+        </div>
       </div>
 
       {/* Legend info card */}
@@ -671,6 +960,15 @@ export default function LegendDetailPage() {
           </div>
         )}
       </div>
+
+      {showPatternModal && (
+        <TagPatternManagerModal
+          legendId={legendId}
+          symbols={symbols}
+          onClose={() => setShowPatternModal(false)}
+          onSaved={(updated) => setSymbols(updated)}
+        />
+      )}
     </div>
   );
 }

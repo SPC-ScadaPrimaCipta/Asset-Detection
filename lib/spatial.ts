@@ -1,5 +1,6 @@
 import type { Detection } from "./ai-schemas";
 import { env } from "./env";
+import { typeCompatible } from "./detection/duplicate-detection";
 
 export interface RawSymbol { bbox: { x: number; y: number; width: number; height: number }; label: string }
 export interface RawTag { text: string; bbox: { x: number; y: number; width: number; height: number } }
@@ -218,6 +219,7 @@ export function bboxIoU(
 export function applyNMS<T extends {
   bbox: { x: number; y: number; width: number; height: number };
   assetTag?: string | null;
+  assetType?: string | null;
   confidence: number;
   evidence?: string[];
 }>(detections: T[], iouThreshold = 0.5): T[] {
@@ -230,13 +232,48 @@ export function applyNMS<T extends {
     const cur = sorted[i];
     kept.push(cur);
     const curTag = (cur.assetTag ?? '').toUpperCase().trim();
-    if (!curTag) continue; // tanpa tag → jangan suppress yang lain
+    const curType = (cur.assetType ?? '').toUpperCase().trim();
     for (let j = i + 1; j < sorted.length; j++) {
       if (suppressed[j]) continue;
       const nxt = sorted[j];
       const nxtTag = (nxt.assetTag ?? '').toUpperCase().trim();
-      if (nxtTag !== curTag) continue;
-      if (bboxIoU(cur.bbox, nxt.bbox) > iouThreshold) {
+      const nxtType = (nxt.assetType ?? '').toUpperCase().trim();
+
+      const iou = bboxIoU(cur.bbox, nxt.bbox);
+      const dist = Math.hypot(
+        cur.bbox.x + cur.bbox.width / 2 - (nxt.bbox.x + nxt.bbox.width / 2),
+        cur.bbox.y + cur.bbox.height / 2 - (nxt.bbox.y + nxt.bbox.height / 2),
+      );
+      const ix0 = Math.max(cur.bbox.x, nxt.bbox.x);
+      const iy0 = Math.max(cur.bbox.y, nxt.bbox.y);
+      const ix1 = Math.min(cur.bbox.x + cur.bbox.width, nxt.bbox.x + nxt.bbox.width);
+      const iy1 = Math.min(cur.bbox.y + cur.bbox.height, nxt.bbox.y + nxt.bbox.height);
+      const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+      const minArea = Math.min(cur.bbox.width * cur.bbox.height, nxt.bbox.width * nxt.bbox.height);
+      const containment = minArea > 0 ? inter / minArea : 0;
+
+      // Heavy geometric overlap / near-identical position on drawing:
+      // Even if different tags were hallucinated or auto-assigned, two physical equipment
+      // items of compatible type cannot occupy the same tiny pixel space on a P&ID pipe.
+      const isSameSymbol =
+        iou >= 0.45 ||
+        (dist <= 10 && (containment >= 0.25 || iou >= 0.10)) ||
+        (containment >= 0.60 && dist <= 15);
+
+      if (typeCompatible(cur.assetType, nxt.assetType) && isSameSymbol) {
+        suppressed[j] = true;
+        continue;
+      }
+
+      // Both have explicit non-empty tags that are different AND spaced apart → distinct physical assets
+      if (curTag && nxtTag && curTag !== nxtTag) continue;
+
+      // If types are explicitly defined and incompatible → different component (e.g. tap instrument)
+      if (curType && nxtType && !typeCompatible(cur.assetType, nxt.assetType)) {
+        continue;
+      }
+
+      if (iou > iouThreshold) {
         suppressed[j] = true;
       }
     }

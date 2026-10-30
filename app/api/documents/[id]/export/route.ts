@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { buildAssetRegisterWorkbook, ExportAsset } from "@/lib/excel-export";
+import { getTuning } from "@/lib/tuning";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -12,8 +13,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const doc = docR.rows[0];
 
     const assetsR = await db.query(
-      `SELECT a.*, l.name AS legend_name, ls.symbol_name AS legend_symbol_name
+      `SELECT a.*, m.equipment AS mdo_equipment, m.tag_no_proposed AS mdo_tag_no_proposed,
+              m.equipment_type AS mdo_equipment_type, m.size AS mdo_size,
+              m.from_value AS mdo_from, m.to_value AS mdo_to, m.of_value AS mdo_of, m.at_value AS mdo_at,
+              m.alternative_description_old AS mdo_alternative_description_old,
+              m.alternative_description_acn AS mdo_alternative_description_acn,
+              m.description_proposed AS mdo_description_proposed, m.description_len AS mdo_description_len,
+              m.class AS mdo_class, m.object_type AS mdo_object_type, m.weight AS mdo_weight, m.uom AS mdo_uom,
+              m.size_dimension AS mdo_size_dimension,
+              l.name AS legend_name, ls.symbol_name AS legend_symbol_name
        FROM assets a
+       LEFT JOIN detection_mdo_records m ON m.detection_id=a.detection_id
        LEFT JOIN legends l ON l.id = a.legend_id
        LEFT JOIN legend_symbols ls ON ls.id = a.legend_symbol_id
        WHERE a.document_id=$1 ORDER BY a.created_at DESC`,
@@ -41,12 +51,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       location: a.location as string | null,
       unit: a.unit as string | null,
       area: a.area as string | null,
-      size: (a.size as string | null) ?? null,
-      fromRef: (a.fromRef as string | null) ?? null,
-      toRef: (a.toRef as string | null) ?? null,
-      ofOrAtRef: (a.ofOrAtRef as string | null) ?? null,
-      descriptionProposed: (a.descriptionProposed as string | null) ?? null,
-      tagNoProposed: (a.tagNoProposed as string | null) ?? null,
+       size: (a.mdo_size as string | null) ?? (a.size as string | null) ?? null,
+       fromRef: (a.mdo_from as string | null) ?? null,
+       toRef: (a.mdo_to as string | null) ?? null,
+       ofOrAtRef: [a.mdo_of, a.mdo_at].filter(Boolean).join(' / ') || null,
+       descriptionProposed: (a.mdo_description_proposed as string | null) ?? null,
+       tagNoProposed: (a.mdo_tag_no_proposed as string | null) ?? null,
       legend: (a.legend_name as string | null) ?? legendName,
       legendSymbol: (a.legend_symbol_name as string | null) ?? null,
       confidence: a.confidence as number | null,
@@ -63,7 +73,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       bboxH: a.bbox_h as number | null,
     }));
 
-    const buf = await buildAssetRegisterWorkbook(exportAssets, legendName, { includeReviewItems: includeReview });
+    const tuning = await getTuning();
+    const thresholds = { review: tuning.detection.reviewThreshold };
+    const buf = await buildAssetRegisterWorkbook(exportAssets, legendName, { includeReviewItems: includeReview, thresholds });
     const filename = `Asset-Register-${(doc.filename as string).replace(/\.pdf$/i, "")}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
     return new NextResponse(buf as unknown as BodyInit, {

@@ -1,0 +1,1469 @@
+{
+  "version": "1.0",
+  "purpose": "Offline YOLO candidate audit for ground-truth annotation and gate review",
+  "audits": [
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-00",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.848,
+      "bbox": {
+        "x": 2131,
+        "y": 1967,
+        "width": 166,
+        "height": 73
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Pump P-004B with motor GE",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-01",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.746,
+      "bbox": {
+        "x": 2064,
+        "y": 977,
+        "width": 122,
+        "height": 49
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud STR-38008",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-02",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.743,
+      "bbox": {
+        "x": 2164,
+        "y": 874,
+        "width": 126,
+        "height": 61
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud VLV-380715 with annotation text",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-03",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.734,
+      "bbox": {
+        "x": 2625,
+        "y": 1200,
+        "width": 118,
+        "height": 51
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve with NC annotation bubble VLV-380710, not a flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-04",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.727,
+      "bbox": {
+        "x": 1885,
+        "y": 720,
+        "width": 151,
+        "height": 279
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Vessel V-011 with valve assembly (VLV-380718/719/717), not instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-05",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.554,
+      "bbox": {
+        "x": 287,
+        "y": 1596,
+        "width": 325,
+        "height": 229
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Tank T-004 with CLEAN OUT port and manway, not instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-06",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.551,
+      "bbox": {
+        "x": 2534,
+        "y": 1135,
+        "width": 123,
+        "height": 56
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve with tag VLV-380709 and check valve symbol, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-07",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.42,
+      "bbox": {
+        "x": 1913,
+        "y": 1870,
+        "width": 138,
+        "height": 67
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380720 with NC annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-08",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.418,
+      "bbox": {
+        "x": 1821,
+        "y": 1472,
+        "width": 132,
+        "height": 123
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380698 with strainer STR-38006, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-09",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.417,
+      "bbox": {
+        "x": 1752,
+        "y": 2008,
+        "width": 136,
+        "height": 51
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI P-004 with valve VLV-380695, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-10",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.277,
+      "bbox": {
+        "x": 2504,
+        "y": 852,
+        "width": 128,
+        "height": 53
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI V-011A with valve VLV-380716, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-11",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.277,
+      "bbox": {
+        "x": 2748,
+        "y": 935,
+        "width": 128,
+        "height": 49
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380712 with pipe size annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "candidateId": "sheet-7-p1-crop-12",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.26,
+      "bbox": {
+        "x": 2728,
+        "y": 1082,
+        "width": 139,
+        "height": 50
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI P-004 with valve VLV-380711, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-1-p1",
+      "candidateId": "sheet-1-p1-crop-00",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.943,
+      "bbox": {
+        "x": 1608,
+        "y": 315,
+        "width": 158,
+        "height": 151
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Tank T-012 rectangular vessel symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-1-p1",
+      "candidateId": "sheet-1-p1-crop-01",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.814,
+      "bbox": {
+        "x": 1554,
+        "y": 625,
+        "width": 163,
+        "height": 66
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Pump P-006 with motor EM",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "candidateId": "sheet-2-p1-crop-00",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.752,
+      "bbox": {
+        "x": 598,
+        "y": 1753,
+        "width": 195,
+        "height": 54
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "NON ACTIVE LINE annotation cloud",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "candidateId": "sheet-2-p1-crop-01",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.636,
+      "bbox": {
+        "x": 1434,
+        "y": 694,
+        "width": 136,
+        "height": 85
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve assembly with VLV-380195 annotation",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "candidateId": "sheet-2-p1-crop-02",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.328,
+      "bbox": {
+        "x": 2769,
+        "y": 1608,
+        "width": 125,
+        "height": 54
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Control valve PCV-380018 assembly with annotation bubbles",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "candidateId": "sheet-2-p1-crop-03",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.27,
+      "bbox": {
+        "x": 1808,
+        "y": 1212,
+        "width": 127,
+        "height": 149
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Control valve and pressure controller PC V-003A assembly",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-00",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.73,
+      "bbox": {
+        "x": 689,
+        "y": 1195,
+        "width": 135,
+        "height": 93
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Gas lift equipment K-001A rectangular process unit",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-01",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.651,
+      "bbox": {
+        "x": 1374,
+        "y": 1197,
+        "width": 117,
+        "height": 92
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Vessel K-003 TGD rectangular process unit",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-02",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.603,
+      "bbox": {
+        "x": 2609,
+        "y": 630,
+        "width": 127,
+        "height": 391
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Vertical vessel V-010 with manway and connected piping",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-03",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.535,
+      "bbox": {
+        "x": 955,
+        "y": 1198,
+        "width": 163,
+        "height": 93
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Process unit K-002 PDM rectangular equipment",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-04",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.504,
+      "bbox": {
+        "x": 1984,
+        "y": 1198,
+        "width": 118,
+        "height": 92
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Process unit K-004B idle rectangular equipment",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-05",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.504,
+      "bbox": {
+        "x": 956,
+        "y": 1197,
+        "width": 163,
+        "height": 94
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Process unit K-002 PDM rectangular equipment",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-06",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.48,
+      "bbox": {
+        "x": 2006,
+        "y": 1413,
+        "width": 187,
+        "height": 172
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Valve and PI assembly PCV V-004B, not instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-07",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.464,
+      "bbox": {
+        "x": 770,
+        "y": 1680,
+        "width": 127,
+        "height": 158
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Valve and PI assembly PI K-001C, not instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-08",
+      "predictedClassId": 13,
+      "predictedLabel": "Globle_valve_NC",
+      "confidence": 0.375,
+      "bbox": {
+        "x": 2857,
+        "y": 342,
+        "width": 77,
+        "height": 141
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "AG/UG line marker, not globe valve",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "candidateId": "sheet-4-p1-crop-09",
+      "predictedClassId": 20,
+      "predictedLabel": "Reducer",
+      "confidence": 0.305,
+      "bbox": {
+        "x": 766,
+        "y": 559,
+        "width": 74,
+        "height": 32
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "AG/UG line marker and pipe junction, not reducer",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-5-p1",
+      "candidateId": "sheet-5-p1-crop-00",
+      "predictedClassId": 19,
+      "predictedLabel": "Spectacle_blind_Open",
+      "confidence": 0.372,
+      "bbox": {
+        "x": 486,
+        "y": 747,
+        "width": 134,
+        "height": 154
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "PI 380057 and valve inside revision cloud, not spectacle blind",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-00",
+      "predictedClassId": 11,
+      "predictedLabel": "Half_Filled_Gate_Valve",
+      "confidence": 0.924,
+      "bbox": {
+        "x": 375,
+        "y": 144,
+        "width": 178,
+        "height": 120
+      },
+      "auditDecision": "true_positive",
+      "actualClassId": 11,
+      "actualLabel": "Half_Filled_Gate_Valve",
+      "observedObject": "Half-filled gate valve symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-01",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.834,
+      "bbox": {
+        "x": 196,
+        "y": 160,
+        "width": 101,
+        "height": 101
+      },
+      "auditDecision": "true_positive",
+      "actualClassId": 24,
+      "actualLabel": "Flow_Arrow",
+      "observedObject": "Flow arrow symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-02",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.776,
+      "bbox": {
+        "x": 430,
+        "y": 666,
+        "width": 70,
+        "height": 58
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "PSH/PS P702 instrument bubble, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-03",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.77,
+      "bbox": {
+        "x": 596,
+        "y": 435,
+        "width": 113,
+        "height": 123
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "LCP panel for diesel pump, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-04",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.712,
+      "bbox": {
+        "x": 418,
+        "y": 394,
+        "width": 90,
+        "height": 161
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "LCP panel for diesel pump, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-05",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.33,
+      "bbox": {
+        "x": 2031,
+        "y": 638,
+        "width": 141,
+        "height": 46
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud around valve VLV-380799, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-06",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.293,
+      "bbox": {
+        "x": 2280,
+        "y": 1950,
+        "width": 140,
+        "height": 98
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud around valve VLV-380844, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "candidateId": "sheet-11-p1-crop-07",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.254,
+      "bbox": {
+        "x": 2507,
+        "y": 1313,
+        "width": 69,
+        "height": 138
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud and valve annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-00",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.876,
+      "bbox": {
+        "x": 2554,
+        "y": 1625,
+        "width": 169,
+        "height": 199
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "LOADING CONDENSATE area enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-01",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.862,
+      "bbox": {
+        "x": 1837,
+        "y": 1628,
+        "width": 178,
+        "height": 208
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "R. PANEL AREA enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-02",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.712,
+      "bbox": {
+        "x": 2663,
+        "y": 756,
+        "width": 222,
+        "height": 323
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "CONDENSATE TRAP enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-03",
+      "predictedClassId": 30,
+      "predictedLabel": "box",
+      "confidence": 0.67,
+      "bbox": {
+        "x": 2831,
+        "y": 1248,
+        "width": 195,
+        "height": 174
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "TANGKI WESTINDO AREA enclosure, not instrument box",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-04",
+      "predictedClassId": 20,
+      "predictedLabel": "Reducer",
+      "confidence": 0.552,
+      "bbox": {
+        "x": 1229,
+        "y": 1434,
+        "width": 84,
+        "height": 35
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "AG/UG line marker, not reducer",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "candidateId": "sheet-7-model-p1-crop-03",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.516,
+      "bbox": {
+        "x": 2850,
+        "y": 1898,
+        "width": 109,
+        "height": 45
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Normally closed valve and reducer/pipe-size assembly, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "candidateId": "sheet-7-model-p1-crop-04",
+      "predictedClassId": 14,
+      "predictedLabel": "Control_Valve",
+      "confidence": 0.482,
+      "bbox": {
+        "x": 2096,
+        "y": 917,
+        "width": 59,
+        "height": 74
+      },
+      "auditDecision": "wrong_class",
+      "actualClassId": 12,
+      "actualLabel": "Gate_Valve_NC",
+      "observedObject": "Normally closed gate valve symbol with 6-inch pipe-size annotation",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-00",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.673,
+      "bbox": {
+        "x": 431,
+        "y": 3074,
+        "width": 104,
+        "height": 96
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "LCP motor control panel diamond, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-01",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.63,
+      "bbox": {
+        "x": 653,
+        "y": 3085,
+        "width": 59,
+        "height": 69
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "PSH/P702 instrument bubble, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-02",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.593,
+      "bbox": {
+        "x": 144,
+        "y": 3303,
+        "width": 88,
+        "height": 81
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Instrument diamond marked I / MC-FA, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-03",
+      "predictedClassId": 24,
+      "predictedLabel": "Flow_Arrow",
+      "confidence": 0.504,
+      "bbox": {
+        "x": 417,
+        "y": 2889,
+        "width": 116,
+        "height": 98
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "LCP motor control panel diamond, not flow arrow",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-04",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.381,
+      "bbox": {
+        "x": 1144,
+        "y": 1473,
+        "width": 61,
+        "height": 65
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Half-filled gate valve symbol, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-05",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.353,
+      "bbox": {
+        "x": 1498,
+        "y": 2961,
+        "width": 244,
+        "height": 340
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "D-13 day tank rectangular vessel, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-06",
+      "predictedClassId": 11,
+      "predictedLabel": "Half_Filled_Gate_Valve",
+      "confidence": 0.315,
+      "bbox": {
+        "x": 124,
+        "y": 3031,
+        "width": 120,
+        "height": 179
+      },
+      "auditDecision": "true_positive",
+      "actualClassId": 11,
+      "actualLabel": "Half_Filled_Gate_Valve",
+      "observedObject": "Half-filled gate valve symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-07",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.311,
+      "bbox": {
+        "x": 1724,
+        "y": 1472,
+        "width": 61,
+        "height": 52
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Gate/check valve assembly with pipe-size annotations, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-08",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.293,
+      "bbox": {
+        "x": 874,
+        "y": 2862,
+        "width": 82,
+        "height": 260
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure switch annotation and dashed system boundary, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-09",
+      "predictedClassId": 16,
+      "predictedLabel": "Ball_valve_NC",
+      "confidence": 0.287,
+      "bbox": {
+        "x": 1397,
+        "y": 839,
+        "width": 46,
+        "height": 146
+      },
+      "auditDecision": "true_positive",
+      "actualClassId": 16,
+      "actualLabel": "Ball_valve_NC",
+      "observedObject": "Normally closed ball valve below PI PDT-12",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p1",
+      "candidateId": "fire-water-p1-crop-10",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.255,
+      "bbox": {
+        "x": 758,
+        "y": 351,
+        "width": 93,
+        "height": 149
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "annotation_text",
+      "observedObject": "Sheet title block and drawing metadata, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-00",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.933,
+      "bbox": {
+        "x": 1569,
+        "y": 898,
+        "width": 189,
+        "height": 164
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "LCP/control panel enclosure, not instrument panel symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-01",
+      "predictedClassId": 30,
+      "predictedLabel": "box",
+      "confidence": 0.861,
+      "bbox": {
+        "x": 1188,
+        "y": 600,
+        "width": 170,
+        "height": 173
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "TANGKI WESTINDO AREA enclosure and vessel outline, not box symbol",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-02",
+      "predictedClassId": 28,
+      "predictedLabel": "Instrument_Panel",
+      "confidence": 0.629,
+      "bbox": {
+        "x": 641,
+        "y": 296,
+        "width": 224,
+        "height": 186
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "CONDENSATE TANK AREA enclosure, not instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-03",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.547,
+      "bbox": {
+        "x": 642,
+        "y": 304,
+        "width": 229,
+        "height": 178
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "CONDENSATE TANK AREA enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-04",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.531,
+      "bbox": {
+        "x": 1570,
+        "y": 1607,
+        "width": 188,
+        "height": 163
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "R. PANEL AREA enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "fire-water-p2",
+      "candidateId": "fire-water-p2-crop-05",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.251,
+      "bbox": {
+        "x": 600,
+        "y": 2397,
+        "width": 118,
+        "height": 260
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Dashed equipment boundary/outline, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-00",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.848,
+      "bbox": {
+        "x": 2131,
+        "y": 1967,
+        "width": 166,
+        "height": 73
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Pump P-004B with motor, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-01",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.746,
+      "bbox": {
+        "x": 2064,
+        "y": 977,
+        "width": 122,
+        "height": 49
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud STR-38008 annotation",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-02",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.743,
+      "bbox": {
+        "x": 2164,
+        "y": 874,
+        "width": 126,
+        "height": 61
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud around VLV-380715 annotation",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-03",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.734,
+      "bbox": {
+        "x": 2625,
+        "y": 1200,
+        "width": 118,
+        "height": 51
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "revision_cloud",
+      "observedObject": "Revision cloud around VLV-380710 valve annotation",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-04",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.727,
+      "bbox": {
+        "x": 1885,
+        "y": 720,
+        "width": 151,
+        "height": 279
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Vessel V-011 with valve assemblies, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-05",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.554,
+      "bbox": {
+        "x": 287,
+        "y": 1596,
+        "width": 325,
+        "height": 229
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Tank T-004 with clean-out and manway, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-06",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.551,
+      "bbox": {
+        "x": 2534,
+        "y": 1135,
+        "width": 123,
+        "height": 56
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380709 and check valve assembly, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-07",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.42,
+      "bbox": {
+        "x": 1913,
+        "y": 1870,
+        "width": 138,
+        "height": 67
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380720 with NC annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-08",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.418,
+      "bbox": {
+        "x": 1821,
+        "y": 1472,
+        "width": 132,
+        "height": 123
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380698 with strainer STR-38006, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-09",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.417,
+      "bbox": {
+        "x": 1752,
+        "y": 2008,
+        "width": 136,
+        "height": 51
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI P-004 with valve, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-10",
+      "predictedClassId": 21,
+      "predictedLabel": "Flange_or_Nozzle",
+      "confidence": 0.277,
+      "bbox": {
+        "x": 2504,
+        "y": 852,
+        "width": 128,
+        "height": 53
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI V-011A with valve, not flange/nozzle",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-11",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.277,
+      "bbox": {
+        "x": 2748,
+        "y": 935,
+        "width": 128,
+        "height": 49
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Valve VLV-380712 with pipe-size annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "candidateId": "sheet-7-rev-p1-crop-12",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.26,
+      "bbox": {
+        "x": 2728,
+        "y": 1082,
+        "width": 139,
+        "height": 50
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "wrong_symbol",
+      "observedObject": "Pressure indicator PI P-004 with valve VLV-380711, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "candidateId": "sheet-7-model-p1-crop-00",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.905,
+      "bbox": {
+        "x": 2131,
+        "y": 1969,
+        "width": 163,
+        "height": 71
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Pump P-004B with motor and NOTE 1, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "candidateId": "sheet-7-model-p1-crop-01",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.782,
+      "bbox": {
+        "x": 1894,
+        "y": 727,
+        "width": 137,
+        "height": 270
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Vessel V-011 with connected piping, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "candidateId": "sheet-7-model-p1-crop-02",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.643,
+      "bbox": {
+        "x": 2132,
+        "y": 1504,
+        "width": 163,
+        "height": 75
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "Pump P-004-A with pipe-size annotation, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-05",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.372,
+      "bbox": {
+        "x": 3139,
+        "y": 691,
+        "width": 166,
+        "height": 223
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "equipment_misclassification",
+      "observedObject": "CONDENSATE TANK AREA enclosure, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-06",
+      "predictedClassId": 22,
+      "predictedLabel": "Rupture_disk",
+      "confidence": 0.335,
+      "bbox": {
+        "x": 1949,
+        "y": 446,
+        "width": 136,
+        "height": 65
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "annotation_text",
+      "observedObject": "Revision cloud around pipe tag PDT-380165, not rupture disk",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "candidateId": "sheet-12-p1-crop-07",
+      "predictedClassId": 29,
+      "predictedLabel": "Instrument_Aux_Panel",
+      "confidence": 0.288,
+      "bbox": {
+        "x": 833,
+        "y": 492,
+        "width": 162,
+        "height": 159
+      },
+      "auditDecision": "false_positive",
+      "falsePositiveCategory": "annotation_text",
+      "observedObject": "Revision cloud around pipe tag FH-380002, not auxiliary instrument panel",
+      "reviewedBy": "human",
+      "reviewedAt": "2026-10-05"
+    }
+  ]
+}

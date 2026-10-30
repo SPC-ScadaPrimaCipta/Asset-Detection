@@ -41,7 +41,12 @@ const envSchema = z.object({
   // configured value is never silently rewritten. Set a valid model yourself.
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
   DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
-  AI_PROVIDER: z.enum(['gemini', 'deepseek']).default('gemini'),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o'),
+  OPENAI_BASE_URL: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-3-7-sonnet-20250219'),
+  AI_PROVIDER: z.enum(['gemini', 'openai', 'anthropic', 'deepseek']).default('gemini'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   STORAGE_PATH: z.string().default('./storage'),
 
@@ -77,7 +82,8 @@ const envSchema = z.object({
   // cannot stall a job indefinitely.
   GEMINI_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(60_000),
   // Pause between per-region / per-chunk calls, to stay under per-minute limits.
-  DETECTION_REGION_DELAY_MS: z.coerce.number().int().min(0).default(1200),
+  // 800ms: safe for PAGE_BATCH_SIZE=1 (≤10 calls/min from a single job, under 15 RPM free tier).
+  DETECTION_REGION_DELAY_MS: z.coerce.number().int().min(0).default(800),
   LEGEND_REGION_DELAY_MS: z.coerce.number().int().min(0).default(300),
   LEGEND_ERROR_DELAY_MS: z.coerce.number().int().min(0).default(1000),
   // Delay between per-model attempts inside one detection request.
@@ -121,6 +127,10 @@ const envSchema = z.object({
   // Full-page pass after the region sweep, to catch symbols the grid split
   // awkwardly. Set to false to skip it (saves one call per page).
   DETECTION_REGION_CATCHUP: z.enum(['true', 'false']).default('true'),
+  // Skip likely non-P&ID pages (cover/title page 1, revision history last page)
+  // in multi-page documents. Safe default: false (opt-in). Enable when documents
+  // consistently have cover/revision pages that produce false positives.
+  DETECTION_SKIP_NON_PID_PAGES: z.enum(['true', 'false']).default('false'),
   // Two detections merge when same tag (or same type when untagged) AND IoU
   // exceeds this. Higher = stricter = keeps more near-duplicates.
   DETECTION_REGION_DEDUPE_IOU: z.coerce.number().min(0).max(1).default(0.3),
@@ -130,10 +140,10 @@ const envSchema = z.object({
 
   // ── Scan Legend region grid ──
   // 0 = derive from page aspect ratio (see legend-extract.ts).
-  LEGEND_REGION_COLS_LANDSCAPE: z.coerce.number().int().min(0).max(12).default(6),
-  LEGEND_REGION_COLS_SQUARISH: z.coerce.number().int().min(0).max(12).default(4),
-  LEGEND_REGION_COLS_PORTRAIT: z.coerce.number().int().min(0).max(12).default(3),
-  LEGEND_REGION_ROWS: z.coerce.number().int().min(0).max(12).default(4),
+  LEGEND_REGION_COLS_LANDSCAPE: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_COLS_SQUARISH: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_COLS_PORTRAIT: z.coerce.number().int().min(0).max(12).default(2),
+  LEGEND_REGION_ROWS: z.coerce.number().int().min(0).max(12).default(2),
   LEGEND_REGION_OVERLAP: z.coerce.number().min(0).max(0.5).default(0.15),
   LEGEND_RENDER_SCALE: z.coerce.number().positive().default(2.0),
   // Region crops are upscaled to at least this width before being sent to
@@ -267,6 +277,9 @@ const envSchema = z.object({
   WORKER_STALLED_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   WORKER_MAX_STALLED_COUNT: z.coerce.number().int().min(0).default(1),
   VERIFIER_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // Hard limit for any Gemini generateContent call. Without this a provider
+  // connection that never answers stalls the worker indefinitely.
+  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   VERIFIER_CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(500),
   VERIFIER_MAX_CALLS_PER_PAGE: z.coerce.number().int().positive().default(10),
 
@@ -288,6 +301,40 @@ const envSchema = z.object({
   // Must match the DB column width (vector(768)) or every insert is rejected.
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
   EMBEDDING_REQUEST_DELAY_MS: z.coerce.number().int().min(0).default(200),
+
+  // ── Hybrid Detection Pipeline (V3) ───────────────────────────────────────
+  // Python CV service URL (FastAPI: YOLO, OCR, OpenCV, bbox refinement)
+  CV_SERVICE_URL: z.string().default('http://localhost:8765'),
+  // Whether to use Python CV service for YOLO + OCR + template matching
+  // Falls back to Node-side YOLO (onnxruntime) when false or service unavailable
+  CV_SERVICE_ENABLED: z.enum(['true', 'false']).default('false'),
+  // OCR engine preference: 'tesseract' (Node), 'cv-service' (Python auto), 'none'
+  OCR_ENGINE: z.enum(['tesseract', 'cv-service', 'none']).default('tesseract'),
+  // AI verifier: call AI vision for UNKNOWN or low-confidence YOLO detections
+  AI_VERIFIER_ENABLED: z.enum(['true', 'false']).default('true'),
+  GEMINI_VERIFIER_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Confidence threshold below which AI verifier is invoked for YOLO detections
+  AI_VERIFIER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
+  GEMINI_VERIFIER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
+  // AI full-page fallback: run AI vision on full page after YOLO to catch missed symbols
+  AI_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
+  GEMINI_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Min IoU for merging YOLO + AI detections (avoid double-counting same symbol)
+  HYBRID_MERGE_IOU: z.coerce.number().min(0).max(1).default(0.4),
+  // BBox refinement via OpenCV contour detection (requires CV_SERVICE_ENABLED)
+  BBOX_REFINE_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Template matching via OpenCV (requires CV_SERVICE_ENABLED)
+  TEMPLATE_MATCH_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Min template match score to create a detection
+  TEMPLATE_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.70),
+  // Negative learning penalty applied during YOLO path rule validation
+  NEGATIVE_LEARNING_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Delete duplicate detections after a job finishes (same rules as the
+  // Remove Duplicates button). Off by default: duplicates are annotated for
+  // review so a false positive is never removed without a trace.
+  DETECTION_AUTO_DEDUPE: z.enum(['true', 'false']).default('true'),
+  // How many YOLO detections to process OCR in parallel per page
+  OCR_BATCH_SIZE: z.coerce.number().int().positive().default(5),
 });
 
 let parsed: z.infer<typeof envSchema>;

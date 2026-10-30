@@ -22,10 +22,8 @@ const nextConfig: NextConfig = {
   },
 };
 
+// Single export — module.exports takes precedence over export default in CJS context
 module.exports = {
   ...nextConfig,
   allowedDevOrigins: ['192.168.68.86'],
-  serverExternalPackages: ['mupdf', 'sharp', 'canvas'],
-}
-
-export default nextConfig;
+};

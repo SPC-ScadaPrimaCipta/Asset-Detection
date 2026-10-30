@@ -1,0 +1,139 @@
+{
+  "versionInfo": {
+    "proposalDocumentVersion": "1.0-proposal",
+    "mappingProposalVersion": "v203-classmap-v1-proposal",
+    "classMapVersion": "yolo-v203-203",
+    "classMapVersionReference": "model/yolo-v203-names.json",
+    "legacyVocabularyVersion": "yolo-v1-32classes",
+    "legacyVocabularyReference": "lib/detection/yolo/yolo-class-map.ts",
+    "statusNote": "Proposal only; does not alter production Legend matching or persistence semantics"
+  },
+  "scopeNote": "Legacy 32-class vocabulary and v203 203-class vocabulary share no 1:1 identity mapping by numeric ID. Numeric IDs must not be equated directly across vocabularies.",
+  "mappings": [
+    {
+      "legacyClassId": 0,
+      "legacyLabel": "Not_used",
+      "status": "unmappable",
+      "candidateRawMatchesV203": [],
+      "rationale": "Legacy class 0 is explicitly marked isValid: false and non-canonical. No corresponding operational asset symbol exists in the v203 vocabulary.",
+      "evidenceAvailable": "Legacy class info entry and comment in yolo-class-map.ts",
+      "reviewRequired": false,
+      "semanticBindingNote": "Not applicable. No production mapping created."
+    },
+    {
+      "legacyClassId": 1,
+      "legacyLabel": "Gate_Valve",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 14, "rawLabel": "valve.general_nc.iso", "relationship": "subset_variant" },
+        { "rawClassId": 38, "rawLabel": "valve.electric_operated_gate.pip", "relationship": "subclass_variant" },
+        { "rawClassId": 1, "rawLabel": "valve.3way_gate.niso", "relationship": "subclass_variant" },
+        { "rawClassId": 3, "rawLabel": "valve.4way_gate.pip", "relationship": "subclass_variant" },
+        { "rawClassId": 39, "rawLabel": "valve.fail_open.niso", "relationship": "subclass_variant" }
+      ],
+      "rationale": "Legacy label 'Gate_Valve' (canonical, isValid: true, assetType: Valve) is too broad to uniquely identify one v203 subclass. Multiple gate-related classes exist in the 203-class vocabulary (general, electrical actuation, multi-port variants, fail-state variants). Without P&ID legend symbol standard review, a forced 1:1 mapping would invent a false binding.",
+      "evidenceAvailable": "Legacy class info entry; v203 vocabulary reference; no legend-standard document included in proposal scope",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Legend resolver must determine target class using symbol_name, aliases, and tag_pattern before persistence. Numeric ID 1 must NOT be treated as equivalent to v203 class 1 (valve.3way_gate.niso) in production code."
+    },
+    {
+      "legacyClassId": 2,
+      "legacyLabel": "Ball_Valve",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 13, "rawLabel": "valve.ball.iso", "relationship": "subclass_variant" },
+        { "rawClassId": 16, "rawLabel": "valve.butterfly.niso", "relationship": "related_but_distinct" },
+        { "rawClassId": 46, "rawLabel": "valve.flanged_ball.niso", "relationship": "subclass_variant" },
+        { "rawClassId": 23, "rawLabel": "valve.ball_closed.iso", "relationship": "subclass_variant" }
+      ],
+      "rationale": "Legacy 'Ball_Valve' (canonical, isValid: true) does not map uniquely. 'Butterfly' is a related but separate subclass; 'Flanged_Ball' introduces piping standard (NISO/ISO) distinctions not captured by the legacy label.",
+      "evidenceAvailable": "Legacy class info; v203 vocabulary reference",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Do not bind numeric legacy ID 2 to v203 class 2 (valve.3way_globe.iso) automatically."
+    },
+    {
+      "legacyClassId": 3,
+      "legacyLabel": "Globe_valve_NO",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 2, "rawLabel": "valve.3way_globe.iso", "relationship": "subclass_variant" },
+        { "rawClassId": 8, "rawLabel": "valve.angle.iso", "relationship": "related_variant" },
+        { "rawClassId": 41, "rawLabel": "valve.fail_indeterminate.niso", "relationship": "functional_variant" }
+      ],
+      "rationale": "Legacy canonical entry (id 3, valid). The 'NO' (Normally Open) and piping standard distinctions are embedded in the legacy label but split across multiple v203 subclasses. A forced binding without visual/legend review would invent semantic meaning.",
+      "evidenceAvailable": "Legacy entry; v203 vocabulary reference",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Numeric binding not permitted without Legend resolver confirmation."
+    },
+    {
+      "legacyClassId": 11,
+      "legacyLabel": "Half_Filled_Gate_Valve",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 39, "rawLabel": "valve.fail_open.niso", "relationship": "potential_subclass_variant" }
+      ],
+      "rationale": "Legacy label refers to a visual representation convention (half-filled gate symbol), not an operational state or standard. The v203 vocabulary separates piping standard and state separately; a direct visual-to-standard mapping requires P&ID legend standard verification.",
+      "evidenceAvailable": "Legacy label string; annotation note in dataset-v1.json for class 11",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Numeric ID 11 must not be mapped directly to v203 numeric 11 (valve.back_pressure_regulator.pip)."
+    },
+    {
+      "legacyClassId": 21,
+      "legacyLabel": "Flange_or_Nozzle",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 21, "rawLabel": "valve.check.pip", "relationship": "unrelated_class" },
+        { "rawClassId": 36, "rawLabel": "fitting.ejector.pip", "relationship": "potential_related" },
+        { "rawClassId": 45, "rawLabel": "valve.flanged.niso", "relationship": "potential_subclass" }
+      ],
+      "rationale": "Legacy label combines flange and nozzle concepts in one class. The v203 vocabulary separates flange variants by piping standard (PIP, NISO, ISO) and treats nozzles as separate fitting/ejector classes. Direct 1:1 binding impossible without standard verification.",
+      "evidenceAvailable": "Legacy label; v203 vocabulary",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Numeric legacy 21 does NOT map to v203 21."
+    },
+    {
+      "legacyClassId": 22,
+      "legacyLabel": "Rupture_disk",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 22, "rawLabel": "tower.chimney.niso", "relationship": "numeric_collision_warning" },
+        { "rawClassId": 5, "rawLabel": "unknown.alkylation.niso", "relationship": "potential_subclass_variant" },
+        { "rawClassId": 15, "rawLabel": "unknown.boom_loader.niso", "relationship": "potential_subclass_variant" }
+      ],
+      "rationale": "Legacy class 22 ('Rupture_disk') shares numeric index 22 with v203 class 22 ('tower.chimney.niso'), which has no semantic relation. Direct numeric binding creates a false identity. Additionally, the legacy 'Rupture_disk' class does not fully describe all industrial rupture disk and relief device variants captured by v203.",
+      "evidenceAvailable": "Legacy entry; v203 vocabulary; audit findings (systematic FP pattern in legacy model for this label)",
+      "reviewRequired": true,
+      "semanticBindingNote": "Explicit numeric collision: legacy 22 must NOT bind to v203 22 (tower.chimney.niso). Human review and legend standard verification required."
+    },
+    {
+      "legacyClassId": 30,
+      "legacyLabel": "box",
+      "status": "ambiguous",
+      "candidateRawMatchesV203": [
+        { "rawClassId": 30, "rawLabel": "tower.crossflow_inducted.niso", "relationship": "numeric_collision_warning" },
+        { "rawClassId": 35, "rawLabel": "equipment.drum.niso", "relationship": "potential_subclass_variant" }
+      ],
+      "rationale": "Legacy 'box' is a very generic visual descriptor. The v203 vocabulary does not contain a generic 'box' asset type; the closest semantic variants are equipment drums or process vessels, with piping standard distinctions. Direct binding without standard verification would invent false semantics.",
+      "evidenceAvailable": "Legacy entry; v203 vocabulary",
+      "reviewRequired": true,
+      "semanticBindingNote": "Ambiguous. Do not bind numeric 30 automatically."
+    }
+  ],
+  "proposalRulesApplied": [
+    "No numeric ID equivalence enforced between vocabularies",
+    "Ambiguous status assigned when legacy label does not have a single, unambiguous v203 subclass",
+    "Unmappable status assigned for invalid/non-canonical legacy entries",
+    "No automatic subclass/subset binding; relationships annotated only as 'potential', 'related', or 'collision_warning'",
+    "Mapping proposal does not alter production Legend resolver behavior",
+    "Mapping proposal does not override dataset-v1.json historical data",
+    "Mapping proposal does not define the final semantic mapping used for persistence"
+  ],
+  "limitations": [
+    "This proposal is a draft only; it does not constitute an approved production mapping.",
+    "Actual production mapping requires P&ID legend standard review (legend_symbols.asset_type, symbol_name, aliases, tag_pattern).",
+    "Visual standard differences (NISO vs PIP vs ISO) may cause additional subclass divergence.",
+    "The full 203-class vocabulary contains additional subclasses not covered in this proposal."
+  ],
+  "reviewStatus": "draft_unapproved",
+  "approvalStatus": "pending_human_review"
+}

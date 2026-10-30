@@ -2,17 +2,18 @@
 import React from 'react';
 
 type Variant =
-  | 'primary'    // Create, Save       — Industrial Blue #0078B8
-  | 'secondary'  // neutral surface
-  | 'ghost'      // icon-only, subtle
-  | 'danger'     // Delete             — Industrial Red #A65A55
-  | 'subtle'     // soft primary tint
-  | 'edit'       // Edit               — Navy #002B4E
-  | 'view'       // View               — Neutral #F0F2E9
-  | 'cancel'     // Cancel             — Neutral #F0F2E9
-  | 'approve'    // Approve            — Green #8BBE3F
-  | 'review'     // Review             — Amber #A68145
-  | 'finalize';  // Finalize           — Navy #002B4E solid
+  | 'primary'    // Main CTA — Royal Blue var(--primary)
+  | 'secondary'  // Neutral surface with border
+  | 'ghost'      // Icon-only, subtle
+  | 'danger'     // Delete / Reject — var(--danger)
+  | 'subtle'     // Soft primary tint
+  | 'accent'     // Accent cyan / contact us — var(--accent)
+  | 'edit'       // Edit — Navy var(--primary-hover)
+  | 'view'       // View — var(--surface-2)
+  | 'cancel'     // Cancel — Neutral var(--surface-2)
+  | 'approve'    // Approve / Confirm — var(--success)
+  | 'review'     // Review — var(--warning)
+  | 'finalize';  // Finalize — var(--primary)
 
 type Size = 'sm' | 'md' | 'lg' | 'icon';
 
@@ -20,83 +21,96 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   loading?: boolean;
+  fullWidth?: boolean;
 }
 
 const base: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: 6,
-  fontWeight: 500,
+  gap: 8,
+  fontWeight: 600,
   fontFamily: 'inherit',
-  borderRadius: 'var(--radius-sm)',
+  borderRadius: 'var(--radius-button, 10px)',
   border: '1px solid transparent',
   cursor: 'pointer',
   transition: 'all 150ms ease-out',
   whiteSpace: 'nowrap',
   lineHeight: 1,
+  outline: 'none',
+  boxSizing: 'border-box',
 };
 
 const sizes: Record<Size, React.CSSProperties> = {
-  sm:   { height: 28, padding: '0 10px', fontSize: 12 },
-  md:   { height: 36, padding: '0 14px', fontSize: 13 },
-  lg:   { height: 42, padding: '0 18px', fontSize: 14 },
-  icon: { height: 36, width: 36, padding: 0, fontSize: 14 },
+  sm:   { height: 32, padding: '0 12px', fontSize: 12 },
+  md:   { height: 40, padding: '0 16px', fontSize: 13 },
+  lg:   { height: 44, padding: '0 20px', fontSize: 14 },
+  icon: { height: 44, width: 44, padding: 0, fontSize: 14, borderRadius: 'var(--radius-button, 10px)' },
 };
 
 const variants: Record<Variant, React.CSSProperties> = {
-  primary:  { background: '#0078B8', color: '#fff',    borderColor: '#0078B8' },
-  edit:     { background: '#002B4E', color: '#fff',    borderColor: '#002B4E' },
-  view:     { background: '#F0F2E9', color: '#1F2A22', borderColor: '#DDE2D8' },
-  cancel:   { background: '#F0F2E9', color: '#1F2A22', borderColor: '#DDE2D8' },
-  secondary:{ background: 'var(--surface)', color: 'var(--foreground)', borderColor: 'var(--border)' },
-  danger:   { background: '#A65A55', color: '#fff',    borderColor: '#A65A55' },
-  approve:  { background: '#2D7A3A', color: '#fff',    borderColor: '#2D7A3A' },
-  review:   { background: '#A68145', color: '#fff',    borderColor: '#A68145' },
-  finalize: { background: '#002B4E', color: '#fff',    borderColor: '#002B4E' },
-  ghost:    { background: 'transparent', color: 'var(--foreground-muted)', borderColor: 'transparent' },
-  subtle:   { background: 'var(--primary-soft)', color: '#0078B8', borderColor: 'transparent' },
+  primary:  { background: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' },
+  secondary:{ background: 'var(--surface)', color: 'var(--text-primary)', borderColor: 'var(--border)' },
+  accent:   { background: 'var(--accent)', color: '#ffffff', borderColor: 'var(--accent)' },
+  edit:     { background: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'transparent' },
+  view:     { background: 'var(--surface-2)', color: 'var(--text-primary)', borderColor: 'var(--border)' },
+  cancel:   { background: 'var(--surface-2)', color: 'var(--text-secondary)', borderColor: 'var(--border)' },
+  danger:   { background: 'var(--danger)', color: '#ffffff', borderColor: 'var(--danger)' },
+  approve:  { background: 'var(--success)', color: '#ffffff', borderColor: 'var(--success)' },
+  review:   { background: 'var(--warning)', color: '#ffffff', borderColor: 'var(--warning)' },
+  finalize: { background: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' },
+  ghost:    { background: 'transparent', color: 'var(--text-secondary)', borderColor: 'transparent' },
+  subtle:   { background: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'transparent' },
 };
 
-// Hover — darken by ~12%
 const hoverVariants: Record<Variant, React.CSSProperties> = {
-  primary:  { background: '#006BA3', borderColor: '#006BA3' },
-  edit:     { background: '#003D6B', borderColor: '#003D6B' },
-  view:     { background: '#E4E6DC', borderColor: '#CDD2C8' },
-  cancel:   { background: '#E4E6DC', borderColor: '#CDD2C8' },
-  secondary:{ background: 'var(--surface-hover)' },
-  danger:   { background: '#924D48', borderColor: '#924D48' },
-  approve:  { background: '#236130', borderColor: '#236130' },
-  review:   { background: '#8F6D35', borderColor: '#8F6D35' },
-  finalize: { background: '#003D6B', borderColor: '#003D6B' },
-  ghost:    { background: 'var(--surface-hover)' },
-  subtle:   { background: 'var(--primary-soft-hover)' },
+  primary:  { background: 'var(--primary-hover)', borderColor: 'var(--primary-hover)', transform: 'translateY(-1px)' },
+  secondary:{ background: 'var(--surface-2)', borderColor: 'var(--border-strong)', transform: 'translateY(-1px)' },
+  accent:   { background: 'var(--accent-hover)', borderColor: 'var(--accent-hover)', transform: 'translateY(-1px)' },
+  edit:     { background: 'var(--primary)', color: '#ffffff', transform: 'translateY(-1px)' },
+  view:     { background: 'var(--surface)', borderColor: 'var(--border-strong)', transform: 'translateY(-1px)' },
+  cancel:   { background: 'var(--surface)', borderColor: 'var(--border-strong)', transform: 'translateY(-1px)' },
+  danger:   { background: '#D64E63', borderColor: '#D64E63', transform: 'translateY(-1px)' },
+  approve:  { background: '#259C6F', borderColor: '#259C6F', transform: 'translateY(-1px)' },
+  review:   { background: '#E0A32F', borderColor: '#E0A32F', transform: 'translateY(-1px)' },
+  finalize: { background: 'var(--primary-hover)', borderColor: 'var(--primary-hover)', transform: 'translateY(-1px)' },
+  ghost:    { background: 'var(--surface-2)', color: 'var(--text-primary)' },
+  subtle:   { background: 'var(--primary)', color: '#ffffff', transform: 'translateY(-1px)' },
 };
 
 export function Button({
   variant = 'secondary',
   size = 'md',
   loading,
+  fullWidth,
   children,
   disabled,
   style,
   onMouseEnter,
   onMouseLeave,
+  onFocus,
+  onBlur,
   ...props
 }: ButtonProps) {
   const [hovered, setHovered] = React.useState(false);
+  const [focused, setFocused] = React.useState(false);
   const isDisabled = disabled || loading;
+
   return (
     <button
       {...props}
       disabled={isDisabled}
       onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e); }}
       onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}
+      onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e); }}
       style={{
         ...base,
         ...sizes[size],
         ...variants[variant],
         ...(hovered && !isDisabled ? hoverVariants[variant] : {}),
+        ...(focused ? { outline: '2px solid var(--primary)', outlineOffset: '2px' } : {}),
+        ...(fullWidth ? { width: '100%' } : {}),
         opacity: isDisabled ? 0.5 : 1,
         cursor: isDisabled ? 'not-allowed' : 'pointer',
         ...style,
@@ -106,8 +120,11 @@ export function Button({
         <span
           aria-hidden
           style={{
-            width: 14, height: 14, borderRadius: '50%',
-            border: '2px solid currentColor', borderTopColor: 'transparent',
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            border: '2px solid currentColor',
+            borderTopColor: 'transparent',
             display: 'inline-block',
             animation: 'spin 0.6s linear infinite',
           }}

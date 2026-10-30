@@ -30,19 +30,17 @@ Do NOT:
 
 ## 2. HOW TO USE RISK MAPPING AS REFERENCE
 
-Locate Risk Mapping feature inside `C:\Users\SrydenID\Documents\GitHub\promia-web-sb`.
+Locate Risk Mapping inside `C:\Users\SrydenID\Documents\GitHub\promia-web-sb`.
 
 Analyze ONLY Risk Mapping for:
 
 ### UI/UX
-page layout, visual hierarchy, spacing, typography, cards, buttons, forms, tables, filters, search, pagination, tabs, modals/dialogs, detail panels, status badges, charts, heatmap, data visualization, loading states, empty states, error states, confirmation dialogs, edit flows, responsive behavior, interaction patterns
+Page layout, visual hierarchy, spacing, typography, cards, buttons, forms, tables, filters, search, pagination, tabs, modals/dialogs, detail panels, status badges, charts, heatmap, data visualization, loading states, empty states, error states, confirmation dialogs, edit flows, responsive behavior, interaction patterns.
 
 ### Reusable functionality
 Search, Filter, Sort, Pagination, Detail View, Status Management, Data Table, Data Visualization, Edit, Delete, Confirmation, Export.
 
-**Do NOT copy functionality simply because it exists in Risk Mapping.**
-
-Only reuse/adapt when it provides clear value for Automatic Asset Detection.
+Do NOT copy functionality just because it exists in Risk Mapping. Only reuse/adapt when it provides clear value for Automatic Asset Detection.
 
 ## 3. CORE PRINCIPLE
 
@@ -72,7 +70,7 @@ Automatic Asset Detection must remain independently designed and maintainable.
 
 ## 4. PRODUCT OBJECTIVE
 
-Enable user workflow:
+User workflow:
 
 ```text
 Legend
@@ -112,21 +110,41 @@ Next.js, React, TypeScript, Tailwind CSS, Responsive design
 ### Backend
 Node.js, TypeScript, Fastify or equivalent
 
+> **Implementasi nyata:** Next.js App Router API Routes (Node.js runtime), bukan
+> Fastify. Lihat `app/api/**/route.ts`.
+
 ### Database
 PostgreSQL (specifically designed for this app, not copied from Risk Mapping)
+
+> **Implementasi nyata:** 18 tabel di `sql/init.sql` + `sql/migrate-*.sql`,
+> diakses via `lib/db.ts`. Jalankan `npm run migrate`.
 
 ### AI
 Google Gemini OR DeepSeek (multimodal/image understanding)
 - API keys must remain server-side
 
+> **Implementasi nyata:** Gemini saja untuk vision (`lib/ai-agent.ts`,
+> `lib/legend-extract.ts`). DeepSeek text-only sehingga **tidak bisa** dipakai
+> untuk Run Detection maupun Scan Legend. Model tidak di-hardcode:
+> `lib/model-resolver.ts` menemukan model saat runtime. Credential dibaca di
+> server (`lib/ai-config.ts`, DB `settings` > env).
+
 ### File Storage
 S3, MinIO, or existing compatible storage
 - Do NOT store large PDFs in PostgreSQL
+
+> **Implementasi nyata:** local filesystem lewat `lib/storage.ts`, default
+> `./storage` (`STORAGE_PATH`). PDF **tidak** disimpan di PostgreSQL. Aksesnya
+> sudah di balik interface `getFile`/`saveFile`, jadi S3/MinIO bisa menyusul
+> tanpa mengubah pemanggil.
 
 ### Background Processing
 Redis + BullMQ or equivalent
 - Detection must be asynchronous
 - Do NOT keep HTTP request open during P&ID analysis
+
+> **Implementasi nyata:** BullMQ 6 + Redis, `WORKER_CONCURRENCY=1` (free tier
+> 15 RPM). Worker: `workers/detection-worker.ts`, dijalankan via `npm run worker`.
 
 ## 6. APPLICATION MODULES
 
@@ -145,9 +163,7 @@ Automatic Asset Detection
 
 ## 7. LEGEND LIBRARY
 
-Legend is critical — different plants use different P&ID symbols.
-
-AI uses selected Legend as primary reference.
+Legend is critical — different plants use different P&ID symbols. AI uses selected Legend as primary reference.
 
 Example Legend structure:
 ```json
@@ -160,12 +176,11 @@ Example Legend structure:
 }
 ```
 
-**Tag patterns must be configurable per Legend.**
-Do NOT hard-code all asset tag patterns globally.
+**Tag patterns must be configurable per Legend.** Do NOT hard-code asset tag patterns globally.
 
 ## 8. LEGEND CREATION
 
-Support workflow:
+Workflow:
 ```text
 Upload Legend PDF
        ↓
@@ -187,9 +202,7 @@ Also support manual Legend symbol creation/edit.
 
 Users upload PDF.
 
-Validate:
-* file type, MIME type, file size
-* corrupted files, empty documents
+Validate: file type, MIME type, file size, corrupted files, empty documents.
 
 After upload:
 ```text
@@ -199,18 +212,14 @@ PDF
  └── rendered page images
 ```
 
-Avoid blindly sending extremely large PDFs to Gemini/DeepSeek.
-
-Prefer:
+Avoid blindly sending extremely large PDFs to Gemini/DeepSeek. Prefer:
 ```text
 PDF → Page Extraction → High Resolution Page Image → AI Analysis
 ```
 
 ## 10. DETECTION JOB
 
-Async job representation.
-
-Statuses:
+Async job. Statuses:
 ```text
 PENDING
 PROCESSING
@@ -219,7 +228,7 @@ FAILED
 CANCELLED
 ```
 
-UI shows job progress:
+UI shows progress:
 ```text
 Analyzing P&ID...
 Page 3 of 12
@@ -251,6 +260,26 @@ ai/
 ```
 
 Adjust per actual backend architecture.
+
+> **Implementasi nyata:** struktur `ai/` di atas tidak dipakai. Yang ada:
+>
+> ```text
+> lib/
+>   ai-agent.ts               agent runner + fallback chain model
+>   ai-schemas.ts             Zod schema output
+>   ai-prompts/               builder prompt (symbol-detector, legend-extractor,
+>                             rule-validator)
+>   ai-config.ts              provider/key/model (DB settings > env)
+>   ai-circuit-breaker.ts     breaker per model
+>   ai-generation.ts          generation config per flow
+>   gemini-request-gate.ts    rate limit process-wide
+>   model-resolver.ts         discovery model runtime
+>   tuning.ts                 jalur baca tunggal semua nilai operasional
+>   gemini.ts                 klien Gemini + DeepSeek
+> ```
+>
+> Tidak ada `tools/`, tidak ada `ocr-tool.ts` (tidak ada OCR), tidak ada
+> `providers/` terpisah (semua lewat `lib/gemini.ts`).
 
 ## 12. AI AGENT RESPONSIBILITIES
 
@@ -304,9 +333,7 @@ Improve based on testing.
 
 ## 14. STRUCTURED AI OUTPUT
 
-Schema validated output.
-
-Example:
+Schema-validated output. Example:
 ```json
 {
   "page": 1,
@@ -332,29 +359,19 @@ Example:
 }
 ```
 
-Backend validates AI response before persisting.
-
-Malformed AI output must never directly enter database.
+Backend validates AI response before persisting. Malformed AI output must never directly enter database.
 
 ## 15. ASSET DETECTION
 
-System should support common industrial assets, but asset types driven by selected Legend.
-
-Examples: Pump, Valve, Vessel, Tank, Compressor, Heat Exchanger, Filter, Instrument, PSV, Control Valve, Motor, Fan.
-
-Do NOT assume these are the only types.
+Asset types driven by selected Legend. Examples: Pump, Valve, Vessel, Tank, Compressor, Heat Exchanger, Filter, Instrument, PSV, Control Valve, Motor, Fan. Do NOT assume these are the only types.
 
 ## 16. TAG DETECTION
 
-System recognizes common tag formats: P-101, V-101, E-201, T-101, XV-103, FV-201, PSV-201.
-
-**Tag recognition rules must be configurable through selected Legend.**
-
-Do NOT hard-code universal rules.
+Recognizes common formats: P-101, V-101, E-201, T-101, XV-103, FV-201, PSV-201. **Recognition rules must be configurable through selected Legend.** Do NOT hard-code universal rules.
 
 ## 17. SPATIAL ASSOCIATION
 
-AI system associates asset tags with nearby equipment symbols.
+AI associates asset tags with nearby equipment symbols.
 
 Example:
 ```text
@@ -365,19 +382,15 @@ Example:
       └───────┘
 ```
 
-Determine based on: spatial proximity, symbol structure, Legend, text position, context.
-
-Do NOT associate unrelated nearby tags merely because close.
+Based on: spatial proximity, symbol structure, Legend, text position, context. Do NOT associate unrelated nearby tags merely because close.
 
 ## 18. OCR
 
-Use OCR when useful for: asset tags, equipment labels, descriptions, notes, P&ID identifiers.
-
-OCR complements multimodal AI analysis, not replaces.
+Use OCR when useful: asset tags, equipment labels, descriptions, notes, P&ID identifiers. OCR complements multimodal AI analysis, does not replace it.
 
 ## 19. CONFIDENCE SCORE
 
-Every detection has: `confidence: 0.0 - 1.0`
+Every detection: `confidence: 0.0 - 1.0`
 
 Suggested interpretation:
 ```text
@@ -388,19 +401,29 @@ Suggested interpretation:
 
 Make thresholds configurable.
 
+> **Catatan implementasi (2026-10-02).** Band di atas adalah saran, **belum
+> menjadi perilaku aplikasi**. Yang benar-benar diimplementasikan:
+>
+> - `detections.validation_status` hanya punya tiga nilai: `VALID`,
+>   `NEEDS_REVIEW`, `CONFLICT` — **tidak ada** band High/Medium/Low.
+> - Ambang sebenarnya `DETECTION_REVIEW_THRESHOLD`, default **0.65**
+>   (bukan 0.80), plus `DETECTION_PENALTY_REVIEW_THRESHOLD` dan penalty
+>   per-faktor (tag hilang, evidence tipis, bbox over-size / degenerat).
+> - Sinyal review yang sebenarnya dipakai UI dan export adalah
+>   `reviewStatus === 'PENDING'`, bukan confidence < 0.80.
+>
+> Konsekuensi yang **belum diperbaiki**: sheet `Detection Summary` di Excel
+> masih memakai band hardcoded 0.95/0.80 (`lib/excel-export.ts:155-157`), jadi
+> labelnya tidak sama dengan apa yang terjadi di UI. Detail di
+> `docs/ASSET_REGISTER_EXCEL_EXPORT.md`.
+>
+> Kalau band tiga tingkat ini memang masih dibutuhkan, nyatakan dulu di mana
+> harus jadi sumber kebenaran (UI, export, atau keduanya) — jangan sampai ada dua
+> definisi "needs review" yang berbeda.
+
 ## 20. EVIDENCE
 
-Every detection contains evidence explaining why detected.
-
-Example:
-```text
-Symbol matches selected Legend.
-Asset tag V-101 is visible next to the symbol.
-```
-
-Evidence based on actual document content.
-
-Never generate fabricated evidence.
+Every detection contains evidence explaining why detected. Based on actual document content. Never generate fabricated evidence.
 
 ## 21. HUMAN REVIEW
 
@@ -436,28 +459,19 @@ Rejected assets must not appear in final Asset Register.
 
 ## 23. P&ID VIEWER
 
-Interactive P&ID viewer.
+Interactive P&ID viewer. Supports: zoom, pan, page navigation, bounding boxes, asset labels, hover, click, highlight, selected asset synchronization, table-to-viewer synchronization.
 
-Supports: zoom, pan, page navigation, bounding boxes, asset labels, hover, click, highlight, selected asset synchronization, table-to-viewer synchronization.
-
-Clicking asset in table highlights corresponding bounding box.
-Clicking bounding box selects corresponding asset.
+Clicking asset in table highlights corresponding bounding box. Clicking bounding box selects corresponding asset.
 
 ## 24. ASSET TABLE
 
-Professional asset table.
+Professional asset table. Columns: No, Asset Tag, Asset Type, Description, P&ID, Page, Confidence, Status, Action.
 
-Columns: No, Asset Tag, Asset Type, Description, P&ID, Page, Confidence, Status, Action
-
-Supports: search, filtering, sorting, pagination, asset type filter, confidence filter, status filter, page filter.
-
-Use Risk Mapping table UX as visual reference.
+Supports: search, filtering, sorting, pagination, asset type filter, confidence filter, status filter, page filter. Use Risk Mapping table UX as visual reference.
 
 ## 25. ASSET DETAIL
 
-Display when user opens asset:
-
-Asset Tag, Asset Type, Equipment Class, Description, P&ID, Page, Service, Location, Unit, Area, Legend, Legend Symbol, Confidence, Detection Status, Review Status, Evidence, Bounding Box.
+Display when user opens asset: Asset Tag, Asset Type, Equipment Class, Description, P&ID, Page, Service, Location, Unit, Area, Legend, Legend Symbol, Confidence, Detection Status, Review Status, Evidence, Bounding Box.
 
 Allow editing where appropriate.
 
@@ -480,9 +494,7 @@ Manual assets marked: `detectionStatus = MANUAL`
 
 ## 27. DATABASE
 
-Use PostgreSQL.
-
-Design specifically for this application.
+Use PostgreSQL. Design specifically for this application.
 
 Suggested entities:
 ```text
@@ -538,9 +550,7 @@ Adapt when necessary.
 
 ## 29. DATABASE DESIGN PRINCIPLE
 
-Do NOT blindly copy database model from Risk Mapping.
-
-Risk Mapping is only UI/UX reference.
+Do NOT blindly copy database model from Risk Mapping. Risk Mapping is only UI/UX reference.
 
 Automatic Asset Detection database designed around:
 ```text
@@ -575,8 +585,6 @@ error
 Important for debugging and improving detection quality.
 
 ## 31. API
-
-Clean API.
 
 Suggested endpoints:
 ```text
@@ -631,7 +639,7 @@ Adjust per chosen architecture.
 
 ## 33. MAIN DETECTION PAGE
 
-Primary UI contains:
+Primary UI:
 ```text
 ┌─────────────────────────────────────────────────────┐
 │ Automatic Asset Detection                           │
@@ -654,7 +662,7 @@ Design follows Risk Mapping visual language where appropriate.
 
 ## 34. DASHBOARD
 
-Display useful detection metrics:
+Detection metrics:
 ```text
 Total Documents
 Total Detection Jobs
@@ -673,7 +681,7 @@ Detection Status
 Documents Processed
 ```
 
-Use visualization patterns inspired by Risk Mapping when appropriate.
+Use visualization patterns inspired by Risk Mapping where appropriate.
 
 ## 35. LEGEND MANAGEMENT UI
 
@@ -706,27 +714,19 @@ Actions: View, Run Detection, Delete
 
 ## 37. UX PRINCIPLES
 
-Application must feel: Professional, Industrial, Technical, Clean, Data-driven, Easy to understand.
+Must feel: Professional, Industrial, Technical, Clean, Data-driven, Easy to understand.
 
 Do NOT create flashy consumer-style interface.
 
-Prioritize: clarity, information hierarchy, usability, consistency, low cognitive load, efficient review workflow.
-
-Use Risk Mapping as primary visual reference.
+Prioritize: clarity, information hierarchy, usability, consistency, low cognitive load, efficient review workflow. Use Risk Mapping as primary visual reference.
 
 ## 38. RESPONSIVE DESIGN
 
-Support: Desktop, Laptop, Tablet.
-
-Main detection workspace prioritizes desktop (P&ID analysis requires large visual space).
-
-Do NOT sacrifice P&ID viewer usability for aggressive mobile layouts.
+Support: Desktop, Laptop, Tablet. Main detection workspace prioritizes desktop (P&ID analysis requires large visual space). Do NOT sacrifice P&ID viewer usability for aggressive mobile layouts.
 
 ## 39. EXCEL ASSET REGISTER
 
-Main output: `Asset_Register.xlsx`
-
-Use: ExcelJS or equivalent.
+Main output: `Asset_Register.xlsx`. Use ExcelJS or equivalent.
 
 Workbook contains 5 sheets:
 
@@ -744,13 +744,9 @@ Columns: Asset Tag, Asset Type, Confidence, Legend Symbol, Evidence, P&ID Number
 
 ## 40. EXCEL FORMATTING
 
-Excel must be professional.
+Excel must be professional. Include: headers, freeze panes, filters, readable column widths, borders, percentage formatting, date formatting, Excel tables, summary information.
 
-Include: headers, freeze panes, filters, readable column widths, borders, percentage formatting, date formatting, Excel tables, summary information.
-
-Rejected assets must NOT appear in primary Asset Register.
-
-Review items only included when user explicitly selects: `Include Review Items`.
+Rejected assets must NOT appear in primary Asset Register. Review items only included when user explicitly selects `Include Review Items`.
 
 ## 41. SECURITY
 
@@ -765,7 +761,7 @@ Implement:
 * environment variables
 * appropriate rate limiting
 
-Never expose: `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` to browser.
+Never expose `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` to browser.
 
 ## 42. ERROR HANDLING
 
@@ -779,13 +775,11 @@ Queue failure, Storage failure, Database failure
 Excel generation failure
 ```
 
-User-facing errors must be understandable.
-
-Never expose internal: API keys, stack traces, database credentials, internal paths, provider secrets.
+User-facing errors must be understandable. Never expose: API keys, stack traces, database credentials, internal paths, provider secrets.
 
 ## 43. OBSERVABILITY
 
-Log useful information for:
+Log for:
 ```text
 Document Upload
 Detection Job
@@ -799,53 +793,43 @@ Database Persistence
 Export
 ```
 
-Include: jobId, documentId, page, agentRunId, duration, status, error.
-
-Do not log secrets.
+Include: jobId, documentId, page, agentRunId, duration, status, error. Do not log secrets.
 
 ## 44. AI COST AND PERFORMANCE
 
-Design efficiently.
+Do NOT send same image to Gemini/DeepSeek multiple times unnecessarily.
 
-Do NOT unnecessarily send same image to Gemini/DeepSeek multiple times.
+Use: page-level analysis, image resizing, cropping, caching, structured output, async processing, retry policies, configurable model, configurable token/output limits, model cost and latency comparison tracking.
 
-Use: page-level analysis, image resizing, cropping, caching, structured output, asynchronous processing, retry policies, configurable model, configurable token/output limits, model cost and latency comparison tracking.
-
-System designed so AI model can change without rewriting entire application.
+Design so AI model can change without rewriting entire application.
 
 ## 45. FUTURE EXTENSIBILITY
 
-System should allow future features: Asset Register → Risk Mapping → Risk Assessment → RBI → API 581.
+Allow future features: Asset Register → Risk Mapping → Risk Assessment → RBI → API 581.
 
 Possible future integrations: existing Risk Mapping, equipment criticality, inspection planning, RBI, maintenance management, asset management.
 
-Do NOT implement these future features now unless required for MVP.
+Do NOT implement these now unless required for MVP.
 
 ## 46. DO NOT USE CUSTOM COMPUTER VISION TRAINING
 
-For MVP, do NOT train custom object detection model.
-
-Use: Gemini Multimodal/Vision + DeepSeek + Legend + OCR + Spatial reasoning + Structured output.
+For MVP, do NOT train custom object detection model. Use: Gemini Multimodal/Vision + DeepSeek + Legend + OCR + Spatial reasoning + Structured output.
 
 Architecture allows custom CV model introduction in future if necessary.
 
 ## 47. NO MCP / RAG REQUIREMENT
 
-Automatic Asset Detection does NOT require: MCP, RAG, Hermes, Agentic Data Reconciliation.
+Automatic Asset Detection does NOT require: MCP, RAG, Hermes, Agentic Data Reconciliation. Do not introduce unless explicitly required later.
 
-Do not introduce unless explicitly required later.
-
-AI Agent specifically focused on: P&ID/PFD + Legend + Asset Detection.
+AI Agent focused on: P&ID/PFD + Legend + Asset Detection.
 
 ## 48. DEVELOPMENT PROCESS
 
-Before writing code, perform focused inspection.
+Before writing code, do focused inspection.
 
 **Step 1:** Locate Risk Mapping inside `C:\Users\SrydenID\Documents\GitHub\promia-web-sb`.
 
-Identify: relevant pages, components, styles, tables, forms, charts, heatmap, UI patterns, useful functions.
-
-Do not analyze entire repository unless necessary.
+Identify: relevant pages, components, styles, tables, forms, charts, heatmap, UI patterns, useful functions. Do not analyze entire repository unless necessary.
 
 ## 49. FIRST RESPONSE REQUIREMENT
 
@@ -855,9 +839,7 @@ Before modifying code, provide concise but concrete analysis:
 Risk Mapping location, Pages, Main layout, Tables, Forms, Charts, Heatmap, Dialogs, Reusable UI patterns, Responsive behavior
 
 ### B. Functions Worth Reusing
-List only functions genuinely useful for Automatic Asset Detection.
-Example: Search, Filtering, Status management, Table interaction, Detail panel, Export.
-Explain why each relevant.
+List only functions genuinely useful for Automatic Asset Detection. Example: Search, Filtering, Status management, Table interaction, Detail panel, Export. Explain why each relevant.
 
 ### C. Automatic Asset Detection Architecture
 Frontend, Backend, AI Agent, PostgreSQL, Storage, Queue, Gemini, DeepSeek
@@ -874,7 +856,7 @@ Show proposed pages.
 ### G. Implementation Plan
 Break into logical phases.
 
-Do NOT start making large code changes until this analysis presented.
+Do NOT start large code changes until this analysis presented.
 
 ## 50. IMPLEMENTATION PHASES
 
@@ -1020,7 +1002,7 @@ Keep architecture modular.
 
 ## 52. QUALITY REQUIREMENTS
 
-Final implementation should be:
+Final implementation must be:
 ```text
 Production-oriented
 Type-safe
@@ -1077,7 +1059,7 @@ Implement tests for:
 
 ## 54. SUCCESS CRITERIA
 
-Project successful when user can perform:
+Project successful when user can:
 
 ```text
 1. Create project
@@ -1099,8 +1081,6 @@ Project successful when user can perform:
 Interface feels visually consistent with existing Risk Mapping feature while remaining independent Automatic Asset Detection feature.
 
 ## 55. FINAL DESIGN PRINCIPLE
-
-Most important principle:
 
 > **Build Automatic Asset Detection as independent, production-quality application/feature. Use existing Risk Mapping feature only as inspiration and reference for UI/UX, interaction patterns, visualization, and selected reusable functionality where it genuinely makes sense.**
 

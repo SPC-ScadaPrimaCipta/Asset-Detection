@@ -51,6 +51,7 @@ export interface LegendSymbol {
   standard_code: string | null;
   isa_function_code: string | null;
   iso_category: string | null;
+  reference_image_url?: string | null;
 }
 
 export interface RuleValidationInput {
@@ -116,18 +117,151 @@ function matchesTagPattern(tag: string, pattern: string): boolean {
   return new RegExp(`^${esc}$`, 'i').test(tag);
 }
 
+/** Asset types that mean "unclassified scan output" — never authoritative. */
+const UNCLASSIFIED_TYPES = new Set(['', 'other', 'unknown', 'n/a', '-', 'misc']);
+
+/** Generic categories where tag prefix alone cannot differentiate specific equipment. */
+const GENERIC_TYPES = new Set(['valve', 'equipment', 'instrument', 'other', 'unknown', 'n/a', '-', 'misc', 'fitting', 'device']);
+
+export function isSpecificAssetType(t: string | null | undefined): boolean {
+  if (!t) return false;
+  const l = t.trim().toLowerCase();
+  return l.length >= 3 && !GENERIC_TYPES.has(l);
+}
+
+/**
+ * Format specific asset name from legend symbol to clean Title Case.
+ * Cleans operational annotations like "(OPEN/CLOSED)", "1) OPEN POSITION...", etc.
+ * E.g. "BALL VALVE" -> "Ball Valve"
+ *      "GATE VALVE (OPEN/CLOSED)" -> "Gate Valve"
+ *      "(GLOBE VALVE) 1) OPEN POSITION 2) CLOSED..." -> "Globe Valve"
+ */
+export function formatLegendAssetType(symbolName: string | null | undefined, fallbackType: string): string {
+  const toTitle = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  if (!symbolName || !symbolName.trim()) {
+    return toTitle(fallbackType);
+  }
+
+  let clean = symbolName.trim();
+
+  // 1. Prefix parenthesis at start: "(GLOBE VALVE) 1) OPEN..." -> "GLOBE VALVE"
+  const leadParenMatch = clean.match(/^\(([A-Z0-9\s\-]+)\)/i);
+  if (leadParenMatch) {
+    clean = leadParenMatch[1].trim();
+  } else {
+    // 2. Trailing numbered annotations e.g. "1) OPEN POSITION..."
+    clean = clean.replace(/\s*\b\d+\)\s*[^]*$/gi, '').trim();
+
+    // 3. Operational status in parenthesis e.g. "(OPEN/CLOSED)", "(CLOSED POSITION)"
+    clean = clean.replace(/\s*\([^)]*(open|close|position|standby|normal|forced|operator|accessible|part\s*config)[^)]*\)/gi, '').trim();
+  }
+
+  clean = clean.replace(/[\s\-_:;,]+$/, '').trim();
+
+  if (clean.length >= 3 && !/^(unknown|other|misc|n\/a|-)$/i.test(clean)) {
+    return toTitle(clean);
+  }
+
+  return toTitle(fallbackType);
+}
+
+/** Drop unclassified symbols so they can't shadow real standards matches. */
+function classified(symbols: LegendSymbol[]): LegendSymbol[] {
+  return symbols.filter((s) => !UNCLASSIFIED_TYPES.has((s.asset_type ?? '').trim().toLowerCase()));
+}
+
+function levenshteinDist(a: string, b: string): number {
+  const la = a.length, lb = b.length;
+  const dp: number[] = Array.from({ length: lb + 1 }, (_, i) => i);
+  for (let i = 1; i <= la; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= lb; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[lb];
+}
+
 function findInLegend(
   symbols: LegendSymbol[],
   tagPrefix: string | null,
   assetType: string | null,
   fullTag?: string | null
 ): LegendSymbol | null {
+  symbols = classified(symbols);
   if (!symbols.length) return null;
 
+  const cleanType = (assetType ?? '').trim().toLowerCase();
+  const hasSpecificType = isSpecificAssetType(cleanType);
+
+  // 1. Priority 1: When visual detection identified a specific asset type
+  // (e.g. "Ball Valve", "Gate Valve", "Centrifugal Pump"), match the symbol
+  // representing that specific equipment FIRST. Do NOT let generic prefix "V"
+  // blindly pick the first valve in the legend array.
+  if (hasSpecificType) {
+    // 1a. Exact match on symbol_name, asset_type, or aliases
+    const exactMatches = symbols.filter(
+      s => (s.symbol_name && s.symbol_name.trim().toLowerCase() === cleanType) ||
+           (s.asset_type && s.asset_type.trim().toLowerCase() === cleanType) ||
+           (s.aliases && s.aliases.some(a => a.toLowerCase() === cleanType))
+    );
+    if (exactMatches.length === 1) return exactMatches[0];
+    if (exactMatches.length > 1) {
+      if (tagPrefix) {
+        const withTag = exactMatches.find(s => s.tag_pattern && s.tag_pattern.toUpperCase().startsWith(tagPrefix.toUpperCase()));
+        if (withTag) return withTag;
+      }
+      return exactMatches[0];
+    }
+
+    // 1b. Substring or fuzzy match on symbol_name or asset_type
+    const fuzzyMatches = symbols.filter(s => {
+      const name = (s.symbol_name ?? '').toLowerCase();
+      const atype = (s.asset_type ?? '').toLowerCase();
+      return name.includes(cleanType) || cleanType.includes(name) ||
+             (atype && (atype.includes(cleanType) || cleanType.includes(atype))) ||
+             (s.aliases && s.aliases.some(a => a.toLowerCase().includes(cleanType) || cleanType.includes(a.toLowerCase())));
+    });
+
+    if (fuzzyMatches.length > 0) {
+      fuzzyMatches.sort((a, b) => {
+        const distA = Math.min(
+          levenshteinDist((a.symbol_name ?? '').toLowerCase(), cleanType),
+          levenshteinDist((a.asset_type ?? '').toLowerCase(), cleanType)
+        );
+        const distB = Math.min(
+          levenshteinDist((b.symbol_name ?? '').toLowerCase(), cleanType),
+          levenshteinDist((b.asset_type ?? '').toLowerCase(), cleanType)
+        );
+        return distA - distB;
+      });
+
+      if (tagPrefix) {
+        const withTag = fuzzyMatches.find(s => s.tag_pattern && s.tag_pattern.toUpperCase().startsWith(tagPrefix.toUpperCase()));
+        if (withTag && levenshteinDist((withTag.symbol_name ?? '').toLowerCase(), cleanType) <= 10) {
+          return withTag;
+        }
+      }
+      return fuzzyMatches[0];
+    }
+  }
+
+  // 2. Full tag pattern match if provided
   if (fullTag) {
     const byPattern = symbols.find(s => s.tag_pattern && matchesTagPattern(fullTag, s.tag_pattern));
     if (byPattern) return byPattern;
   }
+
+  // 3. Fallback: Tag prefix match (when assetType is generic, unknown, or null)
   if (tagPrefix) {
     const byPrefix = symbols.find(s => {
       if (!s.tag_pattern) return false;
@@ -135,54 +269,22 @@ function findInLegend(
       return prefixPart.toUpperCase() === tagPrefix.toUpperCase();
     });
     if (byPrefix) return byPrefix;
+
+    const byAlias = symbols.find(s =>
+      s.aliases?.some(a => a.toUpperCase() === tagPrefix.toUpperCase())
+    );
+    if (byAlias) return byAlias;
   }
+
+  // 4. Fallback: Generic assetType match
   if (assetType) {
     const byType = symbols.find(
       s => s.asset_type.toLowerCase() === assetType.toLowerCase() ||
            (s.symbol_name ?? '').toLowerCase() === assetType.toLowerCase()
     );
     if (byType) return byType;
-
-    const byAlias = symbols.find(s =>
-      s.aliases?.some(a => a.toLowerCase() === assetType.toLowerCase())
-    );
-    if (byAlias) return byAlias;
-
-    // Fuzzy: Phase 4 — pilih match dengan Levenshtein distance terkecil
-    // (bukan asset_type terpendek). Mencegah "Valve" → "Control Valve"
-    // saat "Ball Valve" lebih dekat secara string ke hasil Vision.
-    const fuzzyMatches = symbols.filter(
-      s => s.asset_type.toLowerCase().includes(assetType.toLowerCase()) ||
-           assetType.toLowerCase().includes(s.asset_type.toLowerCase())
-    );
-    if (fuzzyMatches.length > 0) {
-      const lev = (a: string, b: string): number => {
-        const la = a.length, lb = b.length;
-        const dp: number[] = Array.from({ length: lb + 1 }, (_, i) => i);
-        for (let i = 1; i <= la; i++) {
-          let prev = dp[0];
-          dp[0] = i;
-          for (let j = 1; j <= lb; j++) {
-            const tmp = dp[j];
-            dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
-            prev = tmp;
-          }
-        }
-        return dp[lb];
-      };
-      const target = assetType.toLowerCase();
-      fuzzyMatches.sort((a, b) =>
-        lev(a.asset_type.toLowerCase(), target) - lev(b.asset_type.toLowerCase(), target)
-      );
-      return fuzzyMatches[0];
-    }
   }
-  if (tagPrefix) {
-    const byAlias = symbols.find(s =>
-      s.aliases?.some(a => a.toUpperCase() === tagPrefix.toUpperCase())
-    );
-    if (byAlias) return byAlias;
-  }
+
   return null;
 }
 
@@ -336,9 +438,10 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       visionScore: aiConfidence,
     });
     audit.hit('Legend', fusion.confidence, `Matched: "${legendMatch.symbol_name ?? legendMatch.asset_type}"`, Date.now() - t2);
+    const resolvedType = formatLegendAssetType(legendMatch.symbol_name, legendMatch.asset_type);
     return {
       source: 'LEGEND',
-      resolvedAssetType: legendMatch.asset_type,
+      resolvedAssetType: resolvedType,
       resolvedAssetName: legendMatch.symbol_name ?? legendMatch.asset_type,
       tagPrefix: effectivePrefix,
       confidence: fusion.confidence,
@@ -371,9 +474,10 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       visionScore: aiConfidence,
     });
     audit.hit('CompanyKB', fusion.confidence, `"${best.asset_name}" confirmed ${best.confirmed_count}×`, Date.now() - t3);
+    const resolvedType = formatLegendAssetType(best.asset_name, best.asset_type);
     return {
       source: 'COMPANY_KB',
-      resolvedAssetType: best.asset_type,
+      resolvedAssetType: resolvedType,
       resolvedAssetName: best.asset_name,
       tagPrefix: effectivePrefix ?? best.tag_prefix,
       confidence: fusion.confidence,
@@ -464,9 +568,10 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       visionScore: aiConfidence,
     });
     audit.hit('ISA', fusion.confidence, `"${isaMatch.symbol_name ?? isaMatch.asset_type}"`, Date.now() - t6);
+    const resolvedType = formatLegendAssetType(isaMatch.symbol_name, isaMatch.asset_type);
     return {
       source: 'ISA',
-      resolvedAssetType: isaMatch.asset_type,
+      resolvedAssetType: resolvedType,
       resolvedAssetName: isaMatch.symbol_name ?? isaMatch.asset_type,
       tagPrefix: effectivePrefix,
       confidence: fusion.confidence,
@@ -494,9 +599,10 @@ export async function validateDetection(input: RuleValidationInput): Promise<Rul
       visionScore: aiConfidence,
     });
     audit.hit('ISO', fusion.confidence, `"${isoMatch.symbol_name ?? isoMatch.asset_type}"`, Date.now() - t7);
+    const resolvedType = formatLegendAssetType(isoMatch.symbol_name, isoMatch.asset_type);
     return {
       source: 'ISO',
-      resolvedAssetType: isoMatch.asset_type,
+      resolvedAssetType: resolvedType,
       resolvedAssetName: isoMatch.symbol_name ?? isoMatch.asset_type,
       tagPrefix: effectivePrefix,
       confidence: fusion.confidence,

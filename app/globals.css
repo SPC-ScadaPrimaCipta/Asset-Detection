@@ -1,76 +1,184 @@
 @import "tailwindcss";
 
-/* ── Design System: Minimalist Nature Palette ───────────────────────────────
- * Based on Vona Nature reference with engineering precision.
- * Warm neutral backgrounds, dark green primary, thin borders, high readability.
+/* ── Design System: Neuro. Dashboard Tokens ─────────────────────────────────
+ * Royal Blue identity (#3451D1 / #5B7BFF), Plus Jakarta Sans typography.
+ * Dual-theme (Light & Dark), 28px frame radius, 20px card radius, soft shadows.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-:root {
-  /* ── Primary palette ── */
-  --background: #F7F8F1;
-  --surface: #FBFCF7;
-  --surface-muted: #F0F2E9;
+:root,
+[data-theme="light"] {
+  /* Brand & Semantics */
+  --primary: #3451D1;
+  --primary-hover: #2B44B8;
+  --primary-soft: #E8ECFC;
+  --accent: #6CC8F2;
+  --accent-hover: #52BDEC;
+  --accent-soft: rgba(108, 200, 242, 0.16);
+  --success: #2FB584;
+  --success-soft: #E4F7EF;
+  --danger: #E5677B;
+  --danger-soft: #FCEBEE;
+  --warning: #F5B942;
+  --warning-soft: #FEF7E6;
+  --info: #3B8FE8;
+  --info-soft: rgba(59, 143, 232, 0.16);
 
-  --foreground: #1F2A22;
-  --foreground-muted: #657066;
-  --foreground-subtle: #899189;
+  /* Surface & Backgrounds */
+  --bg-page: linear-gradient(135deg, #DCE3F7 0%, #EEF1FB 100%);
+  --bg-app: #F3F5FC;
+  --background: #F3F5FC;
+  --surface: #FFFFFF;
+  --surface-2: #F6F8FD;
+  --surface-muted: #F6F8FD;
+  --border: #E6E9F4;
+  --border-strong: #D5DBEC;
 
-  --primary: #002B4E;
-  --primary-hover: #001E38;
-  --primary-soft: #EAF3FA;
+  /* Typography */
+  --text-primary: #1E2347;
+  --text-secondary: #6E7597;
+  --text-muted: #9AA0BC;
+  --text-on-primary: #FFFFFF;
+  --foreground: #1E2347;
+  --foreground-muted: #6E7597;
+  --foreground-subtle: #9AA0BC;
 
-  --accent: #0078B8;
-  --accent-hover: #005F94;
-  --accent-soft: #E8F6FC;
+  /* Sidebar Tokens */
+  --sidebar-bg: #3053D2;
+  --sidebar-item-text: #DCE3FF;
+  --sidebar-item-active-bg: #FFFFFF;
+  --sidebar-item-active-text: #1E2347;
+  --sidebar-support-bg: #4A66DE;
 
-  --border: #DDE2D8;
-  --border-strong: #C9D0C5;
+  /* Banner & Elevation */
+  --banner-bg: linear-gradient(135deg, #6FCBF3 0%, #8FDAF7 100%);
+  --shadow-card: 0 8px 24px rgba(52, 81, 209, 0.08);
+  --shadow-frame: 0 24px 60px rgba(52, 81, 209, 0.15);
 
-  --success: #2D7A3A;
-  --success-soft: #E6F4E9;
-
-  --warning: #A68145;
-  --warning-soft: #F4EBDD;
-
-  --danger: #A65A55;
-  --danger-soft: #F5E5E3;
-
-  --info: #617D91;
-  --info-soft: #E7EDF1;
-
-  /* ── Sizing ── */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 72px;
-  --topbar-height: 64px;
-
-  /* ── Radius ── */
+  /* Geometry & Radius */
+  --radius-frame: 28px;
+  --radius-card: 20px;
+  --radius-sidebar: 24px;
+  --radius-button: 10px;
+  --radius-input: 10px;
+  --radius-icon-box: 6px;
+  --radius-thumb: 12px;
+  --radius-chip: 6px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  --radius-md: 10px;
+  --radius-lg: 20px;
+
+  /* Layout dimensions */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 80px;
+  --topbar-height: 64px;
+}
+
+[data-theme="dark"] {
+  /* Brand & Semantics */
+  --primary: #5B7BFF;
+  --primary-hover: #7391FF;
+  --primary-soft: #222A5C;
+  --accent: #4FB4E6;
+  --accent-hover: #6AC1EC;
+  --accent-soft: rgba(79, 180, 230, 0.18);
+  --success: #45D6A0;
+  --success-soft: #12332A;
+  --danger: #FF7F93;
+  --danger-soft: #3A1E26;
+  --warning: #F5C25A;
+  --warning-soft: #382A13;
+  --info: #5AA5F5;
+  --info-soft: rgba(90, 165, 245, 0.18);
+
+  /* Surface & Backgrounds */
+  --bg-page: linear-gradient(135deg, #0A0D1C 0%, #11152B 100%);
+  --bg-app: #0F1325;
+  --background: #0F1325;
+  --surface: #181D35;
+  --surface-2: #1F2542;
+  --surface-muted: #1F2542;
+  --border: #2A3158;
+  --border-strong: #394273;
+
+  /* Typography */
+  --text-primary: #F1F3FC;
+  --text-secondary: #A3AACB;
+  --text-muted: #6F7699;
+  --text-on-primary: #FFFFFF;
+  --foreground: #F1F3FC;
+  --foreground-muted: #A3AACB;
+  --foreground-subtle: #6F7699;
+
+  /* Sidebar Tokens */
+  --sidebar-bg: #1B2466;
+  --sidebar-item-text: #B9C3F5;
+  --sidebar-item-active-bg: #2B3786;
+  --sidebar-item-active-text: #FFFFFF;
+  --sidebar-support-bg: #26307F;
+
+  /* Banner & Elevation */
+  --banner-bg: linear-gradient(135deg, #1E5E86 0%, #2A7FA8 100%);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-frame: 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  /* Geometry & Radius */
+  --radius-frame: 28px;
+  --radius-card: 20px;
+  --radius-sidebar: 24px;
+  --radius-button: 10px;
+  --radius-input: 10px;
+  --radius-icon-box: 6px;
+  --radius-thumb: 12px;
+  --radius-chip: 6px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 20px;
+
+  /* Layout dimensions */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 80px;
+  --topbar-height: 64px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-plus-jakarta);
 }
 
 html,
 body {
   height: 100%;
-  background: var(--background);
+  background: var(--bg-page);
   color: var(--foreground);
 }
 
 body {
-  font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-family: var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Scrollbar ── */
+/* Color transition for smooth theme switching */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *:before,
+html.theme-transition *:after {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, fill 200ms ease, stroke 200ms ease !important;
+  transition-delay: 0s !important;
+}
+
+/* Tabular numerals for stats and counters */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+/* ── Custom Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -91,4 +199,24 @@ body {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .detection-viewer-row {
+    flex-direction: column !important;
+    min-height: 0 !important;
+  }
+
+  .detection-viewer-row > aside {
+    width: 100% !important;
+    height: min(520px, 70vh) !important;
+    max-height: 520px !important;
+    min-height: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .mdo-result-panel {
+    border-radius: var(--radius-md);
+  }
 }

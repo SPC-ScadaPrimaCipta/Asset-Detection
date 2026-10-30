@@ -1,0 +1,200 @@
+[detection] recovery: found 9 PENDING job(s), re-queuing...
+[detection] recovery: queued job=3a17a643-5cf6-4228-81d9-c1729b720d6b
+[detection] recovery: queued job=6051d784-9cbd-4751-b024-df5234a0c41c
+[detection] recovery: queued job=c4026167-6d99-4c64-afc1-7d8c7c1203a3
+[detection] recovery: queued job=5e86cfbb-c30f-4652-ac09-5405eaa93eaf
+[detection] recovery: queued job=2af456bc-6a5b-4247-ab73-91d215ef8bad
+[detection] recovery: queued job=2745b46d-7121-47ad-b6fc-193990ffdf70
+[detection] recovery: queued job=bfe942bb-5ccc-4a1f-8bb9-762dcbe97ff3
+[detection] recovery: queued job=c2035286-9cf5-40af-9bef-d8b64ea68696
+[detection] recovery: queued job=6975fbcc-753b-4115-8773-b9577429c231
+[detection] ISA/ISO builtin cache pre-warmed
+[detection] job=930df816-032f-41ab-9a19-a339dd98b88c skipped: job is already FAILED 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf pipeline start { documentId: 'e82aa69a-aeff-4a5f-a0c0-f1a84d18a751' }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf parse done {
+  entities: 5173,
+  inserts: 59,
+  circles: 32,
+  detections: 41,
+  geminiCandidates: 19
+}
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 gemini text-prompt fallback done { candidates: 19 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf rule-validator enrichment done { enriched: 15, candidates: 22 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r1 page 1 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r2 page 2 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r3 page 3 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r4 page 4 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r6 page 6 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r5 page 5 [hybrid] OCR skipped (caller-provided tags) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r4 page 4 [hybrid] YOLO: 29 detections (12 tiles, 45121ms) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r2 page 2 [hybrid] YOLO: 1 detections (18 tiles, 73179ms) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r1 page 1 [hybrid] YOLO: 0 detections (21 tiles, 79122ms) 
+[cv-client] service marked unavailable after 3 consecutive failures
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r3 page 3 [hybrid] YOLO: 7 detections (33 tiles, 108652ms) 
+[gemini] trying model=gemini-3.6-flash page=1
+[gemini] trying model=gemini-3.6-flash page=2
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r6 page 6 [hybrid] YOLO: 0 detections (45 tiles, 117865ms) 
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r5 page 5 [hybrid] YOLO: 0 detections (57 tiles, 129944ms) 
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.6-flash page=3
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.6-flash page=6
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.6-flash page=4
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.6-flash page=5
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.6-flash page=1
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=2
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=11
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[gemini] success model=gemini-3.1-flash-lite detections=2
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[gemini] success model=gemini-3.1-flash-lite detections=3
+[gemini] success model=gemini-3.1-flash-lite detections=1
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[gemini] success model=gemini-3.1-flash-lite detections=1
+[gemini] success model=gemini-3.1-flash-lite detections=2
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=2
+[gemini] success model=gemini-3.1-flash-lite detections=8
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] success model=gemini-3.1-flash-lite detections=3
+[detection] page 2 catch-up: 3 raw, 0 new
+[detection] page 2 regions=6 failed=0 raw=5 deduped=5
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r2 page 2 [hybrid] Gemini fallback: 5 detections, 4 new (1 already covered by YOLO) 
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] success model=gemini-3.1-flash-lite detections=6
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[gemini] success model=gemini-3.1-flash-lite detections=10
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] success model=gemini-3.1-flash-lite detections=5
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=3
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=6
+[gemini] success model=gemini-3.1-flash-lite detections=2
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=1
+[gemini] success model=gemini-3.1-flash-lite detections=10
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=5
+[gemini] success model=gemini-3.1-flash-lite detections=4
+[detection] page 3 catch-up: 4 raw, 2 new
+[detection] page 3 regions=6 failed=0 raw=14 deduped=12
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[detection] page 6 catch-up: 0 raw, 0 new
+[detection] page 6 regions=6 failed=0 raw=0 deduped=0
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r6 page 6 [hybrid] Gemini fallback: 0 detections, 0 new (0 already covered by YOLO) 
+[gemini] success model=gemini-3.1-flash-lite detections=2
+[detection] page 1 catch-up: 2 raw, 0 new
+[detection] page 1 regions=6 failed=0 raw=4 deduped=3
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r1 page 1 [hybrid] Gemini fallback: 3 detections, 3 new (0 already covered by YOLO) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r3 page 3 [hybrid] Gemini fallback: 12 detections, 12 new (0 already covered by YOLO) 
+[gemini] success model=gemini-3.1-flash-lite detections=8
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[gemini] success model=gemini-3.1-flash-lite detections=0
+[detection] page 5 catch-up: 0 raw, 0 new
+[detection] page 5 regions=6 failed=0 raw=3 deduped=3
+[gemini] success model=gemini-3.1-flash-lite detections=5
+[model-resolver] Gemini candidates: gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.7-flash, gemini-2.5-flash
+[gemini] trying model=gemini-3.1-flash-lite page=4
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r5 page 5 [hybrid] Gemini fallback: 3 detections, 3 new (0 already covered by YOLO) 
+[gemini] success model=gemini-3.1-flash-lite detections=12
+[detection] page 4 catch-up: 12 raw, 0 new
+[detection] page 4 regions=6 failed=0 raw=52 deduped=42
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf-vision r4 page 4 [hybrid] Gemini fallback: 42 detections, 32 new (10 already covered by YOLO) 
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 1, yolo: 0, fallback: 3, merged: 0, new: 3 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 2, yolo: 1, fallback: 4, merged: 1, new: 3 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 3, yolo: 7, fallback: 12, merged: 0, new: 19 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 4, yolo: 29, fallback: 32, merged: 6, new: 55 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 5, yolo: 0, fallback: 3, merged: 0, new: 0 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision region done { region: 6, yolo: 0, fallback: 0, merged: 0, new: 0 }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf vision lap-2 done {
+  merged: 7,
+  visionOnlyNew: 80,
+  upgraded: 2,
+  droppedInvalidTag: 4,
+  droppedLowQuality: 0,
+  agreementPct: 8
+}
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 document_pages rows ensured for DXF regions { pages: [ 1, 2, 3, 4, 5, 6 ] }
+[detection] job=9377882f-1885-42c1-8da9-1867740c0676 dxf pipeline done { detections: 121, droppedTag: 0, fixedType: 18 }

@@ -1,0 +1,3060 @@
+{
+  "generatedAt": "2026-10-05T06:51:24.762Z",
+  "modelPath": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\model\\yolo-pid.onnx",
+  "datasetPath": "C:\\Users\\SrydenID\\Documents\\GitHub\\Asset-Detection\\fixtures\\ground-truth\\dataset-v1.json",
+  "iouThreshold": 0.5,
+  "minSamplesPerClass": 5,
+  "pageCount": 12,
+  "annotationCount": 5,
+  "thresholds": [
+    {
+      "threshold": 0.25,
+      "global": {
+        "tp": 4,
+        "fp": 77,
+        "fn": 1,
+        "precision": 0.04938271604938271,
+        "recall": 0.8,
+        "f1": 0.09302325581395349
+      },
+      "perPage": [
+        {
+          "pageId": "sheet-1-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "tp": 0,
+          "fp": 4,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-3-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "tp": 0,
+          "fp": 10,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-5-p1",
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "tp": 0,
+          "fp": 13,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "tp": 0,
+          "fp": 5,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "tp": 0,
+          "fp": 13,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "tp": 2,
+          "fp": 6,
+          "fn": 0,
+          "precision": 0.25,
+          "recall": 1,
+          "f1": 0.4
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "tp": 0,
+          "fp": 8,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "fire-water-p1",
+          "tp": 2,
+          "fp": 9,
+          "fn": 0,
+          "precision": 0.18181818181818182,
+          "recall": 1,
+          "f1": 0.3076923076923077
+        },
+        {
+          "pageId": "fire-water-p2",
+          "tp": 0,
+          "fp": 6,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "perClass": [
+        {
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "gtCount": 2,
+          "insufficientSample": true,
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 13,
+          "label": "Globle_valve_NC",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 14,
+          "label": "Control_Valve",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1,
+          "recall": 1,
+          "f1": 1
+        },
+        {
+          "classId": 19,
+          "label": "Spectacle_blind_Open",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 20,
+          "label": "Reducer",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 17,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 22,
+          "label": "Rupture_disk",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 23,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 7,
+          "fn": 0,
+          "precision": 0.125,
+          "recall": 1,
+          "f1": 0.2222222222222222
+        },
+        {
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 6,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 17,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 30,
+          "label": "box",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "matches": [
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "confidence": 0.923958420753479,
+          "iou": 0.9954675086688717,
+          "gtId": "gt-001",
+          "detectionBbox": {
+            "x": 375.2681656658649,
+            "y": 143.7181719839573,
+            "width": 177.71051563024525,
+            "height": 120.35089949369427
+          },
+          "gtBbox": {
+            "x": 375,
+            "y": 144,
+            "width": 178,
+            "height": 120
+          }
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.8340157270431519,
+          "iou": 0.9878607944058247,
+          "gtId": "gt-002",
+          "detectionBbox": {
+            "x": 196.32979716360566,
+            "y": 159.70199264287947,
+            "width": 100.57476841807366,
+            "height": 100.78818304538726
+          },
+          "gtBbox": {
+            "x": 196,
+            "y": 160,
+            "width": 101,
+            "height": 101
+          }
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "confidence": 0.31520527601242065,
+          "iou": 0.9911054293670537,
+          "gtId": "gt-004",
+          "detectionBbox": {
+            "x": 123.67330286502839,
+            "y": 3030.827229309082,
+            "width": 120.1349669933319,
+            "height": 178.51824340820303
+          },
+          "gtBbox": {
+            "x": 124,
+            "y": 3031,
+            "width": 120,
+            "height": 179
+          }
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "confidence": 0.286712110042572,
+          "iou": 0.98618702276111,
+          "gtId": "gt-005",
+          "detectionBbox": {
+            "x": 1396.570274066925,
+            "y": 838.6747460842133,
+            "width": 46.428035545349076,
+            "height": 145.97954568862906
+          },
+          "gtBbox": {
+            "x": 1397,
+            "y": 839,
+            "width": 46,
+            "height": 146
+          }
+        }
+      ],
+      "falsePositives": [
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.9428571462631226,
+          "bbox": {
+            "x": 1608.3635069847105,
+            "y": 315.37988115549086,
+            "width": 157.63062915802016,
+            "height": 151.47493436336515
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8137426376342773,
+          "bbox": {
+            "x": 1554.0156757593154,
+            "y": 624.7217958927154,
+            "width": 162.7348613262177,
+            "height": 66.21139297485354
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.7515673637390137,
+          "bbox": {
+            "x": 598.1029372036456,
+            "y": 1752.8419512748717,
+            "width": 195.11438158750536,
+            "height": 54.46138544082646
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.6363328099250793,
+          "bbox": {
+            "x": 1434.1672515392302,
+            "y": 694.396592438221,
+            "width": 136.02619428634648,
+            "height": 84.84033257961266
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.32760757207870483,
+          "bbox": {
+            "x": 2769.404077219963,
+            "y": 1608.2873498439787,
+            "width": 125.23181405067453,
+            "height": 54.40652503967294
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.27013227343559265,
+          "bbox": {
+            "x": 1808.159550833702,
+            "y": 1212.1908237934113,
+            "width": 126.93759770393353,
+            "height": 149.00425701141353
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.7298045754432678,
+          "bbox": {
+            "x": 688.80019261837,
+            "y": 1194.6290212154388,
+            "width": 135.11077523231506,
+            "height": 93.18294696807857
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.6508561372756958,
+          "bbox": {
+            "x": 1374.2021070957182,
+            "y": 1196.5162530899047,
+            "width": 117.37468013763419,
+            "height": 92.31846971511845
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.603426456451416,
+          "bbox": {
+            "x": 2609.152756476402,
+            "y": 629.6588486552238,
+            "width": 126.61593174934387,
+            "height": 391.39497263431554
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.534529447555542,
+          "bbox": {
+            "x": 955.1343640208244,
+            "y": 1197.688340449333,
+            "width": 162.88674967288978,
+            "height": 93.33168339729309
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5040130019187927,
+          "bbox": {
+            "x": 1984.3109321594236,
+            "y": 1198.2325999259947,
+            "width": 117.59855146408086,
+            "height": 92.09357614517216
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.5039052367210388,
+          "bbox": {
+            "x": 955.5571468949317,
+            "y": 1197.1557515859604,
+            "width": 162.5284533262252,
+            "height": 94.11404042243953
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.4801161289215088,
+          "bbox": {
+            "x": 2006.4868011474607,
+            "y": 1413.0191632032393,
+            "width": 186.61702508926396,
+            "height": 172.48263459205623
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.4644925892353058,
+          "bbox": {
+            "x": 769.8062602043151,
+            "y": 1679.7989901781082,
+            "width": 126.9759318351746,
+            "height": 158.14362502098083
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 13,
+          "label": "Globle_valve_NC",
+          "confidence": 0.3754996061325073,
+          "bbox": {
+            "x": 2856.5465021610257,
+            "y": 342.03811751604076,
+            "width": 77.08772306442279,
+            "height": 141.41878430843354
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 20,
+          "label": "Reducer",
+          "confidence": 0.30481472611427307,
+          "bbox": {
+            "x": 766.2497898817062,
+            "y": 559.2296790003776,
+            "width": 73.74021635055544,
+            "height": 32.11897594928746
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-5-p1",
+          "classId": 19,
+          "label": "Spectacle_blind_Open",
+          "confidence": 0.37204504013061523,
+          "bbox": {
+            "x": 485.8137481033802,
+            "y": 747.039236319065,
+            "width": 133.718607366085,
+            "height": 154.47964875698085
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7458003163337708,
+          "bbox": {
+            "x": 2064.3295125246045,
+            "y": 976.7172039985657,
+            "width": 122.12317156791687,
+            "height": 49.0697324752806
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7426003217697144,
+          "bbox": {
+            "x": 2163.8481543302532,
+            "y": 873.5090724349021,
+            "width": 126.45373578071622,
+            "height": 60.92307178974147
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7342498302459717,
+          "bbox": {
+            "x": 2624.612485671043,
+            "y": 1199.6294104814529,
+            "width": 118.23149056434659,
+            "height": 51.35120959281926
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7265756726264954,
+          "bbox": {
+            "x": 1884.6333314895628,
+            "y": 720.4339010596275,
+            "width": 150.55704488754282,
+            "height": 279.01735947132113
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5538154244422913,
+          "bbox": {
+            "x": 287.07655684947963,
+            "y": 1596.4028321027754,
+            "width": 325.3428792715073,
+            "height": 229.36094441413888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5508107542991638,
+          "bbox": {
+            "x": 2533.742023873329,
+            "y": 1134.86014752388,
+            "width": 123.38257555961627,
+            "height": 55.521111202240036
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.42004841566085815,
+          "bbox": {
+            "x": 1912.6101767778396,
+            "y": 1870.1748898029325,
+            "width": 137.58698973655692,
+            "height": 66.63562402725233
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.4180963337421417,
+          "bbox": {
+            "x": 1820.7863877296447,
+            "y": 1472.227080774307,
+            "width": 132.1617731094359,
+            "height": 123.25155801773076
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.4168546199798584,
+          "bbox": {
+            "x": 1752.3553633689878,
+            "y": 2008.4173079967497,
+            "width": 136.38636474609393,
+            "height": 51.01778783798204
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.27733802795410156,
+          "bbox": {
+            "x": 2504.3213448286056,
+            "y": 851.80760961771,
+            "width": 128.43211770057678,
+            "height": 52.69213750362405
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.27721917629241943,
+          "bbox": {
+            "x": 2747.658657932281,
+            "y": 935.0592480182647,
+            "width": 127.97602672576932,
+            "height": 48.719102954864525
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.26009514927864075,
+          "bbox": {
+            "x": 2728.1999121665954,
+            "y": 1081.939708971977,
+            "width": 138.9896781921384,
+            "height": 49.82772603034982
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.9050836563110352,
+          "bbox": {
+            "x": 2131.4241238832474,
+            "y": 1968.5055994749068,
+            "width": 163.4722396373745,
+            "height": 70.91592793464656
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7821750640869141,
+          "bbox": {
+            "x": 1893.9998079299926,
+            "y": 727.3482283115386,
+            "width": 137.01436300277715,
+            "height": 269.81452717781065
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.6430767178535461,
+          "bbox": {
+            "x": 2132.238170456886,
+            "y": 1504.321693253517,
+            "width": 162.68306765556326,
+            "height": 74.59089331626888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5161110162734985,
+          "bbox": {
+            "x": 2849.950475978851,
+            "y": 1898.0788150548933,
+            "width": 109.44207057952872,
+            "height": 45.18197007179265
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 14,
+          "label": "Control_Valve",
+          "confidence": 0.48195454478263855,
+          "bbox": {
+            "x": 2096.2586919307705,
+            "y": 917.2534699916839,
+            "width": 59.28739700317419,
+            "height": 73.72556419372552
+          },
+          "category": "unknown",
+          "overlappingGtClasses": [
+            12
+          ]
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7458003163337708,
+          "bbox": {
+            "x": 2064.3295125246045,
+            "y": 976.7172039985657,
+            "width": 122.12317156791687,
+            "height": 49.0697324752806
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7426003217697144,
+          "bbox": {
+            "x": 2163.8481543302532,
+            "y": 873.5090724349021,
+            "width": 126.45373578071622,
+            "height": 60.92307178974147
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7342498302459717,
+          "bbox": {
+            "x": 2624.612485671043,
+            "y": 1199.6294104814529,
+            "width": 118.23149056434659,
+            "height": 51.35120959281926
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7265756726264954,
+          "bbox": {
+            "x": 1884.6333314895628,
+            "y": 720.4339010596275,
+            "width": 150.55704488754282,
+            "height": 279.01735947132113
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5538154244422913,
+          "bbox": {
+            "x": 287.07655684947963,
+            "y": 1596.4028321027754,
+            "width": 325.3428792715073,
+            "height": 229.36094441413888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5508107542991638,
+          "bbox": {
+            "x": 2533.742023873329,
+            "y": 1134.86014752388,
+            "width": 123.38257555961627,
+            "height": 55.521111202240036
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.42004841566085815,
+          "bbox": {
+            "x": 1912.6101767778396,
+            "y": 1870.1748898029325,
+            "width": 137.58698973655692,
+            "height": 66.63562402725233
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.4180963337421417,
+          "bbox": {
+            "x": 1820.7863877296447,
+            "y": 1472.227080774307,
+            "width": 132.1617731094359,
+            "height": 123.25155801773076
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.4168546199798584,
+          "bbox": {
+            "x": 1752.3553633689878,
+            "y": 2008.4173079967497,
+            "width": 136.38636474609393,
+            "height": 51.01778783798204
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.27733802795410156,
+          "bbox": {
+            "x": 2504.3213448286056,
+            "y": 851.80760961771,
+            "width": 128.43211770057678,
+            "height": 52.69213750362405
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.27721917629241943,
+          "bbox": {
+            "x": 2747.658657932281,
+            "y": 935.0592480182647,
+            "width": 127.97602672576932,
+            "height": 48.719102954864525
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.26009514927864075,
+          "bbox": {
+            "x": 2728.1999121665954,
+            "y": 1081.939708971977,
+            "width": 138.9896781921384,
+            "height": 49.82772603034982
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7758946418762207,
+          "bbox": {
+            "x": 429.7135785520076,
+            "y": 665.7388477921486,
+            "width": 69.98198071718218,
+            "height": 58.24666793346398
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7703296542167664,
+          "bbox": {
+            "x": 595.7927946746349,
+            "y": 435.42674839496607,
+            "width": 113.11213771104804,
+            "height": 123.07113204002377
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7116857767105103,
+          "bbox": {
+            "x": 418.42511395812033,
+            "y": 393.67461823225017,
+            "width": 89.89102474451062,
+            "height": 161.01672556400297
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.3296106457710266,
+          "bbox": {
+            "x": 2031.4577394247053,
+            "y": 637.8300242900848,
+            "width": 141.42346959114093,
+            "height": 45.80945720672605
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.2934359312057495,
+          "bbox": {
+            "x": 2280.4242067337036,
+            "y": 1950.3652070760725,
+            "width": 140.14788007736206,
+            "height": 97.81388039588933
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.25365641713142395,
+          "bbox": {
+            "x": 2506.9758556365964,
+            "y": 1312.698230624199,
+            "width": 68.94930181503287,
+            "height": 137.75020794868465
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.876457154750824,
+          "bbox": {
+            "x": 2553.8195677042004,
+            "y": 1625.433269691467,
+            "width": 169.408066892624,
+            "height": 198.94255571365352
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.8616448640823364,
+          "bbox": {
+            "x": 1837.401848387718,
+            "y": 1627.7825556278228,
+            "width": 178.27534775733943,
+            "height": 207.7130641937256
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7120050191879272,
+          "bbox": {
+            "x": 2663.3504030942913,
+            "y": 755.728348660469,
+            "width": 222.11596398353595,
+            "height": 323.37020487785344
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 30,
+          "label": "box",
+          "confidence": 0.669811487197876,
+          "bbox": {
+            "x": 2830.584498810768,
+            "y": 1247.606449842453,
+            "width": 195.21971526145944,
+            "height": 174.2011962890624
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 20,
+          "label": "Reducer",
+          "confidence": 0.5515251159667969,
+          "bbox": {
+            "x": 1228.6396161675452,
+            "y": 1434.0255856275558,
+            "width": 83.8664752721786,
+            "height": 35.38955883979793
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.3716932535171509,
+          "bbox": {
+            "x": 3138.735627651214,
+            "y": 691.3928576946258,
+            "width": 166.32378787994412,
+            "height": 222.8310233116149
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.33471429347991943,
+          "bbox": {
+            "x": 1949.3737160682676,
+            "y": 445.80584220886226,
+            "width": 136.400335407257,
+            "height": 65.11248121261599
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.28798699378967285,
+          "bbox": {
+            "x": 833.3684665560721,
+            "y": 491.79909027814864,
+            "width": 161.8072605371476,
+            "height": 159.34194996356956
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.6734853386878967,
+          "bbox": {
+            "x": 430.7808048725128,
+            "y": 3074.1561790466308,
+            "width": 103.97760763168333,
+            "height": 96.06331405639685
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.6297457218170166,
+          "bbox": {
+            "x": 652.5209053993225,
+            "y": 3085.351041030884,
+            "width": 58.89353122711191,
+            "height": 69.22194366455051
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.592719554901123,
+          "bbox": {
+            "x": 143.78670189380645,
+            "y": 3303.28294506073,
+            "width": 87.88812327384949,
+            "height": 81.26775550842285
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.5035950541496277,
+          "bbox": {
+            "x": 417.2080609321594,
+            "y": 2889.0774801254274,
+            "width": 115.79203128814703,
+            "height": 97.96108894348117
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.3812490403652191,
+          "bbox": {
+            "x": 1143.8563055038453,
+            "y": 1473.2156311035158,
+            "width": 61.055822753906114,
+            "height": 64.58941078186035
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.3527415990829468,
+          "bbox": {
+            "x": 1498.1553091049195,
+            "y": 2960.587927055359,
+            "width": 243.5549308776856,
+            "height": 340.45522804260236
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.31086111068725586,
+          "bbox": {
+            "x": 1724.4561074256897,
+            "y": 1471.878570175171,
+            "width": 61.20008907318129,
+            "height": 51.685495376586914
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.2931145429611206,
+          "bbox": {
+            "x": 874.2599839687348,
+            "y": 2861.5878480911256,
+            "width": 82.09528551101687,
+            "height": 259.9352046966551
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.25518450140953064,
+          "bbox": {
+            "x": 758.2925166606904,
+            "y": 350.6067460417748,
+            "width": 93.23836832046504,
+            "height": 149.31395847797393
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.9327297806739807,
+          "bbox": {
+            "x": 1569.4954298019409,
+            "y": 898.0767862796783,
+            "width": 189.2436862945558,
+            "height": 163.68410596847548
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 30,
+          "label": "box",
+          "confidence": 0.8607724905014038,
+          "bbox": {
+            "x": 1188.3269519805908,
+            "y": 600.4726151466369,
+            "width": 169.8442096710205,
+            "height": 173.230210018158
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.629496157169342,
+          "bbox": {
+            "x": 641.0723850727081,
+            "y": 295.76409425735477,
+            "width": 224.01502027511594,
+            "height": 185.6004081726074
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5474101901054382,
+          "bbox": {
+            "x": 641.9148186206818,
+            "y": 303.6527643799782,
+            "width": 229.19906949996948,
+            "height": 178.43697650432586
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5310317277908325,
+          "bbox": {
+            "x": 1570.0472867965698,
+            "y": 1607.2375939369201,
+            "width": 187.88686752319336,
+            "height": 163.44488277435312
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.2508307099342346,
+          "bbox": {
+            "x": 600.45260181427,
+            "y": 2397.10386762619,
+            "width": 118.41743984222421,
+            "height": 259.7102037429813
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        }
+      ],
+      "falseNegatives": [
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtId": "gt-003",
+          "bbox": {
+            "x": 2096,
+            "y": 917,
+            "width": 59,
+            "height": 74
+          },
+          "bestDetectionConfidence": 0.48195454478263855,
+          "bestDetectionClassId": 14
+        }
+      ],
+      "confusions": [
+        {
+          "pageId": "sheet-7-model-p1",
+          "gtId": "gt-003",
+          "gtClassId": 12,
+          "gtLabel": "Gate_Valve_NC",
+          "predictedClassId": 14,
+          "predictedLabel": "Control_Valve",
+          "confidence": 0.48195454478263855,
+          "iou": 0.9828596987870619
+        }
+      ],
+      "confidenceDistribution": [
+        {
+          "bucket": "0.0-0.1",
+          "count": 0
+        },
+        {
+          "bucket": "0.1-0.2",
+          "count": 41
+        },
+        {
+          "bucket": "0.2-0.3",
+          "count": 28
+        },
+        {
+          "bucket": "0.3-0.4",
+          "count": 11
+        },
+        {
+          "bucket": "0.4-0.5",
+          "count": 9
+        },
+        {
+          "bucket": "0.5-0.6",
+          "count": 13
+        },
+        {
+          "bucket": "0.6-0.7",
+          "count": 8
+        },
+        {
+          "bucket": "0.7-0.8",
+          "count": 15
+        },
+        {
+          "bucket": "0.8-0.9",
+          "count": 7
+        },
+        {
+          "bucket": "0.9-1.0",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "threshold": 0.5,
+      "global": {
+        "tp": 2,
+        "fp": 45,
+        "fn": 3,
+        "precision": 0.0425531914893617,
+        "recall": 0.4,
+        "f1": 0.07692307692307691
+      },
+      "perPage": [
+        {
+          "pageId": "sheet-1-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-3-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "tp": 0,
+          "fp": 6,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-5-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "tp": 0,
+          "fp": 7,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "tp": 0,
+          "fp": 4,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "tp": 0,
+          "fp": 7,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "tp": 2,
+          "fp": 3,
+          "fn": 0,
+          "precision": 0.4,
+          "recall": 1,
+          "f1": 0.5714285714285715
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "tp": 0,
+          "fp": 5,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "fire-water-p1",
+          "tp": 0,
+          "fp": 4,
+          "fn": 2,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "fire-water-p2",
+          "tp": 0,
+          "fp": 5,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "perClass": [
+        {
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "gtCount": 2,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.5,
+          "f1": 0.6666666666666666
+        },
+        {
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 20,
+          "label": "Reducer",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 9,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 22,
+          "label": "Rupture_disk",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 8,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 7,
+          "fn": 0,
+          "precision": 0.125,
+          "recall": 1,
+          "f1": 0.2222222222222222
+        },
+        {
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 4,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 14,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 30,
+          "label": "box",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "matches": [
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "confidence": 0.923958420753479,
+          "iou": 0.9954675086688717,
+          "gtId": "gt-001",
+          "detectionBbox": {
+            "x": 375.2681656658649,
+            "y": 143.7181719839573,
+            "width": 177.71051563024525,
+            "height": 120.35089949369427
+          },
+          "gtBbox": {
+            "x": 375,
+            "y": 144,
+            "width": 178,
+            "height": 120
+          }
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.8340157270431519,
+          "iou": 0.9878607944058247,
+          "gtId": "gt-002",
+          "detectionBbox": {
+            "x": 196.32979716360566,
+            "y": 159.70199264287947,
+            "width": 100.57476841807366,
+            "height": 100.78818304538726
+          },
+          "gtBbox": {
+            "x": 196,
+            "y": 160,
+            "width": 101,
+            "height": 101
+          }
+        }
+      ],
+      "falsePositives": [
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.9428571462631226,
+          "bbox": {
+            "x": 1608.3635069847105,
+            "y": 315.37988115549086,
+            "width": 157.63062915802016,
+            "height": 151.47493436336515
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8137426376342773,
+          "bbox": {
+            "x": 1554.0156757593154,
+            "y": 624.7217958927154,
+            "width": 162.7348613262177,
+            "height": 66.21139297485354
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.7515673637390137,
+          "bbox": {
+            "x": 598.1029372036456,
+            "y": 1752.8419512748717,
+            "width": 195.11438158750536,
+            "height": 54.46138544082646
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.6363328099250793,
+          "bbox": {
+            "x": 1434.1672515392302,
+            "y": 694.396592438221,
+            "width": 136.02619428634648,
+            "height": 84.84033257961266
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.7298045754432678,
+          "bbox": {
+            "x": 688.80019261837,
+            "y": 1194.6290212154388,
+            "width": 135.11077523231506,
+            "height": 93.18294696807857
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.6508561372756958,
+          "bbox": {
+            "x": 1374.2021070957182,
+            "y": 1196.5162530899047,
+            "width": 117.37468013763419,
+            "height": 92.31846971511845
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.603426456451416,
+          "bbox": {
+            "x": 2609.152756476402,
+            "y": 629.6588486552238,
+            "width": 126.61593174934387,
+            "height": 391.39497263431554
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.534529447555542,
+          "bbox": {
+            "x": 955.1343640208244,
+            "y": 1197.688340449333,
+            "width": 162.88674967288978,
+            "height": 93.33168339729309
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5040130019187927,
+          "bbox": {
+            "x": 1984.3109321594236,
+            "y": 1198.2325999259947,
+            "width": 117.59855146408086,
+            "height": 92.09357614517216
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.5039052367210388,
+          "bbox": {
+            "x": 955.5571468949317,
+            "y": 1197.1557515859604,
+            "width": 162.5284533262252,
+            "height": 94.11404042243953
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7458003163337708,
+          "bbox": {
+            "x": 2064.3295125246045,
+            "y": 976.7172039985657,
+            "width": 122.12317156791687,
+            "height": 49.0697324752806
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7426003217697144,
+          "bbox": {
+            "x": 2163.8481543302532,
+            "y": 873.5090724349021,
+            "width": 126.45373578071622,
+            "height": 60.92307178974147
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7342498302459717,
+          "bbox": {
+            "x": 2624.612485671043,
+            "y": 1199.6294104814529,
+            "width": 118.23149056434659,
+            "height": 51.35120959281926
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7265756726264954,
+          "bbox": {
+            "x": 1884.6333314895628,
+            "y": 720.4339010596275,
+            "width": 150.55704488754282,
+            "height": 279.01735947132113
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5538154244422913,
+          "bbox": {
+            "x": 287.07655684947963,
+            "y": 1596.4028321027754,
+            "width": 325.3428792715073,
+            "height": 229.36094441413888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5508107542991638,
+          "bbox": {
+            "x": 2533.742023873329,
+            "y": 1134.86014752388,
+            "width": 123.38257555961627,
+            "height": 55.521111202240036
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.9050836563110352,
+          "bbox": {
+            "x": 2131.4241238832474,
+            "y": 1968.5055994749068,
+            "width": 163.4722396373745,
+            "height": 70.91592793464656
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7821750640869141,
+          "bbox": {
+            "x": 1893.9998079299926,
+            "y": 727.3482283115386,
+            "width": 137.01436300277715,
+            "height": 269.81452717781065
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.6430767178535461,
+          "bbox": {
+            "x": 2132.238170456886,
+            "y": 1504.321693253517,
+            "width": 162.68306765556326,
+            "height": 74.59089331626888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5161110162734985,
+          "bbox": {
+            "x": 2849.950475978851,
+            "y": 1898.0788150548933,
+            "width": 109.44207057952872,
+            "height": 45.18197007179265
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7458003163337708,
+          "bbox": {
+            "x": 2064.3295125246045,
+            "y": 976.7172039985657,
+            "width": 122.12317156791687,
+            "height": 49.0697324752806
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7426003217697144,
+          "bbox": {
+            "x": 2163.8481543302532,
+            "y": 873.5090724349021,
+            "width": 126.45373578071622,
+            "height": 60.92307178974147
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.7342498302459717,
+          "bbox": {
+            "x": 2624.612485671043,
+            "y": 1199.6294104814529,
+            "width": 118.23149056434659,
+            "height": 51.35120959281926
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7265756726264954,
+          "bbox": {
+            "x": 1884.6333314895628,
+            "y": 720.4339010596275,
+            "width": 150.55704488754282,
+            "height": 279.01735947132113
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5538154244422913,
+          "bbox": {
+            "x": 287.07655684947963,
+            "y": 1596.4028321027754,
+            "width": 325.3428792715073,
+            "height": 229.36094441413888
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 21,
+          "label": "Flange_or_Nozzle",
+          "confidence": 0.5508107542991638,
+          "bbox": {
+            "x": 2533.742023873329,
+            "y": 1134.86014752388,
+            "width": 123.38257555961627,
+            "height": 55.521111202240036
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7758946418762207,
+          "bbox": {
+            "x": 429.7135785520076,
+            "y": 665.7388477921486,
+            "width": 69.98198071718218,
+            "height": 58.24666793346398
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7703296542167664,
+          "bbox": {
+            "x": 595.7927946746349,
+            "y": 435.42674839496607,
+            "width": 113.11213771104804,
+            "height": 123.07113204002377
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7116857767105103,
+          "bbox": {
+            "x": 418.42511395812033,
+            "y": 393.67461823225017,
+            "width": 89.89102474451062,
+            "height": 161.01672556400297
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.876457154750824,
+          "bbox": {
+            "x": 2553.8195677042004,
+            "y": 1625.433269691467,
+            "width": 169.408066892624,
+            "height": 198.94255571365352
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.8616448640823364,
+          "bbox": {
+            "x": 1837.401848387718,
+            "y": 1627.7825556278228,
+            "width": 178.27534775733943,
+            "height": 207.7130641937256
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7120050191879272,
+          "bbox": {
+            "x": 2663.3504030942913,
+            "y": 755.728348660469,
+            "width": 222.11596398353595,
+            "height": 323.37020487785344
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 30,
+          "label": "box",
+          "confidence": 0.669811487197876,
+          "bbox": {
+            "x": 2830.584498810768,
+            "y": 1247.606449842453,
+            "width": 195.21971526145944,
+            "height": 174.2011962890624
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 20,
+          "label": "Reducer",
+          "confidence": 0.5515251159667969,
+          "bbox": {
+            "x": 1228.6396161675452,
+            "y": 1434.0255856275558,
+            "width": 83.8664752721786,
+            "height": 35.38955883979793
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.6734853386878967,
+          "bbox": {
+            "x": 430.7808048725128,
+            "y": 3074.1561790466308,
+            "width": 103.97760763168333,
+            "height": 96.06331405639685
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.6297457218170166,
+          "bbox": {
+            "x": 652.5209053993225,
+            "y": 3085.351041030884,
+            "width": 58.89353122711191,
+            "height": 69.22194366455051
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.592719554901123,
+          "bbox": {
+            "x": 143.78670189380645,
+            "y": 3303.28294506073,
+            "width": 87.88812327384949,
+            "height": 81.26775550842285
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.5035950541496277,
+          "bbox": {
+            "x": 417.2080609321594,
+            "y": 2889.0774801254274,
+            "width": 115.79203128814703,
+            "height": 97.96108894348117
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.9327297806739807,
+          "bbox": {
+            "x": 1569.4954298019409,
+            "y": 898.0767862796783,
+            "width": 189.2436862945558,
+            "height": 163.68410596847548
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 30,
+          "label": "box",
+          "confidence": 0.8607724905014038,
+          "bbox": {
+            "x": 1188.3269519805908,
+            "y": 600.4726151466369,
+            "width": 169.8442096710205,
+            "height": 173.230210018158
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.629496157169342,
+          "bbox": {
+            "x": 641.0723850727081,
+            "y": 295.76409425735477,
+            "width": 224.01502027511594,
+            "height": 185.6004081726074
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5474101901054382,
+          "bbox": {
+            "x": 641.9148186206818,
+            "y": 303.6527643799782,
+            "width": 229.19906949996948,
+            "height": 178.43697650432586
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.5310317277908325,
+          "bbox": {
+            "x": 1570.0472867965698,
+            "y": 1607.2375939369201,
+            "width": 187.88686752319336,
+            "height": 163.44488277435312
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        }
+      ],
+      "falseNegatives": [
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtId": "gt-003",
+          "bbox": {
+            "x": 2096,
+            "y": 917,
+            "width": 59,
+            "height": 74
+          },
+          "bestDetectionConfidence": 0.48195454478263855,
+          "bestDetectionClassId": 14
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "gtId": "gt-004",
+          "bbox": {
+            "x": 124,
+            "y": 3031,
+            "width": 120,
+            "height": 179
+          },
+          "bestDetectionConfidence": 0.31520527601242065,
+          "bestDetectionClassId": 11
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "gtId": "gt-005",
+          "bbox": {
+            "x": 1397,
+            "y": 839,
+            "width": 46,
+            "height": 146
+          },
+          "bestDetectionConfidence": 0.286712110042572,
+          "bestDetectionClassId": 16
+        }
+      ],
+      "confusions": [],
+      "confidenceDistribution": [
+        {
+          "bucket": "0.0-0.1",
+          "count": 0
+        },
+        {
+          "bucket": "0.1-0.2",
+          "count": 41
+        },
+        {
+          "bucket": "0.2-0.3",
+          "count": 28
+        },
+        {
+          "bucket": "0.3-0.4",
+          "count": 11
+        },
+        {
+          "bucket": "0.4-0.5",
+          "count": 9
+        },
+        {
+          "bucket": "0.5-0.6",
+          "count": 13
+        },
+        {
+          "bucket": "0.6-0.7",
+          "count": 8
+        },
+        {
+          "bucket": "0.7-0.8",
+          "count": 15
+        },
+        {
+          "bucket": "0.8-0.9",
+          "count": 7
+        },
+        {
+          "bucket": "0.9-1.0",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "threshold": 0.75,
+      "global": {
+        "tp": 2,
+        "fp": 13,
+        "fn": 3,
+        "precision": 0.13333333333333333,
+        "recall": 0.4,
+        "f1": 0.2
+      },
+      "perPage": [
+        {
+          "pageId": "sheet-1-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-3-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-4-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-5-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "tp": 2,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.5,
+          "recall": 1,
+          "f1": 0.6666666666666666
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "fire-water-p1",
+          "tp": 0,
+          "fp": 0,
+          "fn": 2,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "pageId": "fire-water-p2",
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "perClass": [
+        {
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "gtCount": 2,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1,
+          "recall": 0.5,
+          "f1": 0.6666666666666666
+        },
+        {
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 22,
+          "label": "Rupture_disk",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 5,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "gtCount": 1,
+          "insufficientSample": true,
+          "tp": 1,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.3333333333333333,
+          "recall": 1,
+          "f1": 0.5
+        },
+        {
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 4,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        {
+          "classId": 30,
+          "label": "box",
+          "gtCount": 0,
+          "insufficientSample": true,
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        }
+      ],
+      "matches": [
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "confidence": 0.923958420753479,
+          "iou": 0.9954675086688717,
+          "gtId": "gt-001",
+          "detectionBbox": {
+            "x": 375.2681656658649,
+            "y": 143.7181719839573,
+            "width": 177.71051563024525,
+            "height": 120.35089949369427
+          },
+          "gtBbox": {
+            "x": 375,
+            "y": 144,
+            "width": 178,
+            "height": 120
+          }
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.8340157270431519,
+          "iou": 0.9878607944058247,
+          "gtId": "gt-002",
+          "detectionBbox": {
+            "x": 196.32979716360566,
+            "y": 159.70199264287947,
+            "width": 100.57476841807366,
+            "height": 100.78818304538726
+          },
+          "gtBbox": {
+            "x": 196,
+            "y": 160,
+            "width": 101,
+            "height": 101
+          }
+        }
+      ],
+      "falsePositives": [
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.9428571462631226,
+          "bbox": {
+            "x": 1608.3635069847105,
+            "y": 315.37988115549086,
+            "width": 157.63062915802016,
+            "height": 151.47493436336515
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-1-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8137426376342773,
+          "bbox": {
+            "x": 1554.0156757593154,
+            "y": 624.7217958927154,
+            "width": 162.7348613262177,
+            "height": 66.21139297485354
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-2-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.7515673637390137,
+          "bbox": {
+            "x": 598.1029372036456,
+            "y": 1752.8419512748717,
+            "width": 195.11438158750536,
+            "height": 54.46138544082646
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.9050836563110352,
+          "bbox": {
+            "x": 2131.4241238832474,
+            "y": 1968.5055994749068,
+            "width": 163.4722396373745,
+            "height": 70.91592793464656
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.7821750640869141,
+          "bbox": {
+            "x": 1893.9998079299926,
+            "y": 727.3482283115386,
+            "width": 137.01436300277715,
+            "height": 269.81452717781065
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-7-rev-p1",
+          "classId": 22,
+          "label": "Rupture_disk",
+          "confidence": 0.8477271199226379,
+          "bbox": {
+            "x": 2130.7633286476134,
+            "y": 1967.3413493156431,
+            "width": 166.14693975448608,
+            "height": 72.96569652557378
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7758946418762207,
+          "bbox": {
+            "x": 429.7135785520076,
+            "y": 665.7388477921486,
+            "width": 69.98198071718218,
+            "height": 58.24666793346398
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-11-p1",
+          "classId": 24,
+          "label": "Flow_Arrow",
+          "confidence": 0.7703296542167664,
+          "bbox": {
+            "x": 595.7927946746349,
+            "y": 435.42674839496607,
+            "width": 113.11213771104804,
+            "height": 123.07113204002377
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.876457154750824,
+          "bbox": {
+            "x": 2553.8195677042004,
+            "y": 1625.433269691467,
+            "width": 169.408066892624,
+            "height": 198.94255571365352
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "sheet-12-p1",
+          "classId": 29,
+          "label": "Instrument_Aux_Panel",
+          "confidence": 0.8616448640823364,
+          "bbox": {
+            "x": 1837.401848387718,
+            "y": 1627.7825556278228,
+            "width": 178.27534775733943,
+            "height": 207.7130641937256
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 28,
+          "label": "Instrument_Panel",
+          "confidence": 0.9327297806739807,
+          "bbox": {
+            "x": 1569.4954298019409,
+            "y": 898.0767862796783,
+            "width": 189.2436862945558,
+            "height": 163.68410596847548
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        },
+        {
+          "pageId": "fire-water-p2",
+          "classId": 30,
+          "label": "box",
+          "confidence": 0.8607724905014038,
+          "bbox": {
+            "x": 1188.3269519805908,
+            "y": 600.4726151466369,
+            "width": 169.8442096710205,
+            "height": 173.230210018158
+          },
+          "category": "unknown",
+          "overlappingGtClasses": []
+        }
+      ],
+      "falseNegatives": [
+        {
+          "pageId": "sheet-7-model-p1",
+          "classId": 12,
+          "label": "Gate_Valve_NC",
+          "gtId": "gt-003",
+          "bbox": {
+            "x": 2096,
+            "y": 917,
+            "width": 59,
+            "height": 74
+          },
+          "bestDetectionConfidence": 0.48195454478263855,
+          "bestDetectionClassId": 14
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 11,
+          "label": "Half_Filled_Gate_Valve",
+          "gtId": "gt-004",
+          "bbox": {
+            "x": 124,
+            "y": 3031,
+            "width": 120,
+            "height": 179
+          },
+          "bestDetectionConfidence": 0.31520527601242065,
+          "bestDetectionClassId": 11
+        },
+        {
+          "pageId": "fire-water-p1",
+          "classId": 16,
+          "label": "Ball_valve_NC",
+          "gtId": "gt-005",
+          "bbox": {
+            "x": 1397,
+            "y": 839,
+            "width": 46,
+            "height": 146
+          },
+          "bestDetectionConfidence": 0.286712110042572,
+          "bestDetectionClassId": 16
+        }
+      ],
+      "confusions": [],
+      "confidenceDistribution": [
+        {
+          "bucket": "0.0-0.1",
+          "count": 0
+        },
+        {
+          "bucket": "0.1-0.2",
+          "count": 41
+        },
+        {
+          "bucket": "0.2-0.3",
+          "count": 28
+        },
+        {
+          "bucket": "0.3-0.4",
+          "count": 11
+        },
+        {
+          "bucket": "0.4-0.5",
+          "count": 9
+        },
+        {
+          "bucket": "0.5-0.6",
+          "count": 13
+        },
+        {
+          "bucket": "0.6-0.7",
+          "count": 8
+        },
+        {
+          "bucket": "0.7-0.8",
+          "count": 15
+        },
+        {
+          "bucket": "0.8-0.9",
+          "count": 7
+        },
+        {
+          "bucket": "0.9-1.0",
+          "count": 4
+        }
+      ]
+    }
+  ]
+}

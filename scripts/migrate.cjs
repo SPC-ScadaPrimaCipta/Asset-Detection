@@ -205,6 +205,17 @@ async function migrate() {
       console.warn('  007 migration warning (non-fatal):', e.message);
     }
 
+    // Migration 008: DXF document support (file_type + dxf_entities).
+    try {
+      const dxfsql = join(__dirname, '..', 'sql', 'migrate-008-dxf-support.sql');
+      if (existsSync(dxfsql)) {
+        await p.query(readFileSync(dxfsql, 'utf-8'));
+        console.log('  008-dxf: documents.file_type + document_pages.dxf_entities OK');
+      }
+    } catch (e) {
+      console.warn('  008-dxf migration warning (non-fatal):', e.message);
+    }
+
     // Migration 008: legend review decision reason (Stage 3.5).
     // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
     try {
@@ -251,6 +262,128 @@ async function migrate() {
       }
     } catch (e) {
       console.warn('  V2-Phase2 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 009-dxf-layer-profiles: configurable layer mapping for DXF detection.
+    try {
+      const dlsql = join(__dirname, '..', 'sql', 'migrate-009-dxf-layer-profiles.sql');
+      if (existsSync(dlsql)) {
+        await p.query(readFileSync(dlsql, 'utf-8'));
+        console.log('  009-dxf-layer-profiles: dxf_layer_profiles + dxf_layer_analysis OK');
+      }
+    } catch (e) {
+      console.warn('  009-dxf-layer-profiles migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 011: valve size column support on detections and assets tables.
+    // Idempotent .sql file (IF NOT EXISTS) — safe to re-run.
+    try {
+      const sizesql = join(__dirname, '..', 'sql', 'migrate-011-valve-size.sql');
+      if (existsSync(sizesql)) {
+        await p.query(readFileSync(sizesql, 'utf-8'));
+        console.log('  011: detections.size + assets.size OK');
+      }
+    } catch (e) {
+      console.warn('  011 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 012: Multi-Provider Vision AI (OpenAI & Anthropic Claude columns)
+    try {
+      const aisql = join(__dirname, '..', 'sql', 'migrate-012-multi-provider-ai.sql');
+      if (existsSync(aisql)) {
+        await p.query(readFileSync(aisql, 'utf-8'));
+        console.log('  012: settings.openai_* + settings.anthropic_* OK');
+      }
+    } catch (e) {
+      console.warn('  012 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 013: Custom OpenAI-compatible Base URL (e.g. 9router)
+    try {
+      const baseurlsql = join(__dirname, '..', 'sql', 'migrate-013-openai-base-url.sql');
+      if (existsSync(baseurlsql)) {
+        await p.query(readFileSync(baseurlsql, 'utf-8'));
+        console.log('  013: settings.openai_base_url OK');
+      }
+    } catch (e) {
+      console.warn('  013 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 014: MDO enrichment records and P&ID relations
+    try {
+      const mdosql = join(__dirname, '..', 'sql', 'migrate-mdo-records.sql');
+      if (existsSync(mdosql)) {
+        await p.query(readFileSync(mdosql, 'utf-8'));
+        console.log('  014: detection_mdo_records OK');
+      }
+    } catch (e) {
+      console.warn('  014 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 015: DXF coordinate frames, confidence breakdown, and graph relations
+    try {
+      const qualitySql = join(__dirname, '..', 'sql', 'migrate-dxf-quality-v2.sql');
+      if (existsSync(qualitySql)) {
+        await p.query(readFileSync(qualitySql, 'utf-8'));
+        console.log('  015: DXF quality v2 columns OK');
+      }
+    } catch (e) {
+      console.warn('  015 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 016: hybrid AI review candidates
+    try {
+      const candidateSql = join(__dirname, '..', 'sql', 'migrate-hybrid-review-candidates.sql');
+      if (existsSync(candidateSql)) {
+        await p.query(readFileSync(candidateSql, 'utf-8'));
+        console.log('  016: hybrid review candidates OK');
+      }
+    } catch (e) {
+      console.warn('  016 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 018: Add component_name and description to detections
+    try {
+      const descSql = join(__dirname, '..', 'sql', 'migrate-detection-desc.sql');
+      if (existsSync(descSql)) {
+        await p.query(readFileSync(descSql, 'utf-8'));
+        console.log('  018: detections component_name/description OK');
+      }
+    } catch (e) {
+      console.warn('  018 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 018: Accenture 8-column MDO fields
+    try {
+      const mdo8ColsSql = join(__dirname, '..', 'sql', 'migrate-mdo-accenture-8cols.sql');
+      if (existsSync(mdo8ColsSql)) {
+        await p.query(readFileSync(mdo8ColsSql, 'utf-8'));
+        console.log('  018: Accenture 8-column MDO fields OK');
+      }
+    } catch (e) {
+      console.warn('  018 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 020: Detection jobs user_id & queue index
+    try {
+      const queueSql = join(__dirname, '..', 'sql', 'migrate-detection-jobs-user.sql');
+      if (existsSync(queueSql)) {
+        await p.query(readFileSync(queueSql, 'utf-8'));
+        console.log('  020: Detection jobs user_id & queue index OK');
+      }
+    } catch (e) {
+      console.warn('  020 migration warning (non-fatal):', e.message);
+    }
+
+    // Migration 019: Auth, Project Visibility, and Scoped Legends
+    try {
+      const authSql = join(__dirname, '..', 'sql', 'migrate-auth-and-visibility.sql');
+      if (existsSync(authSql)) {
+        await p.query(readFileSync(authSql, 'utf-8'));
+        console.log('  019: Auth & project visibility OK');
+      }
+    } catch (e) {
+      console.warn('  019 migration warning (non-fatal):', e.message);
     }
 
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");

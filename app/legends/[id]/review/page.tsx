@@ -95,6 +95,7 @@ export default function LegendReviewPage() {
   const [editForm, setEditForm] = useState<Partial<LegendSymbol>>({});
   const [finalizing, setFinalizing] = useState(false);
   const [reparsing, setReparsing] = useState(false);
+  const [reparseProgress, setReparseProgress] = useState<{ pct: number; message: string } | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
   const [validatingAll, setValidatingAll] = useState(false);
   const [error, setError] = useState('');
@@ -103,6 +104,7 @@ export default function LegendReviewPage() {
   const [confirmValidateAll, setConfirmValidateAll] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmReparse, setConfirmReparse] = useState(false);
 
   // ΓöÇΓöÇ Manual draw-to-add symbol ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [drawMode, setDrawMode] = useState(false);
@@ -537,17 +539,99 @@ export default function LegendReviewPage() {
     } catch (e: any) { setError(e.message); }
   };
 
+  // Keyboard shortcut: Del or Backspace to delete currently selected symbol
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+      if (isInput || editingId || addModalOpen || confirmDeleteId || rejectModalId) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        e.preventDefault();
+        const sym = symbols.find(s => s.id === selectedId);
+        const name = sym?.symbol_name || sym?.asset_type || 'Simbol';
+        handleDeleteSymbol(selectedId);
+        setSuccessMsg(`${name} berhasil dihapus (Del)`);
+        setTimeout(() => setSuccessMsg(''), 2000);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, editingId, addModalOpen, confirmDeleteId, rejectModalId, symbols, legendId]);
+
   const handleReparse = async () => {
-    setReparsing(true); setError('');
+    setReparsing(true);
+    setError('');
+    setReparseProgress({ pct: 5, message: 'Memulai proses Re-parse...' });
     try {
-      const r = await fetch(`/api/legends/${legendId}/reparse`, { method: 'POST' });
-      const d = await r.json() as any; if (!r.ok) throw new Error(d.error || 'Re-parse failed');
-      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`); if (sr.ok) { const j = await sr.json(); setSymbols(Array.isArray(j) ? j : []); }
-      setSelectedId(null); setEditingId(null); setRecropTargetId(null); setRejectModalId(null); setConfirmDeleteId(null);
-      setDrawMode(false); setAddModalOpen(false); setAddModalBbox(null); setSymPage(1);
+      const r = await fetch(`/api/legends/${legendId}/reparse?stream=true`, {
+        method: 'POST',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        let errMsg = text.slice(0, 200);
+        try {
+          const j = JSON.parse(text);
+          errMsg = j.error || j.detail || errMsg;
+        } catch {}
+        throw new Error(errMsg || `Re-parse failed (${r.status})`);
+      }
+
+      if (r.body) {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.stage === 'error') {
+                throw new Error(data.error || data.message || 'Re-parse failed');
+              }
+              if (typeof data.pct === 'number') {
+                setReparseProgress({ pct: data.pct, message: data.message || '' });
+              }
+            } catch (jsonErr: any) {
+              if (jsonErr.message && jsonErr.message !== 'Unexpected end of JSON input') throw jsonErr;
+            }
+          }
+        }
+      }
+
+      const sr = await fetch(`/api/legends/${legendId}/symbols?include_draft=true`);
+      if (sr.ok) {
+        const j = await sr.json();
+        setSymbols(Array.isArray(j) ? j : []);
+      }
+      setSelectedId(null);
+      setEditingId(null);
+      setRecropTargetId(null);
+      setRejectModalId(null);
+      setConfirmDeleteId(null);
+      setDrawMode(false);
+      setAddModalOpen(false);
+      setAddModalBbox(null);
+      setSymPage(1);
       setSuccessMsg('Legend re-parsed successfully. Symbol list refreshed.');
       setTimeout(() => setSuccessMsg(''), 2500);
-    } catch (e: any) { setError(e.message); } finally { setReparsing(false); }
+    } catch (e: any) {
+      setError(e.message || 'Re-parse failed');
+    } finally {
+      setReparsing(false);
+      setReparseProgress(null);
+    }
   };
   const handleSaveEdit = async () => {
     if (!editForm.asset_type?.trim()) { setError('Asset type required'); return; }
@@ -764,7 +848,7 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
 <p style={{ fontSize: 11, color: 'var(--foreground-muted)', margin: '2px 0 0' }}>Review and approve extracted symbols · {symbols.length} total</p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={handleReparse} disabled={reparsing}
+          <button onClick={() => setConfirmReparse(true)} disabled={reparsing}
             style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12, fontWeight: 500, cursor: reparsing ? 'not-allowed' : 'pointer', opacity: reparsing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <ArrowCounterClockwise size={13} />{reparsing ? 'Re-parsing…' : 'Re-parse'}
           </button>
@@ -814,6 +898,21 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
           </button>
         </div>
       </div>
+
+      {reparsing && reparseProgress && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--primary)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+            <span style={{ color: 'var(--foreground)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ArrowCounterClockwise size={13} style={{ animation: 'spin 1s linear infinite' }} />
+              {reparseProgress.message || 'Memproses Re-parse...'}
+            </span>
+            <span style={{ color: 'var(--primary)', fontWeight: 700, fontFamily: 'monospace' }}>{reparseProgress.pct}%</span>
+          </div>
+          <div style={{ width: '100%', height: 6, background: 'var(--surface-muted)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${reparseProgress.pct}%`, background: 'var(--primary)', borderRadius: 999, transition: 'width 250ms ease-out' }} />
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -1207,6 +1306,40 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
             <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
               <button onClick={handleSaveEdit} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><FloppyDisk size={13} />Save</button>
               <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><X size={13} />Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Re-parse confirmation modal */}
+      {confirmReparse && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ ...cardStyle, padding: 24, width: '100%', maxWidth: 440, boxShadow: '0 20px 40px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>
+              Konfirmasi Re-parse Legend
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--foreground-muted)', lineHeight: 1.5, margin: 0 }}>
+              Apakah Anda yakin ingin mengekstrak ulang dokumen Legend ini?
+            </p>
+            <div style={{ padding: '10px 12px', background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--danger)', lineHeight: 1.4 }}>
+              <strong>Perhatian:</strong> Tindakan ini akan <strong>menghapus seluruh {symbols.length} simbol</strong> (termasuk hasil review & editan) dan menggantikannya dengan hasil analisis AI yang baru dari dokumen PDF.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+              <button
+                onClick={() => setConfirmReparse(false)}
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmReparse(false);
+                  handleReparse();
+                }}
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--danger)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <ArrowCounterClockwise size={14} /> Ya, Jalankan Re-parse
+              </button>
             </div>
           </div>
         </div>

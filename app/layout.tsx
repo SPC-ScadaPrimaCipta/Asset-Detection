@@ -1,91 +1,57 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
-import SidebarNav from "./sidebar-nav";
+import AppShell from "@/components/AppShell";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { UserProvider } from "@/components/UserContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Asset Detection",
-  description: "Automatic P&ID Asset Detection",
+  title: "TagFlow — Automatic Asset Detection",
+  description: "AI-Powered Industrial P&ID Asset & Symbol Detection Platform",
+  icons: {
+    icon: '/logo.svg',
+  },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
-      style={{ height: "100%" }}
+      className={plusJakartaSans.variable}
+      style={{ height: "100%", width: "100%" }}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('neuro-theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         style={{
-          display: "flex",
-          height: "100%",
+          minHeight: "100vh",
+          width: "100%",
           margin: 0,
           padding: 0,
-          background: "var(--background)",
+          background: "var(--bg-app)",
           color: "var(--foreground)",
           fontFamily:
-            'var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+            'var(--font-plus-jakarta, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+          boxSizing: "border-box",
         }}
       >
-        <aside
-          style={{
-            width: "var(--sidebar-width)",
-            display: "flex",
-            flexDirection: "column",
-            flexShrink: 0,
-            borderRight: "1px solid rgba(255,255,255,0.06)",
-            background:
-              "linear-gradient(180deg, #001E38 0%, #002B4E 55%, #003B63 100%)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Brand */}
-          <div
-            style={{
-              padding: "14px 16px",
-              borderBottom: "1px solid rgba(255,255,255,0.07)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <img
-              src="/lg.png"
-              alt="Asset Detection"
-              style={{
-                width: "100%",
-                maxWidth: "180px",
-                height: "auto",
-                objectFit: "contain",
-              }}
-            />
-          </div>
-
-          {/* Navigation */}
-          <SidebarNav />
-        </aside>
-
-        <main
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            background: "var(--background)",
-          }}
-        >
-          <div style={{ padding: "32px" }}>{children}</div>
-        </main>
+        <ThemeProvider>
+          <UserProvider>
+            <AppShell>{children}</AppShell>
+          </UserProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -78,7 +78,7 @@ describe('runDetectionAgent — DeepSeek is refused for images', () => {
 
   it('names the remedy in the error so the UI message is actionable', async () => {
     await expect(runDetectionAgent(baseInput())).rejects.toThrow(
-      /switch provider to Gemini in Settings/,
+      /switch provider to (Gemini|OpenAI|Anthropic)/,
     );
   });
 

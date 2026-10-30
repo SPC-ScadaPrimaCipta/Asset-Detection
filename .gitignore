@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -51,8 +52,22 @@ __pycache__/
 .pytest_cache/
 dump.rdb
 
-# YOLO external data (dataset/model bukan milik repo — lokal saja)
+# YOLO training artifacts (dataset archives, PyTorch checkpoints — local only)
 *.pt
-*.onnx
 images.zip
 labels.zip
+
+# YOLO model in repo (tracked via Git LFS, see .gitattributes)
+# If you need to exclude ONNX models from other locations, use specific paths
+# instead of a global *.onnx pattern.
+
+# Specific model exclusion — yolo-pid-v8n-203.onnx not yet approved for tracking
+/model/yolo-pid-v8n-203.onnx
+
+# Diagnostics output directory (temporary runtime buffers)
+/fixtures/diagnostics/
+
+# Scratch directory (temporary debug/test scripts)
+/scratch/
+
+/.playwright-mcp

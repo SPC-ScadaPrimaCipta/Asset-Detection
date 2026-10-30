@@ -67,6 +67,13 @@ export interface DetectionJobInput {
   pngHeight?: number;
   projectId?: string | null;
   drawingType?: string | null; // e.g. 'P&ID', 'PFD', 'ISOMETRIC' — inferred from filename
+  /**
+   * Reference crop images for legend symbols, keyed by symbol id.
+   * Base64-encoded PNG. Sent to Gemini as inlineData parts alongside the page image
+   * so the model can visually match symbols against these examples.
+   * Max ~10 entries; missing entries are silently skipped.
+   */
+  referenceCrops?: Map<string, string>;
 }
 
 // Extended detection result with rule validation metadata + embedding data
@@ -155,7 +162,7 @@ function envDetectionTuning(): DetectionTuning {
 export async function runDetectionAgent(
   input: DetectionJobInput,
 ): Promise<ResolvedPageDetection> {
-  const cfg = await assertGeminiUsable();
+  const cfg = await assertVisionModelUsable();
 
   // Step 1: Vision detection — one page, or a sweep of overlapping regions.
   const rawDetections = await collectRawDetections(input, cfg);
@@ -164,17 +171,27 @@ export async function runDetectionAgent(
   return { page: input.page, detections: await resolveDetections(input, rawDetections) };
 }
 
-/** Provider/key guard. DeepSeek is text-only, so images always need Gemini. */
-async function assertGeminiUsable() {
+/** Provider/key guard. DeepSeek is text-only, so images need a vision provider. */
+async function assertVisionModelUsable() {
   const cfg = await getAiConfig();
   if (cfg.provider === "deepseek") {
     throw new Error(
-      "DeepSeek cannot analyse images — switch provider to Gemini in Settings",
+      "DeepSeek cannot analyse images — switch provider to Gemini, OpenAI, or Anthropic in Settings",
     );
   }
-  if (!cfg.geminiKey) {
+  if (cfg.provider === "gemini" && !cfg.geminiKey) {
     throw new Error(
       "GEMINI_API_KEY not configured — set in Settings page or .env.local",
+    );
+  }
+  if (cfg.provider === "openai" && !cfg.openaiKey) {
+    throw new Error(
+      "OPENAI_API_KEY not configured — set in Settings page or .env.local",
+    );
+  }
+  if (cfg.provider === "anthropic" && !cfg.anthropicKey) {
+    throw new Error(
+      "ANTHROPIC_API_KEY not configured — set in Settings page or .env.local",
     );
   }
   return cfg;
@@ -230,6 +247,23 @@ export function dedupeRegionDetections(
   iouThreshold = env.DETECTION_REGION_DEDUPE_IOU,
 ): Detection[] {
   const kept: Detection[] = [];
+
+  /**
+   * Fuzzy type match for untagged detections.
+   * Handles slight naming differences ("Pressure Transmitter" vs
+   * "Differential Pressure Transmitter") from overlapping region passes.
+   */
+  const typeNorm = (t: string) => t.toLowerCase().trim();
+  const typesOverlap = (a: string, b: string): boolean => {
+    const na = typeNorm(a);
+    const nb = typeNorm(b);
+    if (na === nb) return true;
+    if (na.includes(nb) || nb.includes(na)) return true;
+    const wa = na.split(' ')[0];
+    const wb = nb.split(' ')[0];
+    return wa.length > 2 && wa === wb;
+  };
+
   for (const d of detections) {
     const tag = (d.assetTag ?? "").toUpperCase().trim();
     const type = (d.assetType ?? "").toLowerCase();
@@ -237,10 +271,38 @@ export function dedupeRegionDetections(
       const kTag = (k.assetTag ?? "").toUpperCase().trim();
       const kType = (k.assetType ?? "").toLowerCase();
       const sameTag = tag !== "" && kTag !== "" && tag === kTag;
-      // Untagged detections can only be matched by type, so require a tight box.
-      const sameUntaggedType = tag === "" && kTag === "" && type !== "" && type === kType;
+      // Untagged: fuzzy type match + looser IoU (0.7× threshold)
+      // because dense instrument clusters are tight and type names drift
+      // slightly between region passes.
+      const sameUntaggedType =
+        tag === "" && kTag === "" &&
+        type !== "" && kType !== "" &&
+        typesOverlap(type, kType);
       if (!sameTag && !sameUntaggedType) return false;
-      return bboxIou1000(k.bbox, d.bbox) > iouThreshold;
+      // Untagged: use 0.85× threshold (was 0.70×). Higher multiplier reduces
+      // false deduplication of genuinely distinct small symbols that share the
+      // same type and sit close together (e.g. two adjacent gate valves).
+      const effectiveThreshold = sameUntaggedType && !sameTag
+        ? iouThreshold * 0.85
+        : iouThreshold;
+      const iou = bboxIou1000(k.bbox, d.bbox);
+      if (iou > effectiveThreshold) return true;
+
+      // Small symbol proximity check: region border splits and overlapping passes
+      // can produce slight coordinate offsets on tiny symbols.
+      const dist = Math.hypot(
+        k.bbox.x + k.bbox.width / 2 - (d.bbox.x + d.bbox.width / 2),
+        k.bbox.y + k.bbox.height / 2 - (d.bbox.y + d.bbox.height / 2),
+      );
+      const ix0 = Math.max(k.bbox.x, d.bbox.x);
+      const iy0 = Math.max(k.bbox.y, d.bbox.y);
+      const ix1 = Math.min(k.bbox.x + k.bbox.width, d.bbox.x + d.bbox.width);
+      const iy1 = Math.min(k.bbox.y + k.bbox.height, d.bbox.y + d.bbox.height);
+      const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+      const minArea = Math.min(k.bbox.width * k.bbox.height, d.bbox.width * d.bbox.height);
+      const containment = minArea > 0 ? inter / minArea : 0;
+
+      return dist <= 10 && (containment >= 0.30 || iou >= 0.15);
     });
 
     if (dupIdx === -1) {
@@ -273,15 +335,16 @@ async function collectRawDetections(
   cfg: Awaited<ReturnType<typeof getAiConfig>>,
 ): Promise<Detection[]> {
   const referenceExamples = legendReferenceExamples(input);
+  const hasReferenceCrops = !!(input.referenceCrops && input.referenceCrops.size > 0);
   const fullPagePrompt = () =>
-    buildSymbolDetectorPrompt(input.legendSymbols, { referenceExamples });
+    buildSymbolDetectorPrompt(input.legendSymbols, { referenceExamples, hasReferenceCrops });
 
   const tuning = await getTuning();
   const regionsCfg = tuning.regions;
 
   if (regionsCfg.mode === "page") {
     const raw = await callWithRetry(
-      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      () => runWithVisionProvider(cfg, input, fullPagePrompt()),
       { label: `detection page ${input.page}` },
     );
     return raw.detections;
@@ -302,7 +365,7 @@ async function collectRawDetections(
       `[detection] page ${input.page} region crop produced 0 images — falling back to full page`,
     );
     const raw = await callWithRetry(
-      () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+      () => runWithVisionProvider(cfg, input, fullPagePrompt()),
       { label: `detection page ${input.page} (full-page fallback)` },
     );
     return raw.detections;
@@ -315,12 +378,12 @@ async function collectRawDetections(
     const prompt = buildRegionSymbolDetectorPrompt(
       input.legendSymbols,
       crop.region.label,
-      { referenceExamples },
+      { referenceExamples, hasReferenceCrops },
     );
     try {
       const raw = await callWithRetry(
         () =>
-          runWithGemini(input, prompt, cfg.geminiModel, {
+          runWithVisionProvider(cfg, input, prompt, {
             pngBase64: crop.pngBase64,
             regionLabel: crop.region.label,
           }),
@@ -352,15 +415,31 @@ async function collectRawDetections(
   if (regionsCfg.catchup) {
     try {
       const raw = await callWithRetry(
-        () => runWithGemini(input, fullPagePrompt(), cfg.geminiModel),
+        () => runWithVisionProvider(cfg, input, fullPagePrompt()),
         { label: `detection page ${input.page} catch-up` },
       );
+      // Pre-filter: skip catch-up detections already covered by a region pass.
+      // Avoids O(n²) bloat in dedupeRegionDetections for dense pages and
+      // prevents the same symbol entering the DB as two rows when dedupe
+      // misses a near-duplicate (e.g. slightly different bbox from full-page
+      // vs region coordinate systems).
+      let catchupNew = 0;
       for (const d of raw.detections) {
+        const tag = (d.assetTag ?? '').toUpperCase().trim();
+        const covered = collected.some((e) => {
+          if (tag !== '' && tag === (e.assetTag ?? '').toUpperCase().trim()) return true;
+          return bboxIou1000(e.bbox, d.bbox) > regionsCfg.dedupeIou;
+        });
+        if (covered) continue;
+        catchupNew++;
         collected.push({
           ...d,
           evidence: [...(d.evidence ?? []), "Full-page catch-up pass"],
         });
       }
+      console.log(
+        `[detection] page ${input.page} catch-up: ${raw.detections.length} raw, ${catchupNew} new`,
+      );
     } catch (e: unknown) {
       console.warn(
         `[detection] page ${input.page} catch-up failed (non-fatal): ${
@@ -541,12 +620,51 @@ async function resolveDetections(
       };
     }
 
-    // Step 3: If UNKNOWN from rule chain but AI had high confidence, still flag as VISION
+    // Step 3: Resolve final asset type.
+    // When source=LEGEND, prefer resolvedAssetName (exact symbol_name from the
+    // legend row) over resolvedAssetType (which may be the generic category).
+    // This ensures the displayed component name always matches the legend exactly,
+    // e.g. "Pressure Differential Transmitter" instead of "Instrument".
+    // For all other sources keep resolvedAssetType as before.
     const finalAssetType =
       validation.source === "UNKNOWN"
         ? "UNKNOWN"
-        : validation.resolvedAssetType;
+        : validation.source === "LEGEND" && validation.resolvedAssetName
+          ? validation.resolvedAssetName
+          : validation.resolvedAssetType;
     const finalConfidence = validation.confidence;
+
+    // Fix #7: Legend quality feedback.
+    // When detection resolves to UNKNOWN and a legend is selected, log a miss
+    // to legend_symbols.quality_reasons so users can see which legend crops
+    // are failing to match. Fire-and-forget — never blocks detection.
+    if (validation.source === "UNKNOWN" && imageHash && input.legendId && input.legendSymbols.length > 0) {
+      const firstWord = (d.assetType ?? '').split(' ')[0];
+      const missEntry = JSON.stringify([{
+        reason: 'detection_miss',
+        assetType: d.assetType,
+        tag: d.assetTag ?? null,
+        confidence: d.confidence,
+        ts: new Date().toISOString(),
+      }]);
+      setImmediate(async () => {
+        try {
+          const { default: dbPool } = await import('@/lib/db');
+          await dbPool.query(
+            `UPDATE legend_symbols
+                SET quality_reasons = COALESCE(quality_reasons, '[]'::jsonb) || $1::jsonb
+              WHERE legend_id = $2
+                AND asset_type ILIKE $3
+                AND crop_file IS NOT NULL
+                AND quality_status IS DISTINCT FROM 'rejected'
+              LIMIT 1`,
+            [missEntry, input.legendId, `%${firstWord}%`],
+          );
+        } catch {
+          // silent — logging failure must never break detection
+        }
+      });
+    }
 
     // F5: Compute validation_status
     const ruleText = validation.ruleApplied ?? "";
@@ -679,7 +797,149 @@ async function resolveDetections(
   }
 
   // Step 3: Calibrate confidence
-  return calibrateConfidence(resolvedDetections, det);
+  const calibrated = calibrateConfidence(resolvedDetections, det);
+
+  // Step 4 (opt-in): Gemini verifier for NEEDS_REVIEW band detections.
+  // Only runs when det.enableVerifier === true (default: false).
+  // Conservative budget: max 5 calls per page to protect free-tier quota.
+  if (det.enableVerifier && input.pageImageBase64 && input.pngWidth && input.pngHeight) {
+    const { createVerifierSession } = await import('@/lib/detection/ai/verifier');
+    const session = createVerifierSession({ maxCallsPerPage: 5 });
+    const legendLabels = input.legendSymbols.slice(0, 20).map((s) => ({
+      symbolId: s.id,
+      label: s.symbol_name ?? s.asset_type,
+    }));
+
+    for (const resolved of calibrated) {
+      if (resolved.validation_status !== 'NEEDS_REVIEW') continue;
+      if (resolved.confidence < det.reviewThreshold) continue; // LOW band — skip
+
+      try {
+        const cropBase64 = await cropPageRegion(
+          input.pageImageBase64,
+          adaptiveExpandBBox(resolved.bbox),
+          input.pngWidth,
+          input.pngHeight,
+          0.0,
+        );
+        if (!cropBase64) continue;
+
+        const cropHash = resolved.image_hash ?? hashImage(cropBase64);
+        const result = await session.verify({
+          candidateId: resolved.assetTag ?? resolved.assetType ?? 'unknown',
+          pageId: String(input.page),
+          deterministic: {
+            confidence: resolved.confidence,
+            decisionBand: 'REVIEW',
+            topLabel: resolved.assetType,
+            topSymbolId: null,
+            margin: 0,
+            reasons: resolved.evidence ?? [],
+            configVersion: 'gemini-vision-only',
+          },
+          ocr: { rawText: null, normalizedText: null, isTag: null },
+          selectedLegend: {
+            legendId: input.legendId,
+            version: '1',
+            labels: legendLabels,
+          },
+          crops: {
+            candidateCropB64: cropBase64,
+            contextCropB64: cropBase64,
+            cropHash,
+          },
+        });
+
+        if (result.gemini.status === 'success' && result.gemini.verdict) {
+          if (result.gemini.verdict === 'CORRECT' && result.gemini.suggestedLabel) {
+            resolved.resolved_asset_name = result.gemini.suggestedLabel;
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier: ${result.gemini.explanation ?? result.gemini.verdict}`,
+            ];
+          } else if (result.gemini.verdict === 'CONFIRM') {
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier confirmed: ${result.gemini.explanation ?? 'CONFIRM'}`,
+            ];
+          } else if (result.gemini.verdict === 'NO_SYMBOL') {
+            // Symbol visually not present — annotate for human review, no auto-reject.
+            resolved.evidence = [
+              ...resolved.evidence,
+              `Verifier: symbol not visible — ${result.gemini.explanation ?? 'NO_SYMBOL'}`,
+            ];
+          }
+        }
+      } catch {
+        // verifier failure must never break detection
+      }
+    }
+  }
+
+  return calibrated;
+}
+
+async function runWithVisionProvider(
+  cfg: Awaited<ReturnType<typeof getAiConfig>>,
+  input: DetectionJobInput,
+  prompt: string,
+  opts?: { pngBase64?: string; regionLabel?: string },
+) {
+  if (cfg.provider === 'gemini') {
+    return runWithGemini(input, prompt, cfg.geminiModel, opts);
+  }
+
+  const { getVisionProvider } = await import('@/lib/ai-providers');
+  const provider = await getVisionProvider(cfg);
+  const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+
+  const drawingTypeBlock = input.drawingType
+    ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
+    : "";
+  const contextText = opts?.regionLabel
+    ? `This image is a CROPPED REGION (${opts.regionLabel}) of page ${input.page} of a P&ID document.
+${drawingTypeBlock}
+BBOX INSTRUCTIONS: Return bounding boxes in 0-1000 normalized space relative to THIS CROP, (0,0)=top-left of the crop, (1000,1000)=bottom-right of the crop. DO NOT return pixel coordinates.
+Detect ALL equipment symbols visible in THIS REGION. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`
+    : (() => {
+        const dimInfo =
+          input.pngWidth && input.pngHeight
+            ? `Image dimensions: ${input.pngWidth} x ${input.pngHeight} pixels.`
+            : "Image rendered at high resolution.";
+        return `This is page ${input.page} of a P&ID document, rendered as a PNG image.
+${dimInfo}${drawingTypeBlock}
+BBOX INSTRUCTIONS: Return bounding box coordinates in 0-1000 normalized space where (0,0)=top-left and (1000,1000)=bottom-right of the image. DO NOT return pixel coordinates. Scale: x_normalized = (x_pixel / image_width) * 1000.
+Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${input.page}, "detections": [...] }`;
+      })();
+
+  const fullPrompt = `${prompt}\n\n${contextText}`;
+  const imageBase64 = opts?.pngBase64 ?? input.pageImageBase64;
+
+  const result = await provider.generateVisionCompletion({
+    model,
+    prompt: fullPrompt,
+    imageBase64,
+    mimeType: 'image/png',
+    temperature: 0.1,
+    maxTokens: 4096,
+    responseFormat: 'json',
+  });
+
+  const raw = result.text;
+  const json = extractJson(raw) as Record<string, unknown>;
+  const sanitized = sanitizePageJson(
+    json.page !== undefined ? json : { ...json, page: input.page },
+    input.page,
+    raw,
+  );
+  const parsed = PageDetectionSchema.safeParse(sanitized);
+  if (!parsed.success) {
+    throw new Error(
+      `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`,
+    );
+  }
+  parsed.data.page = input.page;
+  return parsed.data;
 }
 
 async function runWithGemini(
@@ -708,6 +968,28 @@ async function runWithGemini(
       data: opts?.pngBase64 ?? input.pageImageBase64,
     },
   };
+
+  // Build reference crop parts: one inlineData per validated legend symbol crop.
+  // Only included when referenceCrops map is non-empty and this is a full-page call
+  // (not a region sub-crop, where the coord frame is different and adding more images
+  // risks confusing the model about which image to annotate).
+  const refCropParts: Part[] = [];
+  if (input.referenceCrops && input.referenceCrops.size > 0 && !opts?.regionLabel) {
+    // Build a lookup: symbolId → symbol name for the intro text block
+    const symbolNameById = new Map<string, string>(
+      input.legendSymbols.map((s) => [
+        (s as any).id as string,
+        (s.symbol_name ?? s.asset_type),
+      ])
+    );
+    let idx = 0;
+    for (const [symbolId, cropBase64] of input.referenceCrops) {
+      const name = symbolNameById.get(symbolId) ?? 'Legend Symbol';
+      refCropParts.push({ text: `REFERENCE SYMBOL ${idx + 1}: ${name}` });
+      refCropParts.push({ inlineData: { mimeType: 'image/png' as const, data: cropBase64 } });
+      idx++;
+    }
+  }
 
   const drawingTypeBlock = input.drawingType
     ? `\nDRAWING TYPE: ${input.drawingType} — interpret all symbols and tags in this context.`
@@ -775,8 +1057,9 @@ Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${i
       const result = await model.generateContent([
         { text: prompt },
         { text: contextText },
+        ...refCropParts,
         mediaPart,
-      ]);
+      ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
       const raw = result.response.text();
       const json = extractJson(raw) as Record<string, unknown>;
       // P2: sanitasi per-item dulu — deteksi rusak di-drop, sisanya tetap divalidasi
@@ -1060,10 +1343,10 @@ export async function runRuleValidatorVision(
 } | null> {
   try {
     const cfg = await getAiConfig();
-    if (!cfg.geminiKey) return null;
-
-    const { getGeminiClient } = await import("@/lib/gemini");
-    const client = await getGeminiClient();
+    if (cfg.provider === 'gemini' && !cfg.geminiKey) return null;
+    if (cfg.provider === 'openai' && !cfg.openaiKey) return null;
+    if (cfg.provider === 'anthropic' && !cfg.anthropicKey) return null;
+    if (cfg.provider === 'deepseek') return null;
 
     const legendContext =
       input.legendSymbols.length > 0
@@ -1115,12 +1398,39 @@ export async function runRuleValidatorVision(
       legendContext,
     });
 
+    if (cfg.provider !== 'gemini') {
+      const { getVisionProvider } = await import('@/lib/ai-providers');
+      const provider = await getVisionProvider(cfg);
+      const model = cfg.provider === 'openai' ? cfg.openaiModel : cfg.anthropicModel;
+      const res = await provider.generateVisionCompletion({
+        model,
+        prompt,
+        imageBase64: input.pageImageBase64,
+        mimeType: 'image/png',
+        temperature: 0.1,
+        maxTokens: 1024,
+        responseFormat: 'json',
+      });
+      return JSON.parse(res.text) as {
+        asset_type: string;
+        confidence: number;
+        source_used: string;
+        reason: string;
+        is_unknown: boolean;
+      };
+    }
+
+    const { getGeminiClient } = await import("@/lib/gemini");
+    const client = await getGeminiClient();
+
     const model = client.getGenerativeModel({
       model: cfg.geminiModel,
       generationConfig: await getGenerationConfig("ruleValidator"),
     });
 
-    const result = await model.generateContent([{ text: prompt }]);
+    const result = await model.generateContent([{ text: prompt }], {
+      timeout: env.GEMINI_REQUEST_TIMEOUT_MS,
+    });
     const raw = result.response.text();
     return JSON.parse(raw) as {
       asset_type: string;

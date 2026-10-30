@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { getAiConfig } from "./ai-config";
 
-export type AIProvider = "gemini" | "deepseek";
+export type AIProvider = "gemini" | "openai" | "anthropic" | "deepseek";
 
 // --- Resolved (Settings DB wins, env fallback) — use these in all runtime paths ---
 

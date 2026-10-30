@@ -12,6 +12,8 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { detectionConfig } from '@/lib/detection/config';
+import { formatLegendAssetType, isSpecificAssetType } from '@/lib/rule-validator';
+import { classifyHybridCandidate } from '@/lib/mdo-pid-rules';
 
 /** Minimal query surface — keeps the repository testable without a live DB. */
 export interface DbLike {
@@ -40,9 +42,11 @@ export interface PersistableDetection {
   area?: string | null;
   mainEquipment?: string | null;
   legendSymbol?: string | null;
+  legendSymbolId?: string | null;
   confidence: number;
   bbox: PageBBox;
   evidence: string[];
+  size?: string | null;
   detection_source?: unknown;
   canonical_features?: unknown;
   image_hash?: unknown;
@@ -62,6 +66,7 @@ export interface PersistableDetection {
   pageDims?: { pageWidth: number; pageHeight: number } | null;
   /** Deterministic evidence passthrough (legend def id, matchFrom, scores). */
   detEvidence?: Record<string, unknown> | null;
+  candidate_status?: 'FINAL' | 'REVIEW_CANDIDATE' | 'NOISE';
 }
 
 export interface LegendSymbolRef {
@@ -113,14 +118,28 @@ export function resolveLegendSymbol(
   legendSymbols: LegendSymbolRef[]
 ): LegendSymbolRef | null {
   if (!legendSymbol) return null;
+  const target = legendSymbol.trim().toLowerCase();
+  if (!target) return null;
+
   // Direct id match first (defs-from-crops preserves DB ids).
   const byId = legendSymbols.find((s) => s.id === legendSymbol);
   if (byId) return byId;
-  return (
-    legendSymbols.find(
-      (s) => s.asset_type === legendSymbol || s.symbol_name === legendSymbol
-    ) ?? null
+
+  // Exact case-insensitive match on symbol_name or asset_type
+  const exact = legendSymbols.find(
+    (s) => (s.symbol_name && s.symbol_name.trim().toLowerCase() === target) ||
+           (s.asset_type && s.asset_type.trim().toLowerCase() === target)
   );
+  if (exact) return exact;
+
+  // Substring match: e.g. "ball valve" matches "BALL VALVE (OPEN/CLOSED)"
+  const bySub = legendSymbols.find(
+    (s) => (s.symbol_name && (s.symbol_name.trim().toLowerCase().includes(target) || target.includes(s.symbol_name.trim().toLowerCase()))) ||
+           (s.asset_type && (s.asset_type.trim().toLowerCase().includes(target) || target.includes(s.asset_type.trim().toLowerCase())))
+  );
+  if (bySub) return bySub;
+
+  return null;
 }
 
 interface FieldConf {
@@ -202,13 +221,15 @@ export async function deleteDetectionsForPage(
 }
 
 const INSERT_SQL = `INSERT INTO detections
-   (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
-    service, location, unit, area, pid_number, pid_page,
-    legend_id, legend_symbol_id, confidence,
-    bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status,
-    detection_source, canonical_features, crop_hash, embedding, confidence_breakdown,
-    validation_status, main_equipment, field_confidence, field_provenance)
- VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING',$22,$23,$24,$25::vector,$26,$27,$28,$29,$30)`;
+    (id, job_id, document_id, asset_tag, asset_type, equipment_class, description,
+     service, location, unit, area, pid_number, pid_page,
+     legend_id, legend_symbol_id, confidence,
+     bbox_x, bbox_y, bbox_w, bbox_h, evidence, detection_status, review_status,
+     detection_source, canonical_features, crop_hash, embedding, confidence_breakdown,
+      validation_status, main_equipment, field_confidence, field_provenance, size,
+      candidate_status, candidate_source, component_name)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'DETECTED','PENDING',$22,$23,$24,$25::vector,$26,$27,$28,$29,$30,$31,$32,$33,$34)`;
+
 
 /** Column list for the V2 dual-write (canonical symbol bbox). */
 const DUAL_WRITE_SQL = `UPDATE detections
@@ -223,21 +244,53 @@ export interface PersistResult {
   ids: string[];
 }
 
+let sizeColumnEnsured = false;
+export async function ensureSizeColumn(db: DbLike): Promise<void> {
+  if (sizeColumnEnsured) return;
+  try {
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
+    await db.query('ALTER TABLE assets ADD COLUMN IF NOT EXISTS size VARCHAR(255)', []);
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS component_name TEXT', []);
+    await db.query('ALTER TABLE detections ADD COLUMN IF NOT EXISTS description TEXT', []);
+    sizeColumnEnsured = true;
+  } catch {
+    // Non-fatal (e.g. read-only replica or already running)
+  }
+}
+
 export async function persistDetections(
   db: DbLike,
   items: PersistableDetection[],
   ctx: PersistContext,
   page: number
 ): Promise<PersistResult> {
+  await ensureSizeColumn(db);
   const ids: string[] = [];
   for (const d of items) {
-    const matchedSymbol = resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);
-    const legendSymbolId = matchedSymbol?.id ?? null;
+    const matchedSymbol = d.legendSymbolId
+      ? (ctx.legendSymbols.find((s) => s.id === d.legendSymbolId) ?? resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols))
+      : resolveLegendSymbol(d.legendSymbol, ctx.legendSymbols);
+    const legendSymbolId = matchedSymbol?.id ?? d.legendSymbolId ?? null;
+
+    let finalAssetType = d.assetType;
+    if (matchedSymbol && matchedSymbol.symbol_name) {
+      if (!isSpecificAssetType(d.assetType) || d.assetType.toLowerCase() === (matchedSymbol.asset_type ?? '').toLowerCase()) {
+        finalAssetType = formatLegendAssetType(matchedSymbol.symbol_name, matchedSymbol.asset_type ?? d.assetType);
+      }
+    }
+
     const detectionSource = d.detection_source ?? 'VISION';
     const canonicalFeatures = d.canonical_features ?? null;
     const imageHash = d.image_hash ?? null;
     const confidenceBreakdown = d.confidence_breakdown ?? null;
     const validationStatus = d.validation_status ?? 'VALID';
+    const candidateStatus = d.candidate_status ?? classifyHybridCandidate({
+      source: String(detectionSource).includes('VISION') ? 'VISION' : 'YOLO_GEO2',
+      assetTag: d.assetTag,
+      assetType: finalAssetType,
+      confidence: d.confidence,
+      evidence: d.evidence,
+    });
     const fieldConfidence = d.field_confidence ?? null;
     const fieldProvenance = d.field_provenance ?? null;
 
@@ -265,7 +318,7 @@ export async function persistDetections(
       ctx.jobId,
       ctx.docId,
       normalizeAssetTag(d.assetTag),
-      d.assetType,
+      finalAssetType,
       d.equipmentClass ?? null,
       gated.description,
       gated.service,
@@ -279,10 +332,10 @@ export async function persistDetections(
       matchedSymbol?.sourceLegendId ?? matchedSymbol?.legend_id ?? ctx.effectiveLegendId ?? null,
       legendSymbolId,
       d.confidence,
-      Number.isFinite(d.bbox.x) ? d.bbox.x : 0,
-      Number.isFinite(d.bbox.y) ? d.bbox.y : 0,
-      Number.isFinite(d.bbox.width) ? d.bbox.width : 0,
-      Number.isFinite(d.bbox.height) ? d.bbox.height : 0,
+      Number.isFinite(d.bbox.x) ? Math.round(d.bbox.x) : 0,
+      Number.isFinite(d.bbox.y) ? Math.round(d.bbox.y) : 0,
+      Number.isFinite(d.bbox.width) ? Math.round(d.bbox.width) : 0,
+      Number.isFinite(d.bbox.height) ? Math.round(d.bbox.height) : 0,
       JSON.stringify(gated.evidence),
       detectionSource,
       canonicalFeatures,
@@ -293,6 +346,10 @@ export async function persistDetections(
       gated.mainEquipment,
       fieldConfidence ? JSON.stringify(fieldConfidence) : null,
       fieldProvenance ? JSON.stringify(fieldProvenance) : null,
+      d.size ?? null,
+      candidateStatus,
+      detectionSource,
+      (d as any).component_name ?? null,
     ]);
 
     // V2 dual-write: pixel boxes when supplied (local wiring), else legacy

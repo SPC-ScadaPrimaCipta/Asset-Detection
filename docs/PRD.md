@@ -1,21 +1,54 @@
 # Product Requirements Document (PRD)
-## Gemini-First P&ID Asset Detection & Asset Register
+## TagFlow — AI P&ID Asset & Symbol Detection Platform (v3.5)
 
 | Informasi | Detail |
 |---|---|
-| Product Name | Asset Detection — AI P&ID Reader |
+| Product Name | TagFlow — Automatic Asset Detection |
 | Product Type | Web-Based Engineering Document Intelligence Platform |
-| Version | 2.0 |
-| Status | Draft |
-| Primary AI Engine | Google Gemini API |
+| Version | 3.5 (Production Release) |
+| Status | Active Production |
+| Primary AI Engine | Multi-Provider (Gemini, DeepSeek, Anthropic, OpenAI) |
 | Primary Input | Legend PDF dan P&ID PDF |
-| Primary Output | Verified Asset Register |
+| Primary Output | Verified Asset Register (.xlsx) & PT Accenture MDO (9-Kolom) |
 | Target Users | Document Controller, Process Engineer, Instrument Engineer, Reviewer, Approver, Asset Manager |
 | Frontend | Next.js / TypeScript |
 | Backend | Next.js API Routes / TypeScript |
 | Database | PostgreSQL |
 | Job Processing | Redis Queue + Detection Worker |
 | Deployment | Cloud, On-Premise, atau Hybrid |
+
+> ## 📌 Status implementasi vs dokumen ini
+>
+> PRD ini adalah **requirement**, bukan deskripsi kode. Beberapa bagiannya sudah
+> diapalkan, sebagian masih spec. Yang perlu diketahui pembaca:
+>
+> **§12.3 (Confidence Threshold) belum sesuai implementasi.** PRD ini menspesifikasikan
+> tiga band — High ≥0.90 / Medium 0.80–0.89 / Low <0.80. Kode tidak punya band
+> seperti itu. `detections.validation_status` hanya punya **tiga nilai:
+> `VALID`, `NEEDS_REVIEW`, `CONFLICT`**, ditentukan oleh
+> `DETECTION_REVIEW_THRESHOLD` (default **0.65**, bukan 0.80) plus penalty
+> (`DETECTION_PENALTY_REVIEW_THRESHOLD`, tag hilang, evidence tipis, bbox
+> over-size/degenerat). Baris VR-006 dan §20.3 yang menyebut "confidence < 0.80 →
+> needs_review" juga tidak mencerminkan kode. **Requirement-nya belum direvisi** —
+> ini catatan selisih, bukan perubahan requirement.
+>
+> **§20.1 (New Test Files) — nama file tidak pernah ada.** Tidak ada satu pun
+> `gemini-pid-*.test.ts` / `gemini-result-validator.test.ts` /
+> `gemini-bbox-transform.test.ts` / `gemini-detection-worker.test.ts` /
+> `gemini-duplicate-tag.test.ts` / `asset-register-approved-only.test.ts` di
+> `__tests__/`. Test suite yang benar ada di sana (24 file), termasuk
+> `ai-schemas.test.ts`, `coordinate-transform.test.ts`, `spatial-association.test.ts`,
+> `bbox-validator.test.ts`, `region-detection.test.ts`, `detection-accuracy.test.ts`.
+>
+> **§15.3 — nama migrasi salah.** `sql/migrate-009-gemini-detection-provenance.sql`
+> tidak ada. Yang sebenarnya: `sql/migrate-v2-detection-extensions.sql`
+> (provenance + `pipeline_version`), `sql/migrate-detection-columns.sql`, dan
+> `sql/migrate-field-metadata.sql`. Jalankan `npm run migrate`.
+>
+> **§16.1 (Main Pages) — sudah akurat.** Semua route yang disebut ada.
+>
+> Arsitektur rencana hybrid yang tidak jadi: `docs/DETECTION_V2_ARCHITECTURE.md`.
+> Operasional: `SETUP.md`, `RUNNING.md`.
 
 ---
 
@@ -712,6 +745,13 @@ Tambahkan migration berikut:
 ```text
 sql/migrate-009-gemini-detection-provenance.sql
 ```
+
+> ⚠️ **Nama file di atas tidak pernah ada.** Provenance & `pipeline_version` sudah
+> diimplementasikan lewat `sql/migrate-v2-detection-extensions.sql`, dengan kolom
+> tambahan di `sql/migrate-detection-columns.sql` dan
+> `sql/migrate-field-metadata.sql`. Jalankan `npm run migrate` (bukan `psql -f`
+> per file). Nama `migrate-009-` sekarang dipakai
+> `sql/migrate-009-settings-tuning.sql` untuk kolom `settings.tuning`.
 
 ```sql
 ALTER TABLE detections

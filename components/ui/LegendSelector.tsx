@@ -9,22 +9,27 @@ export interface LegendOption {
   description?: string;
 }
 
-interface LegendSelectorProps {
-  legends: LegendOption[];
-  legendIds: string[];
-  onChange: (legendIds: string[]) => void;
+export interface LegendSelectorProps {
+  projectId?: string;
+  legends?: LegendOption[];
+  legendIds?: string[];
+  onChange?: (legendIds: string[] | string | null) => void;
+  value?: string | null;
+  multiValues?: string[];
+  onMultiChange?: (legendIds: string[]) => void;
   disabled?: boolean;
   label?: string;
+  placeholder?: string;
 }
 
 const selectStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 12px',
+  padding: '6px 10px',
   borderRadius: 'var(--radius-sm)',
   border: '1px solid var(--border)',
   background: 'var(--background)',
   color: 'var(--foreground)',
-  fontSize: '14px',
+  fontSize: '12px',
   fontFamily: 'inherit',
   outline: 'none',
   cursor: 'pointer',
@@ -33,6 +38,7 @@ const selectStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   textAlign: 'left',
   userSelect: 'none',
+  boxSizing: 'border-box',
 };
 
 const fieldLabelStyle: React.CSSProperties = {
@@ -42,18 +48,58 @@ const fieldLabelStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.04em',
   display: 'block',
-  marginBottom: '6px',
+  marginBottom: '4px',
 };
 
 export function LegendSelector({
-  legends,
-  legendIds,
+  projectId,
+  legends: propLegends,
+  legendIds: propLegendIds,
   onChange,
+  value,
+  multiValues,
+  onMultiChange,
   disabled = false,
-  label = 'Legends',
+  label,
+  placeholder = 'Select Legend (Auto-detect)',
 }: LegendSelectorProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [internalLegends, setInternalLegends] = useState<LegendOption[]>([]);
+
+  // Automatically fetch legends if none were provided via props
+  useEffect(() => {
+    if (!propLegends || propLegends.length === 0) {
+      const url = projectId ? `/api/legends?project_id=${projectId}` : '/api/legends';
+      fetch(url)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setInternalLegends(
+              data.map((l: any) => ({
+                id: l.id,
+                name: l.name,
+                description: l.description,
+              }))
+            );
+          }
+        })
+        .catch((err) => console.error('[LegendSelector] failed to load legends:', err));
+    }
+  }, [propLegends, projectId]);
+
+  const legends: LegendOption[] = Array.isArray(propLegends) && propLegends.length > 0
+    ? propLegends
+    : internalLegends;
+
+  // Resolve active legend IDs with full fallback safety
+  const activeIds: string[] = Array.isArray(multiValues)
+    ? multiValues
+    : Array.isArray(propLegendIds)
+    ? propLegendIds
+    : typeof value === 'string' && value.length > 0
+    ? [value]
+    : [];
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -72,28 +118,43 @@ export function LegendSelector({
 
   const toggleLegend = (id: string) => {
     if (disabled) return;
-    if (legendIds.includes(id)) {
-      onChange(legendIds.filter((i) => i !== id));
+    let next: string[];
+    if (activeIds.includes(id)) {
+      next = activeIds.filter((i) => i !== id);
     } else {
-      if (legendIds.length >= 3) return; // max 3
-      onChange([...legendIds, id]);
+      if (activeIds.length >= 3) return; // max 3
+      next = [...activeIds, id];
+    }
+
+    if (onMultiChange) {
+      onMultiChange(next);
+    }
+    if (onChange) {
+      (onChange as any)(next);
+      if (next.length === 0) {
+        (onChange as any)(null);
+      } else {
+        (onChange as any)(next[0]);
+      }
     }
   };
 
-  const selectedNames = legendIds
+  const selectedNames = activeIds
     .map((id) => legends.find((l) => l.id === id)?.name)
     .filter(Boolean) as string[];
 
   const displayText =
-    legendIds.length === 0
-      ? 'Auto-detect (No legend)'
-      : `${legendIds.length} / 3 selected: ${selectedNames.join(', ')}`;
+    activeIds.length === 0
+      ? placeholder
+      : `${activeIds.length}/3: ${selectedNames.join(', ')}`;
 
   return (
-    <div style={{ position: 'relative', width: '100%', minWidth: '220px' }} ref={containerRef}>
-      <span style={fieldLabelStyle}>
-        {label} {legendIds.length > 0 ? `(${legendIds.length}/3)` : '(auto-detect)'}
-      </span>
+    <div style={{ position: 'relative', width: '100%', minWidth: '180px', maxWidth: '260px' }} ref={containerRef}>
+      {label && (
+        <span style={fieldLabelStyle}>
+          {label} {activeIds.length > 0 ? `(${activeIds.length}/3)` : ''}
+        </span>
+      )}
       <button
         type="button"
         disabled={disabled}
@@ -110,12 +171,12 @@ export function LegendSelector({
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             flex: 1,
-            color: legendIds.length === 0 ? 'var(--foreground-muted)' : 'var(--foreground)',
+            color: activeIds.length === 0 ? 'var(--foreground-muted)' : 'var(--foreground)',
           }}
         >
           {displayText}
         </span>
-        <CaretDown size={14} weight="bold" style={{ color: 'var(--foreground-muted)', flexShrink: 0, marginLeft: 8 }} />
+        <CaretDown size={13} weight="bold" style={{ color: 'var(--foreground-muted)', flexShrink: 0, marginLeft: 6 }} />
       </button>
 
       {open && (
@@ -129,35 +190,35 @@ export function LegendSelector({
             background: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-md)',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-            padding: '8px',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.15)',
+            padding: '6px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '4px',
+            gap: '3px',
             maxHeight: '220px',
             overflowY: 'auto',
           }}
         >
           {legends.length === 0 ? (
-            <div style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--foreground-muted)' }}>
+            <div style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--foreground-muted)' }}>
               No legends available
             </div>
           ) : (
             legends.map((l) => {
-              const priority = legendIds.indexOf(l.id);
+              const priority = activeIds.indexOf(l.id);
               const selected = priority >= 0;
-              const maxReached = !selected && legendIds.length >= 3;
+              const maxReached = !selected && activeIds.length >= 3;
 
               return (
                 <div
                   key={l.id}
                   onClick={() => !maxReached && toggleLegend(l.id)}
-                  title={maxReached ? 'Maximum 3 legends per detection job' : `Priority ${priority + 1} of ${legendIds.length}`}
+                  title={maxReached ? 'Maximum 3 legends per detection job' : selected ? `Priority ${priority + 1} of ${activeIds.length}` : 'Click to select'}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 10px',
+                    gap: '6px',
+                    padding: '6px 8px',
                     borderRadius: 'var(--radius-sm)',
                     background: selected ? 'var(--surface-muted)' : 'transparent',
                     cursor: maxReached ? 'not-allowed' : 'pointer',
@@ -175,18 +236,18 @@ export function LegendSelector({
                     type="checkbox"
                     checked={selected}
                     disabled={maxReached}
-                    onChange={() => {}} // Handled by parent div click
+                    onChange={() => {}} // Handled by parent click
                     style={{ cursor: maxReached ? 'not-allowed' : 'pointer', accentColor: 'var(--primary)' }}
                   />
                   {selected && (
                     <span
                       style={{
-                        minWidth: '20px',
-                        height: '20px',
-                        borderRadius: '10px',
+                        minWidth: '16px',
+                        height: '16px',
+                        borderRadius: '8px',
                         background: priority === 0 ? 'var(--primary)' : 'var(--accent)',
-                        color: 'var(--surface)',
-                        fontSize: '11px',
+                        color: '#fff',
+                        fontSize: '10px',
                         fontWeight: 700,
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -199,7 +260,7 @@ export function LegendSelector({
                   )}
                   <span
                     style={{
-                      fontSize: '13px',
+                      fontSize: '12px',
                       color: 'var(--foreground)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -218,15 +279,15 @@ export function LegendSelector({
             style={{
               borderTop: '1px solid var(--border)',
               marginTop: '4px',
-              paddingTop: '6px',
+              paddingTop: '4px',
               paddingLeft: '4px',
-              fontSize: '11px',
+              fontSize: '10px',
               color: 'var(--foreground-muted)',
-              lineHeight: 1.4,
+              lineHeight: 1.3,
             }}
           >
-            {legendIds.length === 0
-              ? 'No legend selected — symbols detected without reference.'
+            {activeIds.length === 0
+              ? 'No legend selected — AI detects standard symbols.'
               : 'Number = priority. Legend 1 wins symbol conflicts.'}
           </div>
         </div>
@@ -234,3 +295,4 @@ export function LegendSelector({
     </div>
   );
 }
+export default LegendSelector;

@@ -9,6 +9,7 @@
 
 import { getAiConfig } from '@/lib/ai-config';
 import { getGenerationConfig } from '@/lib/ai-generation';
+import { env } from '@/lib/env';
 
 export interface SymbolFeatures {
   shape: string;               // e.g. 'circle', 'diamond', 'rectangle', 'triangle'
@@ -73,7 +74,7 @@ export async function extractSymbolFeatures(
     const result = await model.generateContent([
       { text: FEATURE_PROMPT },
       { inlineData: { mimeType: 'image/png', data: imageBase64 } },
-    ]);
+    ], { timeout: env.GEMINI_REQUEST_TIMEOUT_MS });
 
     const raw = result.response.text().trim();
     const parsed = JSON.parse(raw) as SymbolFeatures;

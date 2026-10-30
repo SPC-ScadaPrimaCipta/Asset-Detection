@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TagFlow — Concept 2: Target Valve</title>
+  <defs>
+    <linearGradient id="tileGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#B2ECFD" />
+      <stop offset="100%" stop-color="#F0FAFF" />
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="54" fill="url(#tileGrad)" />
+  
+  <!-- AI Bounding Box Corner Brackets -->
+  <path fill="none" stroke="#2F50C6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"
+        d="M 74,54 H 54 V 74" />
+  <path fill="none" stroke="#2F50C6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"
+        d="M 182,54 H 202 V 74" />
+  <path fill="none" stroke="#2F50C6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"
+        d="M 54,182 V 202 H 74" />
+  <path fill="none" stroke="#2F50C6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"
+        d="M 202,182 V 202 H 182" />
+
+  <!-- Horizontal Process Pipeline -->
+  <rect x="36" y="148" width="184" height="10" rx="5" fill="#2F50C6" />
+
+  <!-- Valve Body (Bowtie Triangles) -->
+  <polygon fill="#2F50C6" points="78,124 128,153 78,182" />
+  <polygon fill="#2F50C6" points="178,124 128,153 178,182" />
+
+  <!-- Valve Stem -->
+  <rect x="124" y="94" width="8" height="58" fill="#2F50C6" />
+
+  <!-- Top Instrument Tag Balloon (ISA-5.1 Actuator Tag) -->
+  <path fill="#2F50C6" fill-rule="evenodd"
+        d="M 128,60 A 28,28 0 1,1 127.9,60 Z M 128,70 A 18,18 0 1,0 128.1,70 Z" />
+  <rect x="111" y="86" width="34" height="4" rx="2" fill="#00A3FF" />
+  <circle cx="128" cy="78" r="5" fill="#00A3FF" />
+</svg>

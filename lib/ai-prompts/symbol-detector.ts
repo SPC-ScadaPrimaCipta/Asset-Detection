@@ -16,6 +16,8 @@ export function buildSymbolDetectorPrompt(legendSymbols: Array<{
   sourcePriority?: number | null;
 }>, opts?: {
   referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+  /** True when reference crop images are prepended before the P&ID page in the Gemini call. */
+  hasReferenceCrops?: boolean;
 }): string {
   const hasLegend = legendSymbols.length > 0;
 
@@ -60,11 +62,24 @@ Your task: detect EVERY equipment symbol AND read EVERY asset tag on this P&ID p
 ${hasLegend ? `${multiLegend ? 'LEGENDS (primary reference for symbol identification — LEGEND 1 wins every conflict between legends)' : 'LEGEND (primary reference for symbol identification)'}:
 ${legendRef}
 
-IMPORTANT: If a symbol visually matches any legend entry, use that legend name as assetType even if the tag prefix is unfamiliar.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
+CRITICAL — assetType MUST be the EXACT name from the legend list above (copy-paste verbatim).
+• If a symbol matches "Gate Valve" in the legend → assetType must be "Gate Valve", NOT "Valve" or "Ball Valve".
+• If a symbol matches "Pressure Differential Transmitter" → use exactly "Pressure Differential Transmitter".
+• Do NOT substitute a generic ISA/ISO name when a legend entry matches — the legend name wins ALWAYS.
+• If unsure between two legend entries, pick the one whose description or tag pattern best fits.${multiLegend ? ' When legends disagree, follow the lowest-numbered legend.' : ''}
 ` : `No legend provided. Use your knowledge of ISA 5.1 and ISO 10628-2 P&ID standards.`}
+
+COMMON SPECIALTY EQUIPMENT — detect these even when not in legend:
+• Pig Launcher (tag prefix PL-): cylindrical vessel with closure head, launching barrel, kicker line — assetType "Pig Launcher"
+• Pig Receiver (tag prefix PR-): similar to launcher but with receiver trap — assetType "Pig Receiver"
+• Mixer / Static Mixer (tag prefix MX-): inline mixing element symbol or vessel with agitator — assetType "Mixer"
+• Slug Catcher: large multi-finger or single vessel for slug separation — assetType "Slug Catcher"
+• Production Storage Tank (tag prefix T-): open-top or fixed-roof cylinder — assetType "Storage Tank"
+If these appear and no legend entry matches, use the assetType names above and set confidence 0.70-0.80.
 ${opts?.referenceExamples?.length ? `CONFIRMED REFERENCE EXAMPLES (few-shot — symbols already approved from this legend):
 ${opts.referenceExamples.slice(0, 5).map(s => `• ${s.symbol_name ?? s.asset_type}${s.tag_pattern ? ` [${s.tag_pattern}]` : ''} (${s.asset_type})`).join('\n')}
 Prefer these names when the symbol matches.
+` : ''}${opts?.hasReferenceCrops ? `REFERENCE SYMBOL IMAGES: The images labeled "REFERENCE SYMBOL 1", "REFERENCE SYMBOL 2", etc. immediately before the P&ID page image are VISUAL EXAMPLES of legend symbols from the actual legend document. When detecting symbols on the P&ID, compare their visual shape against these reference images. A shape match to a reference image is strong evidence — use that symbol's name as assetType. Reference images take priority over text-only legend descriptions.
 ` : ''}
 ━━━ STEP 1: READ ALL TEXT FIRST ━━━
 Before detecting symbols, read EVERY alphanumeric tag visible on this drawing.
@@ -72,10 +87,19 @@ Tags follow patterns like: PDT-11, PSV-101, H-001, JB-03, LCP, MCFA, PI-101, FT-
 Tags are typically: 2-6 uppercase letters + hyphen + 2-4 digits.
 Read tags even if text is small, rotated, or partially obscured.
 Write down mentally all tags you see before assigning them to symbols.
-On dense pages (>20 symbols): list tags first, then assign — do NOT skip trailing rows.
+On dense pages (>20 symbols): scan EVERY ROW from top to bottom — do NOT stop early.
+CRITICAL: You MUST detect ALL symbols on this page. Missing a symbol is a permanent data loss.
+Do NOT stop generating before you reach the bottom of the image.
+If you feel the output is getting long, that is expected — a dense P&ID has 50-100+ assets. Continue until the last row.
+
+IGNORE THESE — NOT ASSET TAGS:
+• Valve status annotations: NC, NO, FC, FO, LC, LO — these mean Normally Closed/Open, Fail Closed/Open, Lock Closed/Open. They describe valve state, NOT an asset tag.
+• Cross-sheet references: any text matching "TO [EQUIPMENT] SHEET N", "FROM [EQUIPMENT] SHEET N", "SHEET N OF N", "SEE SHEET N" — these are navigation references, not assets on this sheet.
+• Equipment specification blocks: multi-line text blocks containing SIZE, DESIGN PRESS, DESIGN TEMP, OPERATING PRESS, OPERATING TEMP — these are specification data for the named vessel/equipment above them, not separate asset tags.
 
 ━━━ STEP 2: DETECT ALL SYMBOLS ━━━
-Scan systematically top-left → bottom-right.
+Scan systematically top-left → bottom-right, ROW BY ROW. Do NOT stop after finding 20-30 symbols.
+IMPORTANT: A full P&ID page typically contains 40-120 distinct assets. Keep scanning until you reach the absolute bottom-right corner of the image. Stopping early = permanent data loss that cannot be recovered.
 Detect EVERY distinct equipment symbol — instruments, valves, pumps, vessels, junction boxes, panels, fire & gas devices, safety devices.
 For each symbol, look in ALL directions (above, below, left, right, diagonal) within ~100px for its associated tag.
 The tag is usually the closest alphanumeric label that is NOT a pipe size (e.g. "6\"" or "DN150") or a line number.
@@ -86,6 +110,7 @@ For EACH symbol:
 - The closest tag that matches industrial naming convention is the asset tag
 - If two symbols are close, assign each tag to its spatially nearest symbol
 - Tags positioned directly above, below, or beside a symbol belong to that symbol
+- SKIP text that is a valve status (NC/NO/FC/FO/LC/LO), pipe spec, or part of an equipment specification block (SIZE / DESIGN PRESS / TEMP / OPERATING) even if it appears nearby — these do not become assetTag
 
 ━━━ STEP 4: READ EQUIPMENT DESCRIPTORS (size, fromRef, toRef, ofOrAtRef) ━━━
 For each detected asset, read equipment descriptors associated with the symbol or tag:
@@ -114,6 +139,10 @@ DO NOT DETECT:
 ✗ Title blocks, revision clouds, drawing borders, north arrows
 ✗ Text-only annotations without an associated symbol
 ✗ Pipe sizes like "6\\" or "DN150" — these are NOT asset tags
+✗ Valve status text: NC, NO, FC, FO, LC, LO — these are operating status labels on valves, not asset tags
+✗ Cross-sheet navigation text: "TO [TAG] SHEET N", "FROM [TAG] SHEET N", "SHEET N OF N" — the equipment these reference lives on another sheet, do not create a detection for it on this sheet
+✗ Equipment specification blocks: text blocks with SIZE / DESIGN PRESS / DESIGN TEMP / OPERATING PRESS / OPERATING TEMP — do not associate these lines as asset tags; they describe the parent vessel/equipment already detected above them
+✗ Approval/revision stamps: APPROVED, NOT APPROVED, APPROVED AS NOTE, FOR INFORMATION boxes in title block or drawing card
 
 ━━━ FIELD RULES ━━━
 
@@ -196,6 +225,7 @@ export function buildRegionSymbolDetectorPrompt(
   regionLabel: string,
   opts: {
     referenceExamples?: Array<{ asset_type: string; symbol_name?: string | null; tag_pattern?: string | null }>;
+    hasReferenceCrops?: boolean;
   } = {},
 ): string {
   return `${buildSymbolDetectorPrompt(legendSymbols, opts)}
@@ -213,6 +243,7 @@ This crop shows region: "${regionLabel}"
   rest, and duplicates are merged afterwards.
 - A symbol may therefore be reported by more than one region. That is expected and
   handled downstream — do not try to avoid re-reporting it.
+- Scan ALL content within this crop completely, top-left → bottom-right. Do NOT stop early — even a small region crop can contain 10-30 symbols.
 
 Everything else (detection rules, field rules, JSON output format) is unchanged.`;
 }

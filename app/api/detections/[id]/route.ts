@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json();
     const allowed = [
       "asset_tag", "asset_type", "description", "equipment_class",
-      "service", "location", "unit", "area",
+      "service", "location", "unit", "area", "size",
       "bbox_x", "bbox_y", "bbox_w", "bbox_h", "confidence",
     ];
 

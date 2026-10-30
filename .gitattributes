@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# YOLO model tracked via Git LFS
+model/*.onnx filter=lfs diff=lfs merge=lfs -text

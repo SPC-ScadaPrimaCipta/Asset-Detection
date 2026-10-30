@@ -86,6 +86,12 @@ export interface DetectionTuning {
   nmsIouThreshold: number;
   featureBatchSize: number;
   symbolFeatures: { extract: boolean; embed: boolean };
+  /** Max legend symbol reference crops to send to Gemini per page (0 = disabled). */
+  maxReferenceCrops: number;
+  /** Skip page 1 and last page of multi-page docs (cover/revision heuristic). Default false. */
+  skipNonPidPages: boolean;
+  /** Enable Gemini verifier for NEEDS_REVIEW detections. Default false. */
+  enableVerifier: boolean;
 }
 
 export interface ValidatorTuning {
@@ -376,6 +382,9 @@ export function buildTuning(overrides?: TuningOverrides | null): Tuning {
       nullFieldConfidenceThreshold: num(d.nullFieldConfidenceThreshold, env.NULL_FIELD_CONFIDENCE_THRESHOLD),
       nmsIouThreshold: num(d.nmsIouThreshold, env.NMS_IOU_THRESHOLD),
       featureBatchSize: num(d.featureBatchSize, env.FEATURE_BATCH_SIZE),
+      maxReferenceCrops: num(d.maxReferenceCrops, 10),
+      skipNonPidPages: bool(d.skipNonPidPages, env.DETECTION_SKIP_NON_PID_PAGES === 'true'),
+      enableVerifier: bool(d.enableVerifier, false),
       symbolFeatures: {
         extract: bool(
           isRecord(d.symbolFeatures) ? d.symbolFeatures.extract : undefined,

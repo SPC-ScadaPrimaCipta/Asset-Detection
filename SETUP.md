@@ -1,53 +1,176 @@
-#!/bin/bash
+# Setup — TagFlow (v3.5)
 
-# Quick startup guide for Asset Detection
+Panduan setup lokal untuk Windows / Linux / macOS.
 
-echo "╔════════════════════════════════════════════════════╗"
-echo "║     Asset Detection - Local Development Setup      ║"
-echo "╚════════════════════════════════════════════════════╝"
-echo ""
-echo "Prerequisites:"
-echo "  1. PostgreSQL running (default: localhost:5432)"
-echo "  2. Redis running (default: localhost:6379)"
-echo "  3. .env.local configured with DATABASE_URL, REDIS_URL, GEMINI_API_KEY"
-echo ""
-echo "Setup steps:"
-echo ""
-echo "1. Install dependencies:"
-echo "   npm install"
-echo ""
-echo "2. Set up environment (copy and configure):"
-echo "   cp .env.example .env.local"
-echo "   Edit .env.local with your credentials"
-echo ""
-echo "3. Initialize database:"
-echo "   psql -U postgres -d asset_detection -f sql/init.sql"
-echo ""
-echo "4. Start PostgreSQL (if not running):"
-echo "   # Windows with PostgreSQL installed:"
-echo "   pg_ctl -D 'C:\\Program Files\\PostgreSQL\\16\\data' start"
-echo ""
-echo "5. Start Redis (if not running):"
-echo "   # Windows with Redis installed:"
-echo "   redis-server.exe"
-echo ""
-echo "6. In Terminal 1 - Start Next.js dev server:"
-echo "   npm run dev"
-echo "   → http://localhost:3000"
-echo ""
-echo "7. In Terminal 2 - Start BullMQ detection worker:"
-echo "   bash scripts/start-worker.sh"
-echo "   → Listens for detection jobs on Redis queue"
-echo ""
-echo "8. Test flow:"
-echo "   - Create project: http://localhost:3000/projects"
-echo "   - Upload legend PDF: http://localhost:3000/legends/new"
-echo "   - Review symbols: /legends/[id]/review"
-echo "   - Upload P&ID: /documents"
-echo "   - Run detection: /detection"
-echo ""
-echo "Logs:"
-echo "   - Detection worker: Console (Terminal 2)"
-echo "   - AI requests: Console logs with [parseLegendPdf] / [detection] prefix"
-echo "   - Database: Check detection_jobs, detections, legend_symbols tables"
-echo ""
+## Prasyarat
+
+| Kebutuhan | Versi | Catatan |
+|---|---|---|
+| Node.js | 20+ | `node --version` |
+| PostgreSQL | 12+ | Default `localhost:5432` |
+| Redis | 6+ | Default `localhost:6379` |
+| Gemini API key | — | [Google AI Studio](https://aistudio.google.com) |
+
+> **Tidak perlu menjalankan service Python/OpenCV.** Detection 100% Gemini Vision:
+> tidak ada OCR, tidak ada CV service, tidak ada model lokal. Cukup PostgreSQL + Redis.
+
+---
+
+## 1. Install dependencies
+
+```bash
+npm install
+```
+
+---
+
+## 2. Konfigurasi environment
+
+```bash
+cp .env.example .env.local     # Windows PowerShell: copy .env.example .env.local
+```
+
+Nilai minimum yang wajib diisi di `.env.local`:
+
+```dotenv
+DATABASE_URL=postgresql://postgres:password@localhost:5432/asset_db
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your_jwt_secret_min_32_chars
+GEMINI_API_KEY=your_gemini_key_here
+AI_PROVIDER=gemini
+STORAGE_PATH=./storage
+```
+
+> **Nama database bebas.** `DATABASE_URL` di atas hanya contoh — yang penting
+> konsisten antara `.env.local` dan database yang benar-benar kamu buat (langkah 3).
+> Pastikan `createdb` dan `psql` memakai nama yang sama.
+
+`API key` **tidak wajib** ada di `.env.local` — bisa diatur lewat halaman
+**Settings**, yang menang atas env.Yyey env tetap dipakai sebagai fallback saat app
+start pertama kali.
+
+> **Set model yang benar-benar ada.** `GEMINI_MODEL` punya default yang bisa sudah
+> usang dan app **sengaja tidak** menulis ulang nilai itu diam-diam. Model yang
+> mengabaikan `responseMimeType: application/json` dilewati otomatis, dan model
+> lain yang tidak tersedia jatuh ke `GEMINI_PREFERRED_MODELS`. Cek dengan
+> **Settings → Scan Models** melihat key kamu menjangkau model apa saja.
+
+---
+
+## 3. Inisialisasi database
+
+Buat database (pilih satu nama, konsisten dengan `DATABASE_URL`):
+
+```bash
+# PostgreSQL
+createdb asset_db
+
+# atau lewat pgAdmin / SQL shell:
+#   CREATE DATABASE asset_db;
+```
+
+Lalu terapkan schema + migrasi:
+
+```bash
+npm run migrate
+```
+
+`npm run migrate` idempoten (aman diulang) dan membaca `DATABASE_URL` dari
+`.env.local`. Database baru juga bisa diinisialisasi langsung dengan:
+
+```bash
+psql -d asset_db -f sql/init.sql
+```
+
+Untuk database lama, `npm run migrate` sudah mencakup semua `sql/migrate-*.sql`.
+
+---
+
+## 4. Jalankan PostgreSQL & Redis
+
+### Windows
+
+```bash
+# PostgreSQL (disesuaikan dengan lokasi instalasi)
+pg_ctl -D "C:\Program Files\PostgreSQL\16\data" start
+
+# Redis
+redis-server.exe
+```
+
+Atau pakai file helper di root repo:
+
+```bash
+start-services.bat          # Windows
+setup-redis-autostart.ps1   # autostart Redis saat boot
+```
+
+### Docker
+
+```bash
+docker-compose up -d
+```
+
+### Linux / macOS
+
+```bash
+sudo systemctl start postgresql
+sudo systemctl start redis-server      # macOS: brew services start redis
+```
+
+---
+
+## 5. Jalankan aplikasi (2 terminal)
+
+```bash
+# Terminal 1 — Next.js dev server
+npm run dev
+→ http://localhost:3000
+```
+
+```bash
+# Terminal 2 — BullMQ detection worker
+npm run worker
+```
+
+Worker wajib berjalan kalau Anda memakai **Run Detection** — job antrian hanya
+diproses oleh worker, bukan oleh dev server.
+
+> Untuk menjalankan worker di PM2 (produksi), gunakan `ecosystem.config.cjs`:
+> `npx pm2 start ecosystem.config.cjs`
+
+---
+
+## 6. Alur uji coba
+
+| Langkah | URL | Aksi |
+|---|---|---|
+| 0. Login | `/login` | Masuk dengan kredensial (`admin@tagflow.ai` / `SuperAdmin123!`) |
+| 1. Buat project | `/projects` | New Project (Private/Public atau Join via Share Code) |
+| 2. Upload legend | `/legends` | Klik New Legend → Upload Modal PDF 1-halaman |
+| 3. Review simbol | `/legends/[id]/review` | Re-crop / Delete shortcut, lalu **Validate All** |
+| 4. Finalize legend | `/legends/[id]/review` | **Finalize & Activate** |
+| 5. Upload P&ID | `/documents` | Upload PDF P&ID per project |
+| 6. Run detection | `/detection` | Pilih dokumen + legend → Run Detection (pantau live queue) |
+| 7. Review & Dedup | `/detection` | Confirm / Edit / Reject, tombol Deduplicate, Manual Asset |
+| 8. MDO & Export | `/mdo` | View MDO 9-kolom Accenture & download Asset_Register.xlsx |
+
+> **Langkah 3 wajib.** Legend harus punya simbol ber-`quality_status = 'validated'`
+> dan crop terbaca agar bisa dipakai matcher, dan **Finalize & Activate** ditolak
+> selama masih ada simbol DRAFT / belum di-assess / ber-status `review`.
+> **Approve All saja tidak cukup** — ia hanya mengubah `status`, bukan `quality_status`.
+
+---
+
+## Troubleshooting setup
+
+| Gejala | Penyebab & solusi |
+|---|---|
+| `[env] Validation failed: DATABASE_URL` | `.env.local` tidak ada atau `DATABASE_URL` kosong |
+| Worker diam, job stuck `PENDING` | Worker tidak jalan (Terminal 2) atau `REDIS_URL` salah |
+| `relation "settings" does not exist` | `npm run migrate` belum dijalankan |
+| Halaman Settings tidak ada bagian tuning | Migrasi `sql/migrate-009-settings-tuning.sql` belum applied — jalankan `npm run migrate` |
+| Legend 0 simbol | Lihat [RUNNING.md](RUNNING.md) → Troubleshooting |
+| 503 / "All models failed" | Biasanya sisi provider (bukan config). Lihat [RUNNING.md](RUNNING.md) |
+
+Seluruh troubleshooting ada di **[RUNNING.md](RUNNING.md)**.

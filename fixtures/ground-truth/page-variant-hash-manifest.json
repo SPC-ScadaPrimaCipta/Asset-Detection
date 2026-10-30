@@ -1,0 +1,181 @@
+{
+  "manifestVersion": "1.0",
+  "generatedAt": "2026-10-08T02:59:19.402Z",
+  "totalPageRecords": 12,
+  "uniqueImageHashes": 11,
+  "duplicatePageClusters": [
+    {
+      "sha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+      "pageIds": [
+        "sheet-7-p1",
+        "sheet-7-rev-p1"
+      ],
+      "isDuplicateVariant": true,
+      "variantType": "binary_identical_image"
+    }
+  ],
+  "evaluationGuidance": {
+    "rule1": "Maintain all 12 page IDs in the dataset inventory.",
+    "rule2": "Do not remove either sheet-7-p1 or sheet-7-rev-p1 from dataset manifests.",
+    "rule3": "When computing dataset-wide generalization statistics, do NOT treat binary-identical images as independent sample points.",
+    "rule4": "Predictions on sheet-7-p1 and sheet-7-rev-p1 must be identical given the same model, seed, and configuration."
+  },
+  "pages": [
+    {
+      "pageId": "sheet-1-p1",
+      "documentName": "SP Pondok Tengah Sheet 1",
+      "relativePath": "fixtures/pid-eval/sheet-1/page_1.png",
+      "fileSizeBytes": 1013985,
+      "sha256": "e691c8a1101ee40d1056e9f37fd2bb4e2c222f35c314eabbb552e3f76d42892d",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-2-p1",
+      "documentName": "SP Pondok Tengah Sheet 2",
+      "relativePath": "fixtures/pid-eval/sheet-2/page_1.png",
+      "fileSizeBytes": 865479,
+      "sha256": "fdfabe26803abc103c989db18c1feca8dd35891bee935bc60f7232572a1879df",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-3-p1",
+      "documentName": "SP Pondok Tengah Sheet 3",
+      "relativePath": "fixtures/pid-eval/sheet-3/page_1.png",
+      "fileSizeBytes": 1086578,
+      "sha256": "04b1f81845709318591becf107eb4c06ab4f05651daeda8a935d7290181cc0a4",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-4-p1",
+      "documentName": "SP Pondok Tengah Sheet 4",
+      "relativePath": "fixtures/pid-eval/sheet-4/page_1.png",
+      "fileSizeBytes": 1012434,
+      "sha256": "2e18e77e78cfe5fa1b81f71c236462dd6aaf131b9c544732f3249ed070baa620",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-5-p1",
+      "documentName": "SP Pondok Tengah Sheet 5",
+      "relativePath": "fixtures/pid-eval/sheet-5/page_1.png",
+      "fileSizeBytes": 1531454,
+      "sha256": "02dcb7296eb65886f5442340f63c8eba522e6b102cfcdb0d29e14323961325bc",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-7-p1",
+      "documentName": "SP Pondok Tengah Sheet 7",
+      "relativePath": "fixtures/pid-eval/sheet-7/page_1.png",
+      "fileSizeBytes": 845328,
+      "sha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-7-model-p1",
+      "documentName": "Sheet 7 Model Variant",
+      "relativePath": "fixtures/pid-eval/sheet-7-model/page_1.png",
+      "fileSizeBytes": 611017,
+      "sha256": "b999a93c2442f5e9a2764a26c98c8f50dfebe952c2cffbc3c83ebcd5ff2f035b",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-7-rev-p1",
+      "documentName": "Sheet 7 Revision Variant",
+      "relativePath": "fixtures/pid-eval/sheet-7-rev/page_1.png",
+      "fileSizeBytes": 845328,
+      "sha256": "dcb6475f689905e7cd752ab3c65b5ff44a9a3f4a1738b982e400fcf811c0b3bf",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-11-p1",
+      "documentName": "SP Pondok Tengah Sheet 11",
+      "relativePath": "fixtures/pid-eval/sheet-11/page_1.png",
+      "fileSizeBytes": 718104,
+      "sha256": "63c994a36a006501545a35abeb593d6f1bd74c73c0badadc6849d1f824b4f388",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "sheet-12-p1",
+      "documentName": "SP Pondok Tengah Sheet 12",
+      "relativePath": "fixtures/pid-eval/sheet-12/page_1.png",
+      "fileSizeBytes": 531503,
+      "sha256": "a0aff7b19a6b75ed8d0ef529769e2c093b4cd14c590be52b6000e76d9e95dfac",
+      "dimensions": {
+        "width": 3573,
+        "height": 2526,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "fire-water-p1",
+      "documentName": "Fire Water System Sheet 1",
+      "relativePath": "fixtures/pid-eval/fire-water/page_1.png",
+      "fileSizeBytes": 600327,
+      "sha256": "f655a79b89251b063dd97be5be724cf487399def26fd3db5e84828458c3c7508",
+      "dimensions": {
+        "width": 2526,
+        "height": 3572,
+        "channels": 3,
+        "format": "png"
+      }
+    },
+    {
+      "pageId": "fire-water-p2",
+      "documentName": "Fire Water System Sheet 2",
+      "relativePath": "fixtures/pid-eval/fire-water/page_2.png",
+      "fileSizeBytes": 470506,
+      "sha256": "be2d39d0cfd44282555072bd79333807cae986e930e92ea65b576b9c9e0c78dd",
+      "dimensions": {
+        "width": 2526,
+        "height": 3572,
+        "channels": 3,
+        "format": "png"
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "_instructions": "Ground truth for INTAN_GS_SHEET_5.dxf page 4. Verify each entry against the actual drawing. Remove or correct anything wrong. bbox optional (null = match by tag only).",
+  "document": "INTAN_GS_SHEET_5.dxf",
+  "page": 4,
+  "assets": [
+    { "assetTag": "LSLL-0601", "assetType": "Level Switch",        "bbox": null },
+    { "assetTag": "V-0601",    "assetType": "Vessel",               "bbox": null },
+    { "assetTag": "FE-0104",   "assetType": "Flow Element",         "bbox": null },
+    { "assetTag": "FQI-0104",  "assetType": "Flow Indicator",       "bbox": null },
+    { "assetTag": "LSH-0601",  "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "LSN-0601",  "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "LG-0104",   "assetType": "Level Indicator",      "bbox": null },
+    { "assetTag": "PI-0601",   "assetType": "Pressure Indicator",   "bbox": null },
+    { "assetTag": "LS-0601",   "assetType": "Level Switch",         "bbox": null },
+    { "assetTag": "P-0301",    "assetType": "Centrifugal Pump",     "bbox": null }
+  ]
+}

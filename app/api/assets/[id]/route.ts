@@ -36,7 +36,7 @@ export async function PUT(
 
     const allowed = [
       'asset_tag', 'asset_type', 'equipment_class', 'description',
-      'service', 'location', 'unit', 'area', 'pid_number',
+      'service', 'location', 'unit', 'area', 'pid_number', 'size',
     ];
     for (const key of allowed) {
       if (key in body) {

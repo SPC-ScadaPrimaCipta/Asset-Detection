@@ -1,236 +1,312 @@
-# Asset Detection - Running the Project
+# TagFlow — Menjalankan Proyek (v3.5)
 
-## Prerequisites
+Untuk setup dari nol, mulai dari **[SETUP.md](SETUP.md)**. Dokumen ini fokus pada
+menjalankan, konfigurasi, dan troubleshooting.
 
-1. **PostgreSQL** (v12+)
-   - Default: `postgresql://localhost:5432`
-   - Windows: PostgreSQL installer or WSL
+## Prasyarat
 
-2. **Redis** (v6+)
-   - Default: `redis://localhost:6379`
-   - Windows: Use WSL or native Redis build
+1. **PostgreSQL** (v12+) — default `postgresql://localhost:5432`
+2. **Redis** (v6+) — default `redis://localhost:6379`
+3. **Gemini API key** — <https://ai.google.dev>
 
-3. **Gemini API Key** or DeepSeek API Key
-   - Get from https://ai.google.dev (Gemini)
+> **DeepSeek tidak bisa dipakai untuk Run Detection.** Provider ini text-only dan
+> tidak bisa menganalisis gambar/PDF. Scan Legend dan Run Detection keduanya
+> butuh Gemini — pilih Gemini di Settings.
 
-## Setup (5 minutes)
+---
 
-### 1. Configure Environment
-```bash
-cp .env.example .env.local
-```
+## Konfigurasi environment
 
-`.env.example` documents every available knob. The minimum you must set:
+`.env.example` mendokumentasikan seluruh knob yang tersedia (128 variabel).
+Minimum:
 
-```
-DATABASE_URL=postgresql://user:password@localhost:5432/asset_detection
+```dotenv
+DATABASE_URL=postgresql://user:password@localhost:5432/asset_db
 REDIS_URL=redis://localhost:6379
+JWT_SECRET=your_jwt_secret_min_32_chars
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=a_model_your_key_actually_offers
 AI_PROVIDER=gemini
 STORAGE_PATH=./storage
 ```
 
-> **Set a real model.** `GEMINI_MODEL` ships with a deprecated default that the
-> app deliberately does not rewrite for you. Models that ignore
-> `responseMimeType=application/json` are skipped automatically, and any other
-> unavailable model falls through to `GEMINI_PREFERRED_MODELS`. Use
-> **Settings → Scan Models** to see exactly what your key can reach.
+> **Set model yang nyata.** `GEMINI_MODEL` punya default yang bisa sudah deprecated
+> dan app **sengaja tidak** menulis ulang nilai itu untuk Anda. Model yang mengabaikan
+> `responseMimeType=application/json` dilewati otomatis, dan model lain yang tidak
+> tersedia jatuh ke `GEMINI_PREFERRED_MODELS`. Gunakan **Settings → Scan Models**
+> untuk melihat persis apa yang bisa dijangkau key Anda.
 
-> Detection is 100% Gemini Vision: each PDF page is rendered to a PNG and sent
-> to Gemini together with the selected Legend. There is no OCR, no OpenCV/CV
-> service, and no local model to start. DeepSeek is text-only, so it cannot be
-> used for Run Detection — pick Gemini in Settings.
+### Precedence
 
-### 2. Initialize Database
-```bash
-# Create database
-createdb asset_detection
+Semua nilai operasional dibaca lewat **satu** jalur (`lib/tuning.ts`), dari atas:
 
-# Run schema
-psql -d asset_detection -f sql/init.sql
+```
+settings.tuning  (DB, diedit dari UI Settings)
+      ↓
+process.env     (.env.local / .env)
+      ↓
+default di kode (lib/env.ts)
 ```
 
-### 2b. Apply Migrations (existing databases only)
+Tidak ada kode lain yang membaca `process.env` langsung untuk nilai tuning. Cache
+30 detik, jadi perubahan Settings berlaku hampir seketika tanpa restart.
 
-A fresh `init.sql` is enough for a new database. To bring an older one up to
-date, run the migration files in order. The one that matters for tuning is
-`sql/migrate-009-settings-tuning.sql`, which adds the `settings.tuning` column
-used by the Settings UI. Without it the app still runs — tuning simply falls
-back to `.env` and code defaults, and the tuning section of the Settings page is
-hidden.
+---
+
+## Database
 
 ```bash
-psql -d asset_detection -f sql/migrate-009-settings-tuning.sql
+npm run migrate        # idempoten, aman diulang
 ```
 
-### 3. Install Dependencies
-```bash
-npm install
-```
+Untuk database baru, `sql/init.sql` sudah cukup. Untuk database lama, jalankan
+`npm run migrate` — migrasi tersebut mencakup `sql/migrate-009-settings-tuning.sql`
+yang menambah kolom `settings.tuning`. Tanpa itu app tetap jalan (tuning fallback ke
+`.env`/default), tapi bagian tuning di halaman Settings disembunyikan.
 
-## Running
+---
 
-### Terminal 1: Next.js Dev Server
+## Menjalankan
+
+### Terminal 1 — Next.js dev server
+
 ```bash
 npm run dev
 ```
-→ http://localhost:3000
+→ <http://localhost:3000>
 
-### Terminal 2: Detection Worker
+### Terminal 2 — Detection worker
+
 ```bash
-# Windows
-scripts\start-worker.bat
-
-# Linux/Mac
-bash scripts/start-worker.sh
+npm run worker
 ```
 
-## Test Workflow
+Worker memproses job deteksi dari antrian Redis. **Job tidak akan pernah selesai
+tanpa worker** — UI akan menampilkan status `PENDING` selamanya.
 
-### 1. Create Project
-- Go to `/projects`
-- Click "New Project"
-- Enter name
+Fallback: `npm run worker:legacy` (ts-node, tanpa `--env-file`).
+
+---
+
+## Test workflow
+
+### 1. Buat Project
+`/projects` → "New Project" → isi nama.
 
 ### 2. Upload Legend PDF
-- Go to `/legends/new`
-- Tab: "Upload PDF"
-- Select legend PDF
-- Click upload
-- Gemini auto-extracts symbols
-- Review page shows results
-- Approve/reject symbols
-- Click "Finalize & Activate"
+`/legends/new` → tab "Upload PDF" → pilih file → upload.
 
-### 3. Upload P&ID Document
-- Go to `/documents`
-- Upload P&ID PDF
-- System extracts page count
+Gemini mengekstraksi simbol per region grid. Hasilnya masuk sebagai `DRAFT`.
 
-### 4. Run Detection
-- Go to `/detection`
-- Select project, document, legend
-- Click "Run Detection"
-- Worker processes job asynchronously
-- View progress/results
-- Review detections (confirm/edit/reject)
+### 3. Review simbol — `legends/[id]/review`
 
-### 5. Export Asset Register
-- Go to `/assets` or `/asset-register`
-- Filter assets as needed
-- Click "Export Asset Register (.xlsx)"
-- Download Excel file
+Ada **dua** status yang terpisah, dan ini sumber kebingungan paling sering:
 
-## Architecture
+| Aksi | Yang diubah | Efek |
+|---|---|---|
+| **Approve All** | `status`: DRAFT → ACTIVE | Simbol jadi aktif di UI |
+| **Validate All** | `quality_status`: NULL → validated | Simbol jadi **matcher-eligible** |
+| **Mark Validated** | `quality_status` (per simbol) | Sama, untuk satu simbol |
+| **Re-crop** | bbox + crop baru (versi baru) | Reset `quality_status` ke NULL |
+| **Reject** | `status=REJECTED` + `review_reason` | Dikeluarkan dari register |
 
-```
-Frontend (Next.js)
+Aturan matcher-eligible: `quality_status = 'validated'` **AND** crop terbaca.
+
+> **Approve ≠ Validate.** `Approve All` **tidak** menyentuh `quality_status`.
+> Kalau hanya approve, semua `quality_status` tetap `NULL`, tab `VALIDATED` tetap 0,
+> dan **Finalize & Activate akan ditolak** oleh quality gate
+> (`app/api/legends/[id]/route.ts`) selama ada draft / unassessed / `review`.
+
+`Validate All` melewati simbol yang: tidak punya crop, sudah validated, atau
+sudah di-reject (di kedua kolom). Response API melaporkan semua bucket
+(`validated` / `already` / `noCrop` / `rejected`) supaya run 0-row bisa dijelaskan.
+
+Klik **Finalize & Activate** setelah itu.
+
+> **Belum ada diagnostics otomatis.** Kolom `computed_features`, `quality_reasons`,
+> dan `pipeline_version` sudah ada di schema dan UI sudah membacanya, tapi tidak ada
+> pipeline yang mengisinya. `quality_status` hanya berubah karena aksi manusia.
+> Detail: `docs/DETECTION_V2_IMPLEMENTATION_PLAN.md`.
+
+### 4. Upload dokumen P&ID
+`/documents` → upload PDF. Sistem membaca jumlah halaman.
+
+### 5. Run Detection
+`/detection` → pilih project + dokumen + legend → "Run Detection".
+
+Worker memproses job asynchronously. Pantau progres (halaman ke berapa, jumlah
+deteksi, confidence distribution).
+
+### 6. Review detections
+`/review` — confirm / edit / reject / manual add.
+
+### 7. Export Asset Register
+`/asset-register` → filter sesuai kebutuhan → "Export Asset Register (.xlsx)".
+
+---
+
+## Arsitektur
+
+```text
+Frontend (Next.js App Router)
     ↓
-API Routes (Node.js)
+API Routes (Node.js runtime)
     ↓
-Database (PostgreSQL)
+Database (PostgreSQL)          storage/ (filesystem)
+    ↑                                    ↑
+Detection Worker (BullMQ + Redis) ──────┘
     ↑
-Detection Worker (BullMQ + Redis)
-    ↑
-AI Provider (Gemini/DeepSeek)
+AI Provider (Gemini)
 ```
 
 **Flow:**
-1. User uploads P&ID → stored in `storage/`
-2. Detection job queued to Redis
-3. Worker picks up job, calls AI
-4. AI returns detections (structured JSON)
-5. Results stored in `detections` table
-6. UI polls job status, shows results
-7. User reviews (confirm/reject)
-8. Confirmed assets exported to Excel
+1. User upload P&ID → disimpan di `storage/`
+2. Detection job di-antri ke Redis
+3. Worker mengambil job, render halaman → PNG, kirim ke Gemini
+4. Gemini mengembalikan deteksi (JSON terstruktur)
+5. Hasil divalidasi ( rantai 9 tahap) + disimpan ke `detections`
+6. UI polling status job, menampilkan hasil
+7. User review (confirm/reject)
+8. Aset confirmed → export Excel
 
-## Logs & Debugging
+---
 
-**Detection Worker Logs** (Terminal 2):
+## Lapisan ketahanan panggilan Gemini
+
+Semua panggilan melewati `lib/gemini-request-gate.ts` (rate limit process-wide),
+`lib/ai-circuit-breaker.ts` (breaker per model), dan `lib/model-resolver.ts`
+(discovery model). Scan Legend dan Run Detection **berbagi satu kuota** — tidak
+masing-masing punya ide sendiri soal boleh seberapa cepat.
+
+| Gejala di log | Arti |
+|---|---|
+| `skipping <model>: circuit open` | Model itu 429/503 berulang; dilewati sampai cooldown habis |
+| `attempt cap reached (N)` | Region itu sudah coba N model. Cap ini **per region**, bukan per halaman |
+| `no usable model left` | Semua model breaker-nya open → halaman di-abort, bukan lanjut mengulang kegagalan |
+| `request gate` | Menunggu slot RPM berikutnya |
+
+---
+
+## Logs & debugging
+
+**Detection worker** (Terminal 2):
 ```
 [detection] job=<job-id> start
-[detection] page 1/12 detections=5
-[detection] page 2/12 detections=3
-...
+[gemini] trying model=<model> page=1
+[gemini] success model=<model> detections=5
+[legend-extract] page 1: 3536x2491, splitting into 4x4=16 regions
+[legend-extract] page 1: 108 raw → 55 after dedup
+[model-resolver] Gemini candidates: ...
+[legend/bulk-validate] legend=<id> validated=12 pending=0 noCrop=0 rejected=0
 ```
 
-**Legend Parser Logs** (Terminal 1):
-```
-[parseLegendPdf] Analyzing legend PDF, size: 45000 bytes
-[parseLegendPdf] Gemini response length: 2000
-[parseLegendPdf] Parsed from code block
-[parseLegendPdf] Extracted 8 valid symbols
-```
+> Prefix log yang aktif: `[gemini]`, `[legend-extract]`, `[legend/reparse]`,
+> `[model-resolver]`, `[legend/bulk-validate]`, `[ai-retry]`, `[db]`, `[env]`.
+> Prefix lama `[parseLegendPdf]` **tidak lagi dipakai**.
 
-**Database Check:**
+**Database check:**
 ```sql
 SELECT * FROM legends;
-SELECT * FROM legend_symbols WHERE legend_id = 'xxx';
-SELECT * FROM detection_jobs ORDER BY created_at DESC;
-SELECT * FROM detections WHERE job_id = 'xxx';
+SELECT id, asset_type, symbol_name, status, quality_status, pipeline_version
+  FROM legend_symbols WHERE legend_id = '<id>';
+SELECT * FROM detection_jobs ORDER BY created_at DESC LIMIT 10;
+SELECT validation_status, count(*) FROM detections GROUP BY 1;
 ```
+
+**Health & quota:**
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/quota
+```
+
+---
 
 ## Troubleshooting
 
-### "No symbols on this page"
-- Legend PDF uploaded but Gemini failed to parse
-- Check console logs: `[parseLegendPdf] Failed: ...`
-- Verify Gemini API key is valid
-- Re-upload legend PDF
+### "No symbols on this page" / legend 0 simbol
+- Gemini gagal parse → cek log `[legend-extract]` di Terminal 1.
+- 429/503 → lihat bagian 429/503 di bawah.
+- Re-upload legend PDF, atau tambahkan simbol manual lewat **Add Symbol** di
+  `/legends/[id]/review` (mode draw-to-add).
 
-### "Detection job stuck in PENDING"
-- Worker not running (Terminal 2)
-- Redis not accessible (`REDIS_URL`)
-- Check worker console for errors
+### Tab VALIDATED tetap 0 setelah Approve All
+- Ini **expected** — Approve All hanya mengubah `status`, bukan `quality_status`.
+- Klik **Validate All**.
 
-### "PDF viewer shows empty canvas"
-- PDF file not stored correctly
-- Check `storage/` directory
-- Verify `STORAGE_PATH` in .env.local
+### Finalize ditolak: "Quality gate"
+- Message memuat `unassessed` / `in_review` / `drafts`.
+- Jalankan **Validate All** dan **Approve All** sampai ketiganya 0.
+- `review` tidak bisa di-mass-validate dengan sengaja — simbol itu harus diputuskan
+  manusia satu per satu (Re-crop, Reject, atau Mark Validated).
 
-### "401 Unauthorized from Gemini"
-- API key invalid or expired
-- Regenerate from https://ai.google.dev
-- Update `.env.local` (or the Settings page, which takes precedence)
+### Detection job stuck di PENDING
+- Worker tidak jalan (Terminal 2).
+- Redis tidak terjangkau (`REDIS_URL`).
+- BullMQ lock: job dengan sweep panjang bisa di-flag stalled. Default
+  `WORKER_LOCK_DURATION_MS=900000` (15 menit) dan
+  `WORKER_MAX_STALLED_COUNT=1` — kalau job Anda rutin lebih dari itu, naikkan
+  nilainya di Settings.
 
 ### "All Gemini models exhausted"
-- Every candidate model failed. Check the log for the per-model reason.
-- The most common cause is a `GEMINI_MODEL` that no longer exists. Set a model
-  your key actually offers (Settings → Scan Models) and confirm
-  `GEMINI_PREFERRED_MODELS` lists live models too.
-- A 503 on every model is a provider-side outage, not a config problem; retry
-  later. `GEMINI_RETRY_MAX_ATTEMPTS` controls how hard it retries.
+- Semua kandidat gagal. Cari alasan per-model di log.
+- Cause paling umum: `GEMINI_MODEL` yang sudah tidak ada. Set model yang benar-benar
+  tersedia (Settings → Scan Models) dan pastikan `GEMINI_PREFERRED_MODELS` juga
+  berisi model hidup.
+- 503 di semua model = outage sisi provider, bukan masalah config. Coba lagi
+  nanti. `GEMINI_RETRY_MAX_ATTEMPTS` mengatur seberapa keras retry.
 
-### "429 / quota exceeded" during detection
-- Too many requests per minute. Region mode issues one call per region, so a
-  3×2 grid is 6 calls per page plus the catch-up pass.
-- Raise `DETECTION_REGION_DELAY_MS`, shrink the grid with
-  `DETECTION_REGION_COLS` / `DETECTION_REGION_ROWS`, or switch to
-  `DETECTION_REGION_MODE=page`.
-- Also check that `ENABLE_SYMBOL_FEATURE_EXTRACTION` and
-  `ENABLE_SYMBOL_EMBEDDING` are `false`; each adds a call per detection.
+### 429 / quota exceeded
+- Terlalu banyak request per menit.
+- Region mode = satu panggilan per region, jadi grid 3×2 = 6 panggilan per halaman
+  plus catch-up pass. Grid legend 4×4 = 17 permintaan per halaman — **melebihi kuota
+  free tier 15 RPM**.
+- Solusi: naikkan `GEMINI_REQUESTS_PER_MINUTE` (Settings → Tuning) kalau kuota
+  sebenarnya lebih besar, turunkan `LEGEND_REGION_ROWS` / `DETECTION_REGION_ROWS`,
+  atau pindah ke `DETECTION_REGION_MODE=page`.
+- Pastikan `ENABLE_SYMBOL_FEATURE_EXTRACTION` dan `ENABLE_SYMBOL_EMBEDDING` tetap
+  `false`; masing-masing menambah satu panggilan per deteksi.
 
-### A page takes longer than 120 seconds
-- Expected ceiling per the PRD. If it is routinely exceeded, the cause is almost
-  always the region grid plus optional per-detection enrichment. Turn the
-  enrichment flags off first, then reduce the grid.
+### 503 "high demand"
+- Ini respons sisi Google, sementara. Tidak ada yang bisa diperbaiki di kode.
+- Yang penting: breaker harus trip supaya model lain dicoba dan halaman tidak
+  diulang sampai habis. Kalau region succeeding menunjukkan
+  `attempt cap reached (N)` **tanpa** baris `model <name>:` di atasnya, itu cap
+  per-region yang belum ke-reset — laporkan sebagai bug.
 
-### Detection finds few or no symbols on a dense sheet
-- Confirm `DETECTION_REGION_MODE=regions` (the default). Single-page mode
-  compresses a dense A3 sheet until 6pt tags are unreadable.
-- Try raising `DETECTION_REGION_COLS`/`ROWS` for a denser split.
-- Verify the Legend has ACTIVE symbols with reference crops.
+### Halaman lebih dari 120 detik
+- Ceiling yang diharapkan. Kalau rutin lampaui, biasanya karena region grid plus
+  enrichment opsional. Matikan flag enrichment dulu, baru perkecil grid.
 
-### A change in Settings does not take effect
-- Tuning is cached for 30 seconds, so allow a moment and retry.
-- If the tuning section is missing from the page, migration
-  `sql/migrate-009-settings-tuning.sql` has not been applied.
+### Deteksi sedikit/tidak ada di sheet padat
+- Pastikan `DETECTION_REGION_MODE=regions` (default). Mode single-page memampatkan
+  sheet A3 padat sampai tag 6pt tidak terbaca.
+- Coba naikkan `DETECTION_REGION_COLS` / `ROWS` untuk split lebih padat.
+- Pastikan Legend punya simbol ACTIVE **dan** ber-`quality_status='validated'`
+  dengan crop terbaca.
 
-## Next Steps
+### PDF viewer menampilkan canvas kosong
+- File PDF tidak tersimpan benar → cek `storage/` dan `STORAGE_PATH` di `.env.local`.
 
-- **Phase 6:** P&ID viewer with pan/zoom (already in detection page)
-- **Phase 7:** Bulk confirmation/rejection UI
-- **Phase 9:** Excel formatting improvements
-- **Phase 10:** Production hardening (rate limits, error recovery)
+### 401 dari Gemini
+- API key invalid/expired → regenerate di <https://ai.google.dev>, update
+  `.env.local` (atau Settings page, yang menang).
+
+### Perubahan di Settings tidak berlaku
+- Tuning di-cache 30 detik — tunggu sebentar lalu coba lagi.
+- Kalau bagian tuning hilang dari halaman, migrasi
+  `sql/migrate-009-settings-tuning.sql` belum applied → `npm run migrate`.
+
+---
+
+## Status roadmap
+
+| Item | Status |
+|---|---|
+| Gemini Vision detection + region grid | Selesai |
+| Scan Legend (region grid + catch-up pass) | Selesai |
+| Validation chain 9 tahap + fusion confidence | Selesai |
+| Human review + Asset Register + Excel export | Selesai |
+| Bulk approve / bulk validate legend | Selesai |
+| Automated legend quality diagnostics (`computed_features`) | **Belum ada** |
+| Benchmark / ground-truth tooling (`scripts/benchmark.ts`) | **Belum ada** |
+| Custom CV model training | Di luar scope (lihat `docs/PRD.md` §4) |
