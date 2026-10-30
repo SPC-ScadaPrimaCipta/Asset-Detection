@@ -1,364 +1,139 @@
-# Design System — Neuro. Dashboard
+# Design System — TagFlow Platform (v3.5)
 
-Dokumen ini mendeskripsikan design system untuk dashboard **Neuro.** (admin dashboard penjualan produk digital 3D). Mendukung **Light Mode** dan **Dark Mode**.
-
----
-
-## 1. Prinsip Desain
-
-- **Bersih & lapang**: banyak whitespace, kartu putih dengan sudut membulat besar.
-- **Satu warna dominan**: royal blue sebagai identitas (sidebar, tombol utama, ikon kartu).
-- **Soft & friendly**: sudut sangat membulat, bayangan halus, ilustrasi 3D.
-- **Data jelas**: angka besar dan tebal, label kecil berwarna abu-abu, tren memakai warna hijau/merah.
-- **Konsisten**: semua kartu memakai pola yang sama (ikon kotak biru + judul + menu `⋮`).
+Dokumen ini mendeskripsikan sistem desain dan identitas visual resmi untuk platform **TagFlow — Automatic Asset Detection** (v3.5). Mendukung **Light Mode** dan **Dark Mode** dengan identitas utama **Royal Blue (#3053D2)**.
 
 ---
 
-## 2. Color Tokens
+## 1. Identitas Brand & Lockup Resmi
 
-### 2.1 Brand & Semantic (sama di kedua mode, disesuaikan sedikit)
+Identitas TagFlow dirancang untuk merepresentasikan presisi teknik industri (P&ID) dan kecerdasan buatan (*AI Multimodal*).
 
-| Token             | Light     | Dark      | Penggunaan                                           |
-| ----------------- | --------- | --------- | ---------------------------------------------------- |
-| `--primary`       | `#3451D1` | `#5B7BFF` | Sidebar, tombol utama, ikon judul kartu, garis chart |
-| `--primary-hover` | `#2B44B8` | `#7391FF` | Hover tombol utama                                   |
-| `--primary-soft`  | `#E8ECFC` | `#222A5C` | Background item aktif / badge lembut                 |
-| `--accent`        | `#6CC8F2` | `#4FB4E6` | Tombol "Contact Us", banner promo                    |
-| `--success`       | `#2FB584` | `#45D6A0` | Tren naik, label Available                           |
-| `--success-soft`  | `#E4F7EF` | `#12332A` | Background chip Available                            |
-| `--danger`        | `#E5677B` | `#FF7F93` | Tren turun, label Pending                            |
-| `--danger-soft`   | `#FCEBEE` | `#3A1E26` | Background chip Pending                              |
-| `--info`          | `#3B8FE8` | `#5AA5F5` | Tooltip chart                                        |
+### 1.1 Stand-alone Icon
+- **File Aset:** [`public/logo.svg`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/public/logo.svg) (dan favicon di `app/layout.tsx`).
+- **Anatomi Visual:**
+  - **Tile Squircle:** Sudut membulat besar (`rx="54"`), gradien *Ice Blue* halus (`#B2ECFD` ke `#F0FAFF`).
+  - **AI Bounding Box Corner Brackets:** 4 sudut siku biru tua (`#2F50C6`) melambangkan deteksi objek bervisi komputer.
+  - **Process Pipeline & Valve Body:** Pipa horizontal 10px dan sepasang segitiga *Bowtie Valve*.
+  - **ISA-5.1 Actuator Balloon:** Lingkaran tag instrumen dengan pembagi garis cyan (`#00A3FF`) dan titik tengah.
 
-### 2.2 Neutral / Surface
+### 1.2 In-Context Lockup (Royal Blue #3053D2)
+Digunakan sebagai header identitas utama pada Sidebar ([`app/sidebar-nav.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/app/sidebar-nav.tsx)) dan banner resmi:
+- **Background:** Warna solid **Royal Blue (`#3053D2`)**.
+- **Kiri:** Stand-alone Icon (ukuran 42×42 px, border-radius 10 px, shadow halus).
+- **Kanan (Teks):**
+  - **Nama Brand:** `TagFlow.` (Plus Jakarta Sans Bold 21–22 px, warna putih `#FFFFFF`, berakhiran titik).
+  - **Deskriptor Resmi (2 Baris):**
+    ```text
+    AI Asset Detection
+    Intelligence
+    ```
+    (Ukuran 10.5 px, Medium 500, warna `#DCE3FF`, opacity 0.85, line-height 1.25).
 
-| Token               | Light                        | Dark                         | Penggunaan                        |
-| ------------------- | ---------------------------- | ---------------------------- | --------------------------------- |
-| `--bg-page`         | gradient `#DCE3F7 → #EEF1FB` | gradient `#0A0D1C → #11152B` | Background halaman luar           |
-| `--bg-app`          | `#F3F5FC`                    | `#0F1325`                    | Container utama (frame dashboard) |
-| `--surface`         | `#FFFFFF`                    | `#181D35`                    | Kartu                             |
-| `--surface-2`       | `#F6F8FD`                    | `#1F2542`                    | Input search, item list, hover    |
-| `--border`          | `#E6E9F4`                    | `#2A3158`                    | Garis pemisah, border input       |
-| `--text-primary`    | `#1E2347`                    | `#F1F3FC`                    | Judul, angka besar                |
-| `--text-secondary`  | `#6E7597`                    | `#A3AACB`                    | Subjudul, label                   |
-| `--text-muted`      | `#9AA0BC`                    | `#6F7699`                    | Placeholder, sumbu chart          |
-| `--text-on-primary` | `#FFFFFF`                    | `#FFFFFF`                    | Teks di atas biru                 |
+---
 
-### 2.3 Sidebar
+## 2. Prinsip Desain
 
-| Token                        | Light     | Dark      |
-| ---------------------------- | --------- | --------- |
-| `--sidebar-bg`               | `#3451D1` | `#1B2466` |
-| `--sidebar-item-text`        | `#DCE3FF` | `#B9C3F5` |
-| `--sidebar-item-active-bg`   | `#FFFFFF` | `#2B3786` |
+- **Industrial & Technical Precision**: Mengutamakan kejelasan data teknik (tag instrumen, tipe peralatan, nomor pipa, koordinat bounding box).
+- **Bersih & Lapang**: Banyak whitespace, kartu putih dengan sudut membulat 20px, kontras tinggi yang nyaman di mata.
+- **Satu Warna Dominan**: Royal Blue (`#3053D2`) sebagai identitas sidebar dan tombol aksi utama.
+- **Konsistensi Hierarki**: Card header seragam, breadcrumb terpetakan otomatis, dan status badge dengan semantic color.
+
+---
+
+## 3. Color Tokens
+
+### 3.1 Brand & Semantic
+
+| Token | Light Mode | Dark Mode | Penggunaan |
+|---|---|---|---|
+| `--primary` | `#3053D2` / `#3451D1` | `#5B7BFF` | Sidebar, tombol utama, CTA, garis grafik |
+| `--primary-hover` | `#2543B5` | `#7391FF` | State hover tombol utama |
+| `--primary-soft` | `#E8ECFC` | `#222A5C` | Background item aktif, pill selection |
+| `--accent` | `#6CC8F2` | `#4FB4E6` | Tombol sekunder, progress indicator |
+| `--success` | `#2FB584` | `#45D6A0` | Status VALID / CONFIRMED / APPROVED |
+| `--success-soft` | `#E4F7EF` | `#12332A` | Background chip sukses |
+| `--danger` | `#E5677B` | `#FF7F93` | Status REJECTED, aksi hapus |
+| `--danger-soft` | `#FCEBEE` | `#3A1E26` | Background chip error / rejected |
+| `--warning` | `#F5B942` | `#FBD368` | Status NEEDS_REVIEW / PENDING |
+| `--warning-soft` | `#FEF7E6` | `#382A12` | Background chip warning |
+| `--info` | `#3B8FE8` | `#5AA5F5` | Info banner, kuota status |
+
+### 3.2 Neutral & Surface
+
+| Token | Light Mode | Dark Mode | Penggunaan |
+|---|---|---|---|
+| `--bg-app` | `#F3F5FC` | `#0F1325` | Background container utama aplikasi |
+| `--surface` | `#FFFFFF` | `#181D35` | Background kartu, modal dialog |
+| `--surface-2` | `#F6F8FD` | `#1F2542` | Input search, table zebra hover |
+| `--border` | `#E6E9F4` | `#2A3158` | Garis batas kartu, pemisah tabel |
+| `--foreground` | `#1E2347` | `#F1F3FC` | Teks utama, judul halaman |
+| `--foreground-muted` | `#6E7597` | `#A3AACB` | Subjudul, deskripsi panduan |
+| `--foreground-subtle`| `#9AA0BC` | `#6F7699` | Placeholder input, timestamp |
+
+### 3.3 Sidebar Tokens
+
+| Token | Light Mode | Dark Mode |
+|---|---|---|
+| `--sidebar-bg` | `#3053D2` | `#1B2466` |
+| `--sidebar-item-text` | `#DCE3FF` | `#B9C3F5` |
+| `--sidebar-item-active-bg` | `#FFFFFF` | `#2B3786` |
 | `--sidebar-item-active-text` | `#1E2347` | `#FFFFFF` |
-| `--sidebar-support-bg`       | `#4A66DE` | `#26307F` |
-
-### 2.4 Banner Promo
-
-| Mode  | Gradient                                            |
-| ----- | --------------------------------------------------- |
-| Light | `linear-gradient(135deg, #6FCBF3 0%, #8FDAF7 100%)` |
-| Dark  | `linear-gradient(135deg, #1E5E86 0%, #2A7FA8 100%)` |
-
-### 2.5 CSS Variables
-
-```css
-:root,
-[data-theme="light"] {
-  --primary: #3451d1;
-  --primary-hover: #2b44b8;
-  --primary-soft: #e8ecfc;
-  --accent: #6cc8f2;
-  --success: #2fb584;
-  --success-soft: #e4f7ef;
-  --danger: #e5677b;
-  --danger-soft: #fcebee;
-  --info: #3b8fe8;
-
-  --bg-page: linear-gradient(135deg, #dce3f7, #eef1fb);
-  --bg-app: #f3f5fc;
-  --surface: #ffffff;
-  --surface-2: #f6f8fd;
-  --border: #e6e9f4;
-  --text-primary: #1e2347;
-  --text-secondary: #6e7597;
-  --text-muted: #9aa0bc;
-
-  --sidebar-bg: #3451d1;
-  --sidebar-item-text: #dce3ff;
-  --sidebar-item-active-bg: #ffffff;
-  --sidebar-item-active-text: #1e2347;
-  --sidebar-support-bg: #4a66de;
-
-  --banner-bg: linear-gradient(135deg, #6fcbf3, #8fdaf7);
-  --shadow-card: 0 8px 24px rgba(52, 81, 209, 0.08);
-  --shadow-frame: 0 24px 60px rgba(52, 81, 209, 0.15);
-}
-
-[data-theme="dark"] {
-  --primary: #5b7bff;
-  --primary-hover: #7391ff;
-  --primary-soft: #222a5c;
-  --accent: #4fb4e6;
-  --success: #45d6a0;
-  --success-soft: #12332a;
-  --danger: #ff7f93;
-  --danger-soft: #3a1e26;
-  --info: #5aa5f5;
-
-  --bg-page: linear-gradient(135deg, #0a0d1c, #11152b);
-  --bg-app: #0f1325;
-  --surface: #181d35;
-  --surface-2: #1f2542;
-  --border: #2a3158;
-  --text-primary: #f1f3fc;
-  --text-secondary: #a3aacb;
-  --text-muted: #6f7699;
-
-  --sidebar-bg: #1b2466;
-  --sidebar-item-text: #b9c3f5;
-  --sidebar-item-active-bg: #2b3786;
-  --sidebar-item-active-text: #ffffff;
-  --sidebar-support-bg: #26307f;
-
-  --banner-bg: linear-gradient(135deg, #1e5e86, #2a7fa8);
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --shadow-frame: 0 24px 60px rgba(0, 0, 0, 0.5);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    /* salin token dark di sini untuk mode "system" */
-  }
-}
-```
+| `--sidebar-support-bg` | `#4263DF` | `#26307F` |
 
 ---
 
-## 3. Typography
+## 4. Tipografi
 
-**Font**: `Plus Jakarta Sans` (alternatif: `Poppins`, `Inter`). Fallback: `system-ui, -apple-system, "Segoe UI", sans-serif`.
+**Font Utama:** `Plus Jakarta Sans`  
+**Alternatif / Fallback:** `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
 
-| Style              | Size / Line | Weight  | Contoh                           |
-| ------------------ | ----------- | ------- | -------------------------------- |
-| Display / Stat     | 36 / 44     | 600     | `1,134`, `$4,231`, `$537`        |
-| H1 (greeting name) | 28 / 36     | 600     | "Lucy Lure"                      |
-| H2 (banner title)  | 20 / 28     | 600     | "Want some EXTRA Money?"         |
-| H3 (card title)    | 15 / 22     | 600     | "Total Product", "Top Products"  |
-| Body               | 14 / 22     | 400     | Teks umum                        |
-| Body-strong        | 14 / 22     | 600     | Nama produk, label menu          |
-| Caption            | 12 / 18     | 400–500 | "3D Illustrations", "this week"  |
-| Micro              | 10 / 14     | 500     | Label sumbu chart, "Admin Tools" |
-
-Aturan: angka statistik memakai `font-variant-numeric: tabular-nums`; letter-spacing normal; judul tidak uppercase.
+| Skala | Ukuran / Line Height | Bobot | Penggunaan |
+|---|---|---|---|
+| **Display / Metric** | 32–36 px / 40 px | 700 Bold | Angka statistik KPI pada Dashboard |
+| **Page Title** | 22–24 px / 30 px | 700 Bold | Judul halaman dan modal dialog |
+| **Section Header** | 16–18 px / 24 px | 600 SemiBold | Header kartu, tab navigasi |
+| **Body Regular** | 13–14 px / 20 px | 400 Regular | Teks tabel aset, deskripsi instrumen |
+| **Body Medium** | 13–14 px / 20 px | 500 Medium | Form input, menu sidebar item |
+| **Caption / Badge** | 11–12 px / 16 px | 600 SemiBold | Status badge (CONFIRMED, VALIDATED) |
+| **Micro** | 10 px / 14 px | 500 Medium | Label sub-header, posisi antrean (#1) |
 
 ---
 
-## 4. Spacing, Radius, Shadow
+## 5. Spacing, Radius & Elevation
 
-**Spacing (basis 4px)**: `4 · 8 · 12 · 16 · 20 · 24 · 32 · 40`
+| Token Radius | Nilai | Komponen Sasaran |
+|---|---|---|
+| `--radius-sidebar` | 24 px | Floating container sidebar |
+| `--radius-card` | 20 px | Kartu dashboard, container viewer |
+| `--radius-modal` | 16 px | Dialog upload legend, dedup modal |
+| `--radius-button` | 10 px | Tombol aksi primer, sekunder, dan icon button |
+| `--radius-badge` | 6–8 px | Chip status dan tag indikator |
 
-| Token               | Nilai | Penggunaan             |
-| ------------------- | ----- | ---------------------- |
-| `--radius-frame`    | 28px  | Frame dashboard        |
-| `--radius-card`     | 20px  | Kartu                  |
-| `--radius-sidebar`  | 24px  | Sidebar                |
-| `--radius-button`   | 10px  | Tombol                 |
-| `--radius-input`    | 10px  | Search                 |
-| `--radius-icon-box` | 6px   | Kotak ikon kartu       |
-| `--radius-thumb`    | 12px  | Thumbnail produk       |
-| `--radius-chip`     | 6px   | Chip Available/Pending |
-
-**Shadow**: kartu memakai `--shadow-card` (lembut, bertint biru); frame memakai `--shadow-frame`. Di dark mode shadow lebih gelap dan dibantu `1px solid var(--border)`.
+**Elevation & Shadow:**
+- Kartu: `box-shadow: 0 8px 24px rgba(48, 83, 210, 0.08)` (Light) / `0 8px 24px rgba(0, 0, 0, 0.35)` (Dark).
+- Frame Kontainer: `box-shadow: 0 24px 60px rgba(48, 83, 210, 0.12)`.
+- Sidebar Logo: `box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12)`.
 
 ---
 
-## 5. Layout
+## 6. Pola Komponen Utama v3.5
 
-Ukuran acuan desktop **1440 × 1024**.
-
-```
-┌────────────────────────────────────────────────────────────┐
-│ ┌────────┐  Header (greeting · Upload · Search · Bell)     │
-│ │        │ ┌──────────────────────────┐ ┌───────────────┐  │
-│ │Sidebar │ │ Banner Promo             │ │ Top Products  │  │
-│ │ 240px  │ └──────────────────────────┘ │ (5 item list) │  │
-│ │        │ ┌────────────┐┌────────────┐ │               │  │
-│ │        │ │Total Prod. ││Total Earn. │ │               │  │
-│ │        │ └────────────┘└────────────┘ └───────────────┘  │
-│ │        │ ┌──────────────────────────┐ ┌───────────────┐  │
-│ │        │ │ Latest Download (chart)  │ │ Balances      │  │
-│ └────────┘ └──────────────────────────┘ └───────────────┘  │
-└────────────────────────────────────────────────────────────┘
-```
-
-- Frame: padding 24px, gap antar kolom 24px.
-- **Sidebar**: lebar 240px, tinggi penuh frame.
-- **Konten utama**: grid 12 kolom → area kiri 8 kolom, kolom kanan 4 kolom (`Top Products` + `Balances`).
-- Gap antar kartu: 24px; padding dalam kartu: 24px.
-- `Total Product` dan `Total Earning`: masing-masing 4 dari 8 kolom (50/50).
-
-### Breakpoint
-
-| Breakpoint  | Perilaku                                                       |
-| ----------- | -------------------------------------------------------------- |
-| ≥ 1280px    | Layout penuh seperti di atas                                   |
-| 1024–1279px | Sidebar ringkas (ikon saja, 80px)                              |
-| 768–1023px  | Sidebar jadi drawer; grid 1 kolom + kolom kanan turun ke bawah |
-| < 768px     | Satu kolom, header menumpuk, tombol Upload jadi ikon           |
+1. **Floating Sidebar Navigation ([`app/sidebar-nav.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/app/sidebar-nav.tsx))**
+   - Menempel pada sisi kiri (`sticky`, `top: 16px`, `height: calc(100vh - 32px)`).
+   - Brand lockup di atas, navigasi utama di tengah, dan status sesi pengguna + tombol keluar di bawah.
+2. **Top Header & Breadcrumbs Bar ([`components/Header.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/components/Header.tsx))**
+   - Auto-mapped Breadcrumbs dengan navigasi dinamis per level rute.
+   - Dynamic user greeting di Dashboard (`Selamat datang kembali, [Nama]`).
+   - Quick action: Switch Dark/Light Mode dan profil pengguna.
+3. **Queue Status Widget ([`components/dashboard/DetectionQueueStatus.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/components/dashboard/DetectionQueueStatus.tsx))**
+   - Kartu aktif dengan progress bar animasi hijau/biru.
+   - List antrean dengan nomor urut (`#1`, `#2`), nama dokumen, dan pembuat antrean.
+4. **Interactive P&ID Viewer ([`app/detection/page.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/app/detection/page.tsx))**
+   - Canvas beresolusi tinggi dengan kemampuan zoom, pan, hover highlight bounding box, dan drawing tool penambahan aset manual.
+5. **Interactive Dedup Modal ([`components/detection/DedupModal.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/components/detection/DedupModal.tsx))**
+   - Visualisasi kartu perbandingan kandidat duplikat dengan NMS confidence score.
+6. **MDO 9-Column Table View ([`app/mdo/page.tsx`](file:///c:/Users/SrydenID/Documents/GitHub/Asset-Detection/app/mdo/page.tsx))**
+   - Format tabel standar industri PT Accenture dengan filter sheet, ekspor Excel langsung, dan status sinkronisasi otomatis.
 
 ---
-
-## 6. Komponen
-
-### 6.1 Sidebar
-
-- Background `--sidebar-bg`, radius 24px, padding 20px.
-- **Logo**: ikon kubus 3D + wordmark "Neuro." (24px, weight 700, putih).
-- Label grup "Admin Tools": micro, warna `--sidebar-item-text` opacity 70%.
-- **Menu item**: tinggi 44px, radius 10px, ikon 20px + label 14px/600, gap 12px.
-  - Default: teks `--sidebar-item-text`, transparan.
-  - Hover: `rgba(255,255,255,0.1)`.
-  - **Active** (Overview): background `--sidebar-item-active-bg`, teks `--sidebar-item-active-text`, ikon berwarna `--primary`.
-- Daftar menu: Overview, Products, Campaigns, Schedules, Payouts, Statements, Settings.
-- **Support box** (bawah): background `--sidebar-support-bg`, radius 14px, padding 16px; teks 11px putih; tombol "Contact Us" memakai `--accent` dengan teks putih.
-
-### 6.2 Header
-
-- Kiri: "Welcome Back," (14px, `--text-secondary`) + nama user (H1).
-- Kanan (rata tengah vertikal, gap 16px): tombol **Upload Product**, **Search**, **Notification bell**.
-
-### 6.3 Buttons
-
-| Varian                 | Style                                                                                                             |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **Primary**            | bg `--primary`, teks putih, tinggi 44px, padding 0 20px, radius 10px, ikon 18px di kiri. Hover `--primary-hover`. |
-| **Primary full-width** | Sama, lebar 100% (mis. "Withdraw Money"), tinggi 48px.                                                            |
-| **Secondary (putih)**  | bg `#FFFFFF` (dark: `--surface-2`), teks `--text-primary`, weight 600 (mis. "Referral Program").                  |
-| **Accent**             | bg `--accent`, teks putih (mis. "Contact Us").                                                                    |
-| **Icon button**        | 44×44, bg `--surface`, radius 14px, badge notifikasi bulat 16px `--primary` teks putih 10px.                      |
-
-Focus state: `outline: 2px solid var(--primary); outline-offset: 2px`. Disabled: opacity 50%.
-
-### 6.4 Search Input
-
-- Tinggi 44px, bg `--surface`, radius 10px, ikon search 18px `--text-muted` di kiri, placeholder "Search".
-- Focus: border `--primary` + ring `rgba(52,81,209,.2)`.
-
-### 6.5 Card (dasar)
-
-- bg `--surface`, radius 20px, padding 24px, `--shadow-card`.
-- **Header kartu**: kotak ikon 16×16 `--primary` (radius 4px) + judul H3 + menu `⋮` di kanan (ikon `--text-muted`).
-
-### 6.6 Banner Promo ("Want some EXTRA Money?")
-
-- bg `--banner-bg`, radius 20px, tinggi ±200px, padding 32px.
-- Judul putih H2, deskripsi 12px putih opacity 80%.
-- Tombol Secondary "Referral Program".
-- Kanan: ilustrasi 3D (monitor + keyboard biru), overflow sedikit keluar dari kartu untuk efek depth.
-
-### 6.7 Stat Card (Total Product / Total Earning)
-
-- Header kartu standar.
-- Angka: Display style; unit kecil ("Items") 12px `--text-secondary`.
-- Tren: caption berwarna — `+10% this week` (`--success`), `-22% this week` (`--danger`).
-- **Sparkline** di kanan: garis 2px, tanpa sumbu; area gradient di bawah garis (`color` 25% → 0%). Naik = hijau, turun = merah.
-
-### 6.8 Top Products (list)
-
-- Tiap item: tinggi 56px, thumbnail 44×44 radius 12px (background pastel berbeda), nama (14px/600), kategori (12px `--text-secondary`), chevron `›` di kanan.
-- Gap antar item 12px; hover: bg `--surface-2`, radius 12px.
-- Pastel thumbnail light: `#E3ECFF`, `#FFE9D6`, `#E3F7EE`, `#FFE4E4`, `#DDF4FA` — dark mode: pakai opacity 20% dari warna yang sama.
-
-### 6.9 Chart "Latest Download" (Line/Area)
-
-- Garis 2.5px `--primary`, kurva halus (monotone), area gradient `--primary` 18% → 0%.
-- Grid horizontal tipis `--border`, tanpa grid vertikal; sumbu Y: 0–400 (step 100); sumbu X: Mon–Sun, micro `--text-muted`.
-- **Titik aktif**: lingkaran 8px `--primary` + garis vertikal putus-putus.
-- **Tooltip**: bg `--info`, teks putih 12px/600, radius 8px, padding 6px 10px, panah kecil di bawah.
-
-### 6.10 Balances
-
-- Dua kolom dipisah garis vertikal `--border`.
-- Angka Display; di bawahnya **chip**:
-  - Available: bg `--success-soft`, teks `--success`.
-  - Pending: bg `--danger-soft`, teks `--danger`.
-  - Chip: 11px/500, padding 4px 12px, radius 6px.
-- Tombol "Withdraw Money" Primary full-width di bawah.
-
-### 6.11 Theme Toggle
-
-- Tombol bulat 40×40 di pojok kiri bawah (ikon setengah lingkaran).
-- Opsi: **Light · Dark · System**. Simpan di `localStorage` (`theme`), set `data-theme` pada `<html>`.
-- Transisi: `background-color, color, border-color 200ms ease`.
-
----
-
-## 7. Iconography
-
-- Gaya **outline**, stroke 1.5–1.75px, ukuran 20px (menu) / 18px (tombol) / 16px (kartu).
-- Library yang disarankan: Lucide / Phosphor.
-- Warna mengikuti teks; ikon aktif memakai `--primary`.
-
-## 8. Ilustrasi & Gambar
-
-- Gaya **3D soft render** (glossy, pastel + biru).
-- Thumbnail produk persegi, rasio 1:1, `object-fit: cover`.
-- Dark mode: ilustrasi tetap sama; background thumbnail diredupkan agar tidak silau.
-
-## 9. Motion
-
-| Elemen              | Efek                                     | Durasi            |
-| ------------------- | ---------------------------------------- | ----------------- |
-| Hover tombol / item | warna & `translateY(-1px)`               | 150ms ease-out    |
-| Pergantian tema     | transisi warna                           | 200ms ease        |
-| Chart saat load     | garis tergambar (stroke-dashoffset)      | 800ms ease-in-out |
-| Kartu muncul        | fade + translateY(8px → 0), stagger 60ms | 300ms             |
-
-Hormati `prefers-reduced-motion: reduce` (matikan animasi non-esensial).
-
-## 10. Aksesibilitas
-
-- Kontras teks minimal **4.5:1** (body) dan **3:1** (teks besar & ikon).
-- Teks putih di atas `--accent` (`#6CC8F2`) kontrasnya rendah → gunakan weight 600 dan ukuran ≥ 14px, atau gelapkan menjadi `#3FA9DD` untuk tombol kecil.
-- Warna tren tidak boleh menjadi satu-satunya penanda: sertakan tanda `+` / `-` (sudah ada) atau ikon panah.
-- Semua elemen interaktif bisa diakses keyboard dengan focus ring jelas.
-- Chart diberi `aria-label` dan tabel data alternatif; tooltip juga muncul saat focus.
-- Ukuran target sentuh minimal 44×44px.
-
-## 11. Contoh Konfigurasi Tailwind
-
-```js
-// tailwind.config.js
-module.exports = {
-  darkMode: ["selector", '[data-theme="dark"]'],
-  theme: {
-    extend: {
-      colors: {
-        primary: "var(--primary)",
-        accent: "var(--accent)",
-        success: "var(--success)",
-        danger: "var(--danger)",
-        surface: "var(--surface)",
-        "surface-2": "var(--surface-2)",
-        border: "var(--border)",
-        "text-primary": "var(--text-primary)",
-        "text-secondary": "var(--text-secondary)",
-      },
-      borderRadius: { card: "20px", frame: "28px", btn: "10px" },
-      boxShadow: { card: "var(--shadow-card)", frame: "var(--shadow-frame)" },
-      fontFamily: { sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"] },
-    },
-  },
-};
-```
-
-## 12. Checklist Implementasi
-
-- [ ] Token warna light & dark terpasang di `:root` dan `[data-theme="dark"]`
-- [ ] Font Plus Jakarta Sans dimuat (weight 400/500/600/700)
-- [ ] Sidebar, Header, Banner, Stat Card, Top Products, Chart, Balances
-- [ ] Theme toggle (Light/Dark/System) + persist
-- [ ] Responsif pada semua breakpoint
-- [ ] Uji kontras & navigasi keyboard
+TagFlow Design System v3.5 — Standar Identitas Visual Teknik.

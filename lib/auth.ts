@@ -22,7 +22,7 @@ export function isPrivileged(user?: AuthUser | null): user is AuthUser {
 
 export const SESSION_COOKIE_NAME = 'asset_session';
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
-const AUTH_SECRET = process.env.AUTH_SECRET || 'asset-detection-super-secret-key-change-in-prod-2026';
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'asset-detection-super-secret-key-change-in-prod-2026';
 
 /**
  * Hash password using Node.js crypto.scrypt

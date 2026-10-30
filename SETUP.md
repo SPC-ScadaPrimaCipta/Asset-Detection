@@ -1,4 +1,4 @@
-# Setup — Asset Detection
+# Setup — TagFlow (v3.5)
 
 Panduan setup lokal untuk Windows / Linux / macOS.
 
@@ -35,6 +35,7 @@ Nilai minimum yang wajib diisi di `.env.local`:
 ```dotenv
 DATABASE_URL=postgresql://postgres:password@localhost:5432/asset_db
 REDIS_URL=redis://localhost:6379
+JWT_SECRET=your_jwt_secret_min_32_chars
 GEMINI_API_KEY=your_gemini_key_here
 AI_PROVIDER=gemini
 STORAGE_PATH=./storage
@@ -144,14 +145,15 @@ diproses oleh worker, bukan oleh dev server.
 
 | Langkah | URL | Aksi |
 |---|---|---|
-| 1. Buat project | `/projects` | New Project |
-| 2. Upload legend | `/legends/new` | Upload PDF legend → Gemini ekstraksi simbol |
-| 3. Review simbol | `/legends/[id]/review` | Re-crop / Reject yang salah, lalu **Validate All** |
+| 0. Login | `/login` | Masuk dengan kredensial (`admin@tagflow.ai` / `SuperAdmin123!`) |
+| 1. Buat project | `/projects` | New Project (Private/Public atau Join via Share Code) |
+| 2. Upload legend | `/legends` | Klik New Legend → Upload Modal PDF 1-halaman |
+| 3. Review simbol | `/legends/[id]/review` | Re-crop / Delete shortcut, lalu **Validate All** |
 | 4. Finalize legend | `/legends/[id]/review` | **Finalize & Activate** |
-| 5. Upload P&ID | `/documents` | Upload PDF P&ID |
-| 6. Run detection | `/detection` | Pilih project + dokumen + legend → Run Detection |
-| 7. Review deteksi | `/review` | Confirm / Edit / Reject |
-| 8. Export | `/asset-register` | Export Asset Register (.xlsx) |
+| 5. Upload P&ID | `/documents` | Upload PDF P&ID per project |
+| 6. Run detection | `/detection` | Pilih dokumen + legend → Run Detection (pantau live queue) |
+| 7. Review & Dedup | `/detection` | Confirm / Edit / Reject, tombol Deduplicate, Manual Asset |
+| 8. MDO & Export | `/mdo` | View MDO 9-kolom Accenture & download Asset_Register.xlsx |
 
 > **Langkah 3 wajib.** Legend harus punya simbol ber-`quality_status = 'validated'`
 > dan crop terbaca agar bisa dipakai matcher, dan **Finalize & Activate** ditolak

@@ -1,4 +1,4 @@
-# Asset Detection — Menjalankan Proyek
+# TagFlow — Menjalankan Proyek (v3.5)
 
 Untuk setup dari nol, mulai dari **[SETUP.md](SETUP.md)**. Dokumen ini fokus pada
 menjalankan, konfigurasi, dan troubleshooting.
@@ -23,6 +23,7 @@ Minimum:
 ```dotenv
 DATABASE_URL=postgresql://user:password@localhost:5432/asset_db
 REDIS_URL=redis://localhost:6379
+JWT_SECRET=your_jwt_secret_min_32_chars
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=a_model_your_key_actually_offers
 AI_PROVIDER=gemini

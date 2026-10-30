@@ -1,405 +1,254 @@
-# Automatic Asset Detection
+# TagFlow — Automatic Asset Detection (v3.5)
 
-Aplikasi deteksi aset industri otomatis dari dokumen P&ID / PFD menggunakan AI multimodal (Google Gemini).
+Platform kecerdasan buatan (AI) industri untuk deteksi simbol, peralatan (*equipment*), dan tag instrumen secara otomatis dari dokumen P&ID / PFD teknis, menghasilkan **Asset Register** dan **Material Data Origin (MDO)** standar enterprise.
 
-> **Gemini-First.** Detection 100% Google Gemini Vision: satu halaman P&ID di-render
-> menjadi PNG lalu dikirim ke Gemini bersama Legend Library yang dipilih. Tidak ada
-> OCR, tidak ada OpenCV/CV service, tidak ada model deteksi lokal di jalur ini.
-> Lihat `docs/PRD.md` untuk requirement produk dan
-> `docs/ASSET_REGISTER_EXCEL_EXPORT.md` untuk format export.
+> **Identitas Brand:** TagFlow menggunakan tema *In-Context Lockup Royal Blue* (`#3053D2`), ikon visual *Target Valve & Actuator Tag (ISA-5.1)*, tipografi modern Plus Jakarta Sans, serta antarmuka terintegrasi yang responsif dalam mode terang (*Light Mode*) dan gelap (*Dark Mode*).
 
 ---
 
-## Deskripsi
+## 🚀 Ringkasan Perubahan: Dari v2.0 ke v3.5
 
-Sistem ini memungkinkan engineer untuk mengunggah dokumen P&ID (Piping and Instrumentation Diagram) dalam format PDF, lalu AI Agent secara otomatis mengidentifikasi peralatan/aset (pump, valve, vessel, dll), tag aset, dan mencocokkannya dengan Legend yang dipilih. Hasil deteksi kemudian dapat di-review, dikonfirmasi, diedit, atau ditolak sebelum dijadikan Asset Register final yang dapat diekspor ke Excel.
+Versi 3.5 menandai lompatan besar dari arsitektur eksperimental v2.0 menjadi platform siap produksi (*enterprise-ready*). Berikut perbandingan evolusinya:
 
----
-
-## Alur Kerja
-
-```
-1. Buat Project
-       ↓
-2. Upload Legend (manual atau dari PDF)
-       ↓
-3. Review simbol Legend → Re-crop / Reject / Mark Validated
-       ↓
-4. Upload dokumen P&ID / PFD (PDF)
-       ↓
-5. Pilih Legend → Run Detection
-       ↓
-6. AI Agent (Gemini) analisis setiap halaman P&ID
-       ↓
-7. Hasil: simbol terdeteksi + tag aset + confidence + bounding box
-       ↓
-8. Human Review: Confirm / Edit / Reject / Manual Add
-       ↓
-9. Asset Register final terbentuk
-       ↓
-10. Export Asset_Register.xlsx
-```
-
-### Tahap kualitas Legend (wajib sebelum Finalize)
-
-Legend punya siklus hidup kualitas sendiri yang **terpisah** dari status approve:
-
-| Kolom | Nilai | Diisi oleh |
+| Dimensi | Versi 2.0 (Baseline Awal) | Versi 3.5 (Rilis Saat Ini) |
 |---|---|---|
-| `status` | `DRAFT` / `ACTIVE` / `REJECTED` | tombol **Approve All** atau per-simbol |
-| `quality_status` | `NULL` / `validated` / `review` / `rejected` | **Validate All**, **Mark Validated**, atau **Reject** |
-| `pipeline_version` | `human-validated-v1` | saat validasi manusia |
+| **Branding & Identitas** | Placeholder generik ("Neuro.") tanpa identitas visual resmi | **TagFlow.** resmi dengan logo SVG Stand-alone Icon & In-Context Lockup (Royal Blue `#3053D2`) |
+| **Keamanan & Autentikasi** | Tanpa autentikasi (semua route publik dan terbuka) | **JWT HttpOnly Cookies + Middleware** proteksi rute, RBAC (`SUPERADMIN` vs `USER`) |
+| **Manajemen Pengguna** | Tidak ada entitas pengguna | **Superadmin User Management (`/users`)** dengan CRUD user, reset password, dan status aktif |
+| **Kolaborasi Project** | Project global tanpa kepemilikan | **Private vs Public Projects**, kode berbagi unik 8-karakter (*Share Code*), dan fitur **Clone Project** |
+| **Manajemen Antrean** | Background worker pasif tanpa visibilitas UI | **Multi-User Detection Queue** di Dashboard & Detection page, progress live, dan fitur batalkan antrean sendiri |
+| **Legend Onboarding** | Form manual rumit & lambat | **Direct Upload Legend Modal** 1-halaman instan, re-parse atomik dengan konfirmasi aman, dan shortcut keyboard (`Delete`) |
+| **Koreksi Deteksi** | Hanya review konfirmasi/tolak standar | **Manual Asset Drawing** di canvas viewer + **Deduplication Engine (NMS)** untuk bersihkan deteksi tumpang tindih |
+| **Ekspor Enterprise** | Hanya Asset Register Excel 5 sheet | **Integrasi Standar MDO PT Accenture 9-Kolom (`/mdo`)** + Asset Register Excel lengkap |
+| **AI Multi-Provider** | Terbatas pada skrip Gemini mentah | Tabbed Provider Config (Google Gemini, DeepSeek, Anthropic, OpenAI), scan model dinamis, circuit breaker, & live tuning |
+| **Dokumentasi Pengguna** | Dokumen teks teknis terpisah | **In-App User Guide (`/guide`)** interaktif dengan sticky Table of Contents |
 
-> **Approve ≠ Validate.** `Approve All` hanya mengubah `status`; ia tidak menyentuh
-> `quality_status`. Tanpa Validate, `quality_status` tetap `NULL` dan **Finalize &
-> Activate akan ditolak** oleh quality gate (menolak finalize selama ada draft,
-> unassessed, atau `review`).
+---
 
-Aturan matcher-eligible: `quality_status = 'validated'` **AND** crop file terbaca.
-`review`, `rejected`, dan tanpa crop tidak pernah eligible.
+## Alur Kerja Aplikasi (Workflow v3.5)
 
-> **Belum ada diagnostics otomatis.** Kolom `computed_features`, `quality_reasons`,
-> dan `pipeline_version` sudah ada di DB (`sql/migrate-007-legend-quality-classes.sql`)
-> dan UI sudah membacanya, tetapi **tidak ada pipeline yang mengisinya**. Selama ini
-> `quality_status` hanya berubah karena aksi manusia. Lihat
-> `docs/DETECTION_V2_IMPLEMENTATION_PLAN.md` untuk status quo.
+```text
+1. Login Sesi (Superadmin / Engineer)
+       ↓
+2. Buat / Gandakan Project (Private / Public / Share Code)
+       ↓
+3. Upload Legend 1-Halaman via Modal Instan
+       ↓
+4. QA Visual Legend (Re-crop / Shortcut Delete / Validate All)
+       ↓
+5. Upload Dokumen P&ID / PFD
+       ↓
+6. Jalankan Deteksi → Masuk ke Antrean Multi-User (Detection Queue)
+       ↓
+7. Worker AI Menganalisis Halaman (Gemini / DeepSeek / Claude / GPT)
+       ↓
+8. Workspace Deteksi:
+   - Verifikasi Bounding Box & Label
+   - Gambar Simbol Manual jika Terlewat
+   - Bersihkan Deteksi Ganda via Deduplicate (NMS)
+       ↓
+9. Konfirmasi Deteksi (Approved / Confirmed)
+       ↓
+10. Hasil Final:
+   ├── Export Asset Register (.xlsx 5-Sheet)
+   └── MDO Dashboard PT Accenture 9-Kolom & Export Excel
+```
 
 ---
 
 ## Tech Stack
 
-| Layer | Teknologi |
-|-------|-----------|
-| Frontend | Next.js 16.3.5 (App Router), React 19.2.8, TypeScript 5, Tailwind CSS 4 |
-| Backend | Next.js App Router API Routes (Node.js runtime) |
-| Database | PostgreSQL (pg 8) |
-| AI | Google Gemini (`@google/generative-ai`), DeepSeek via OpenAI SDK |
-| Queue | BullMQ 6 + Redis (ioredis) |
-| Storage | Local filesystem (`./storage`) |
-| PDF | mupdf (render server) + pdfjs-dist (viewer browser) |
-| Image | sharp (crop, upscale, sharpen) |
-| Excel | ExcelJS 4 |
-| Ikon | `@phosphor-icons/react` (satu-satunya yang dipakai) |
-
-### Pemilihan model Gemini
-
-Tidak ada model id yang di-hardcode di jalur analisis. `lib/model-resolver.ts`
-menDiscoveri model yang benar-benar tersedia untuk API key Anda saat runtime, lalu
-mengurutkan kandidat:
-
-1. Model yang dikonfigurasi (`GEMINI_MODEL` / Settings) jika ada di daftar API
-2. `GEMINI_PREFERRED_MODELS` berurutan
-3. Model lain yang didukung `generateContent`
-
-Model yang mengabaikan `responseMimeType: application/json` dilewati lewat
-`GEMINI_JSON_INCOMPATIBLE_MODELS`. Gunakan **Settings → Scan Models** untuk melihat
-model apa yang bisa dijangkau key Anda.
+| Komponen | Spesifikasi & Teknologi |
+|---|---|
+| **Frontend** | Next.js 16.3.5 (App Router, Turbopack), React 19.2.8, TypeScript 5, Tailwind CSS 4 |
+| **Desain & Ikon** | Plus Jakarta Sans, Phosphor Icons (`@phosphor-icons/react`), Royal Blue Theme (`#3053D2`) |
+| **Backend** | Next.js Route Handlers (Node.js runtime) |
+| **Database** | PostgreSQL 15+ (pg 8) dengan 20+ tabel relasional dan migrasi idempoten |
+| **Antrian Pemrosesan** | BullMQ 6 + Redis (ioredis), `WORKER_CONCURRENCY=1` (aman kuota free-tier/enterprise) |
+| **Mesin AI Vision** | Google Gemini Vision (`@google/generative-ai`), DeepSeek, Anthropic Claude, OpenAI SDK |
+| **Pemrosesan PDF & Citra** | MuPDF C++ binding (server rendering), PDF.js (client viewer), Sharp (cropping & filtering) |
+| **Ekspor & Spreadsheet** | ExcelJS 4 (multi-sheet styling, freeze panes, format tabel teknik) |
 
 ---
 
-## Struktur Halaman
+## Struktur Halaman (App Router v3.5)
 
-| URL | Fungsi |
-|-----|--------|
-| `/` | Dashboard — statistik dokumen, job, deteksi |
-| `/projects` | Kelola project |
-| `/documents` | Upload & kelola dokumen PDF per project |
-| `/legends` | Library legend — daftar semua legend |
-| `/legends/new` | Buat legend baru (manual atau upload PDF) |
-| `/legends/[id]` | Detail & edit legend |
-| `/legends/[id]/review` | Review simbol: re-crop, reject, validate, bulk approve/validate |
-| `/detection` | Workspace utama — pilih dokumen + legend, jalankan deteksi, P&ID viewer + tabel aset |
-| `/review` | Batch review semua deteksi pending |
-| `/assets` | Asset Register final — filter, search |
-| `/asset-register` | Export Asset Register (.xlsx) |
-| `/settings` | AI provider, API key, model, dan tuning operasional |
+| Rute URL | Nama Modul | Fungsi Utama |
+|---|---|---|
+| `/login` | Autentikasi | Halaman masuk sesi aman TagFlow dengan proteksi redirect otomatis |
+| `/` | Dashboard | Statistik global, banner pekerjaan aktif, antrean pengguna lain, grafik confidence |
+| `/projects` | Project Hub | Manajemen project dengan tab *My Projects* dan *Public*, Join via Share Code, Clone |
+| `/documents` | Documents | Upload PDF/DXF dokumen P&ID, thumbnail preview, hapus dokumen per project |
+| `/legends` | Legend Library | Katalog legend industri dengan modal upload instan 1-halaman |
+| `/legends/[id]/review` | Legend Review | Workspace visual QA simbol, pemotongan ulang (re-crop), shortcut delete, batch validate |
+| `/detection` | Detection Workspace | P&ID canvas viewer interaktif, tag-matching, manual asset drawing, deduplikasi |
+| `/mdo` | MDO Standard | Material Data Origin tabel 9-kolom standar PT Accenture untuk aset yang telah di-approve |
+| `/users` | User Management | Dashboard khusus Superadmin untuk menambah, mengedit, reset sandi, dan menonaktifkan user |
+| `/guide` | Panduan Pengguna | Dokumentasi interaktif in-app dengan sticky navigation & panduan langkah-demi-langkah |
+| `/settings` | Konfigurasi AI | Pengaturan multi-provider AI, live scan model API, dan tuning parameter tanpa restart |
 
 ---
 
-## Struktur API
+## Daftar Endpoint REST API
 
 ```text
-# Projects
-POST   /api/projects                     Buat project
-GET    /api/projects                     List project
+# Autentikasi & Sesi
+POST   /api/auth/login                   Login email/password, issue JWT cookie
+POST   /api/auth/logout                  Hapus cookie sesi
+GET    /api/auth/me                      Ambil data profil pengguna yang sedang login
+
+# Manajemen Pengguna (Superadmin Only)
+GET    /api/admin/users                  Daftar seluruh pengguna sistem
+POST   /api/admin/users                  Buat pengguna baru
+PUT    /api/admin/users/[id]             Perbarui nama, email, role, atau reset password
+DELETE /api/admin/users/[id]             Nonaktifkan pengguna
+
+# Projects & Kolaborasi
+GET    /api/projects                     List project (filter: private/public/owner)
+POST   /api/projects                     Buat project baru
 GET    /api/projects/[id]                Detail project
-DELETE /api/projects/[id]                Hapus project
-GET    /api/projects/[id]/export         Export per project
+DELETE /api/projects/[id]                Hapus project dan seluruh aset di dalamnya
+POST   /api/projects/[id]/clone          Gandakan project beserta seluruh dokumennya
+GET    /api/projects/[id]/share-code     Ambil atau buat 8-karakter Share Code
+POST   /api/projects/join-code           Bergabung ke private project via Share Code
 
-# Documents
-POST   /api/documents                    Upload PDF
-GET    /api/documents                    List dokumen (filter: project_id)
-GET    /api/documents/[id]               Detail dokumen
-DELETE /api/documents/[id]               Hapus dokumen
-GET    /api/documents/[id]/export        Export dokumen
-GET    /api/documents/[id]/pages/[page]/image   Render halaman
+# Dokumen P&ID
+GET    /api/documents                    List dokumen per project
+POST   /api/documents                    Upload file PDF P&ID
+GET    /api/documents/[id]               Metadata detail dokumen
+DELETE /api/documents/[id]               Hapus file dan data halaman
+GET    /api/documents/[id]/pages/[page]/image  Render bitmap halaman resolusi tinggi
 
-# Legends
-POST   /api/legends                      Buat legend
-GET    /api/legends                      List legend (+ symbol_count)
-GET    /api/legends/[id]                 Detail legend
-PUT    /api/legends/[id]                 Update legend (status/strictQuality)
+# Legend & Simbol
+GET    /api/legends                      Katalog legend
+POST   /api/legends/upload               Upload PDF 1-halaman → Ekstraksi AI otomatis
+GET    /api/legends/[id]                 Detail status legend
 DELETE /api/legends/[id]                 Hapus legend
-POST   /api/legends/upload               Upload PDF → AI parse → buat legend
-POST   /api/legends/[id]/reparse         Re-parse penuh: hapus semua simbol, jalankan ulang ekstraksi
-GET    /api/legends/[id]/pdf             Serve PDF legend
-GET    /api/legends/[id]/pages/count     Jumlah halaman PDF
-GET    /api/legends/[id]/pages/[page]/image  Render halaman legend
+POST   /api/legends/[id]/reparse         Re-ekstraksi penuh dengan transaksi atomik aman
+GET    /api/legends/[id]/symbols         Daftar simbol tersimpan
+POST   /api/legends/[id]/symbols/bulk-validate   Tandai seluruh simbol valid siap-deteksi
+POST   /api/legends/[id]/symbols/[id]/recrop     Potong ulang koordinat simbol
 
-# Legend symbols + siklus hidup kualitas
-GET    /api/legends/[id]/symbols                    List simbol (?include_draft=true)
-POST   /api/legends/[id]/symbols                    Tambah simbol manual
-PUT    /api/legends/[id]/symbols/[symbolId]         Edit simbol
-DELETE /api/legends/[id]/symbols/[symbolId]         Hapus simbol
-POST   /api/legends/[id]/symbols/[symbolId]/validate   Tandai VALIDATED (per simbol)
-POST   /api/legends/[id]/symbols/[symbolId]/recrop     Re-crop versi baru (bbox digambar)
-POST   /api/legends/[id]/symbols/[symbolId]/crop       Crop dari bbox tersimpan
-POST   /api/legends/[id]/symbols/bulk-approve          DRAFT → ACTIVE (semua)
-POST   /api/legends/[id]/symbols/bulk-validate         → VALIDATED (yang punya crop, tanpa rejected)
+# Antrean & Eksekusi Deteksi
+GET    /api/detection/queue              Status real-time job berjalan dan daftar antrean user
+POST   /api/detection/jobs               Submit job deteksi baru ke antrean BullMQ
+GET    /api/detection/jobs/[id]          Progress persentase dan log tahapan job
+POST   /api/detection/jobs/[id]/cancel   Batalkan job yang sedang mengantri/berjalan
 
-# Detection jobs
-POST   /api/detection/jobs              Buat & antri detection job
-GET    /api/detection/jobs              List jobs (+ stats per job)
-GET    /api/detection/jobs/[id]         Status + progress job
-POST   /api/detection/jobs/[id]/run     Re-trigger job ke queue
-POST   /api/detection/jobs/[id]/cancel  Cancel job
+# Review & Koreksi Deteksi
+GET    /api/detections                   Ambil hasil deteksi (filter: dokumen, status, confidence)
+POST   /api/detections/[id]/confirm      Setujui aset (VALIDATED / APPROVED)
+POST   /api/detections/[id]/reject       Tolak deteksi (REJECTED)
+POST   /api/detections/manual            Tambah aset manual langsung dari canvas
+POST   /api/detections/deduplicate       Analisis & eliminasi deteksi tumpang tindih (NMS)
 
-# Detections
-GET    /api/detections                  List (filter: job_id, status, q, confidence)
-GET    /api/detections/[id]             Detail
-PUT    /api/detections/[id]             Edit
-POST   /api/detections/[id]/confirm     Konfirmasi → asset register
-POST   /api/detections/[id]/reject      Tolak
-POST   /api/detections/[id]/unreview    Kembalikan ke review
-POST   /api/detections/manual           Tambah aset manual
-POST   /api/detections/bulk             Aksi massal
-POST   /api/detections/deduplicate      Deteksi duplikat lintas job
+# MDO & Pelaporan
+GET    /api/documents/[id]/mdo           Data MDO 9-kolom Accenture aset terkonfirmasi
+GET    /api/documents/[id]/mdo/export    Download MDO Excel spreadsheet
+GET    /api/export/assets                Download Asset_Register.xlsx resmi (5 sheet)
 
-# Assets & export
-GET    /api/assets                      List asset register (filter + pagination)
-GET    /api/assets/[id]                 Detail asset
-GET    /api/export/assets               Download Asset_Register.xlsx
-
-# Pengetahuan & aturan
-GET    /api/knowledge                   Company knowledge base
-POST   /api/knowledge
-GET    /api/knowledge/[id]
-GET    /api/rules                       Rule engine rules
-POST   /api/rules
-DELETE /api/rules/[id]                  (via /api/rules)
-
-# Embedding & cache
-POST   /api/embeddings/search           Pencarian kemiripan symbol
-GET    /api/embeddings/search
-GET    /api/cache/[hash]                Cache file (crop / page render)
-
-# Operasional
-GET    /api/stats                       Dashboard statistics
-GET    /api/health                      Health check + provider info
-GET    /api/quota                       Status kuota Gemini
-GET    /api/settings                    Baca settings + tuning
-PUT    /api/settings                    Tulis settings + tuning
-POST   /api/settings/scan-models        Scan model yang tersedia untuk API key
-POST   /api/debug-reparse               Re-parse legend (dev)
+# Pengaturan & Mesin AI
+GET    /api/settings                     Ambil konfigurasi aktif provider & tuning
+PUT    /api/settings                     Simpan perubahan konfigurasi
+POST   /api/settings/scan-models         Uji API key dan deteksi model yang kompatibel
+GET    /api/quota                        Monitor kuota request AI per menit
+GET    /api/health                       Status kesehatan database, redis, dan worker
 ```
 
 ---
 
-## Database Schema
+## Skema Database Utama
 
 ```text
-projects
-  └── documents
-        ├── document_pages
-        ├── detection_jobs
-        │     └── agent_runs
-        │     └── detections ──→ assets
-        │     └── detection_audits
-        └── detection_audit_trail
+users (id, email, password_hash, name, role [SUPERADMIN|USER], is_active)
+  │
+  ├── projects (id, name, owner_id, visibility [PRIVATE|PUBLIC], share_code)
+  │     │
+  │     ├── documents (id, project_id, filename, file_path, page_count)
+  │     │     ├── document_pages (id, document_id, page_number, width, height)
+  │     │     └── detection_jobs (id, document_id, user_id, status, progress)
+  │     │           ├── detections (id, job_id, asset_tag, asset_type, bbox, confidence)
+  │     │           └── assets (id, detection_id, tag, type, service, is_confirmed)
+  │     │
+  │     └── scoped_legends (project-scoped access)
+  │
+  └── legends (id, name, plant_name, page_count, status)
+        └── legend_symbols (id, legend_id, symbol_name, asset_type, bbox, crop_path, quality_status)
 
-legends
-  ├── legend_symbols ──→ legend_classes
-  └── legend_classes
-
-settings                        (singleton id=1: AI config + tuning JSON)
-company_knowledge
-rule_engine_rules
-symbol_cache
-symbol_embeddings
-negative_learning
+settings (id=1 singleton: provider, api_keys, active_models, tuning_json)
+detection_queue_audit (tracking antrean multi-user)
 ```
 
-Tabel utama:
-- `projects` — container untuk dokumen dan job
-- `legends` + `legend_symbols` + `legend_classes` — referensi simbol P&ID per organisasi/plant, termasuk siklus hidup kualitas
-- `documents` + `document_pages` — file PDF yang diupload dan metadata per halaman
-- `detection_jobs` — job antrian deteksi (PENDING → PROCESSING → COMPLETED/FAILED/CANCELLED)
-- `agent_runs` — log eksekusi AI per job (model, prompt version, durasi, error)
-- `detections` — hasil deteksi AI per aset (bbox, confidence, evidence, validation_status)
-- `detection_audits` / `detection_audit_trail` — jejak audit aksi review
-- `assets` — aset yang sudah dikonfirmasi (final asset register)
-- `settings` — baris tunggal: provider, API key, model, dan dokumen `tuning`
-- `company_knowledge`, `rule_engine_rules`, `symbol_cache`, `symbol_embeddings`, `negative_learning` — lapisan pengetahuan & validasi
-
-Migrasi: `npm run migrate` (idempoten, aman diulang). `sql/init.sql` untuk database baru.
-
----
-
-## Cara Menjalankan
-
-Ringkas: lihat **[SETUP.md](SETUP.md)** untuk panduan setup lengkap dan
-**[RUNNING.md](RUNNING.md)** untuk troubleshooting operasional.
-
-### Prasyarat
-
-- Node.js 20+
-- PostgreSQL, Redis
-
-### Install & migrate
-
+Migrasi dijalankan secara otomatis dan idempoten melalui:
 ```bash
-npm install
-cp .env.example .env.local   # isi DATABASE_URL, REDIS_URL, GEMINI_API_KEY
 npm run migrate
 ```
 
-### Jalankan aplikasi (2 terminal)
+---
 
+## Panduan Instalasi & Menjalankan
+
+### Prasyarat
+- **Node.js** v20.x atau lebih baru
+- **PostgreSQL** v14+ aktif
+- **Redis** server aktif (port default `6379`)
+
+### 1. Kloning & Persiapan Dependensi
 ```bash
-# Terminal 1 — Next.js
-npm run dev            # → http://localhost:3000
+git clone https://github.com/RadenRizky26/Asset-Detection.git
+cd Asset-Detection
+npm install
+```
 
-# Terminal 2 — BullMQ detection worker
+### 2. Konfigurasi Lingkungan (.env.local)
+Salin berkas contoh konfigurasi:
+```bash
+cp .env.example .env.local
+```
+Pastikan variabel kunci terkonfigurasi dengan benar:
+```env
+DATABASE_URL="postgresql://postgres:password@localhost:5432/asset_detection"
+REDIS_URL="redis://127.0.0.1:6379"
+JWT_SECRET="kunci-rahasia-sesi-jwt-anda-minimal-32-karakter"
+GEMINI_API_KEY="AIzaSy..."
+```
+
+### 3. Migrasi Database & Seeding Superadmin Awal
+```bash
+npm run migrate
+```
+*Script migrasi secara otomatis membuat akun Superadmin bawaan jika tabel pengguna masih kosong:*
+- **Email:** `admin@tagflow.ai`
+- **Password:** `SuperAdmin123!`
+
+### 4. Menjalankan Aplikasi
+Buka 2 terminal terpisah:
+
+**Terminal 1 — Web Server (Next.js):**
+```bash
+npm run dev
+# Atau untuk mode produksi:
+npm run build
+npm run start
+```
+Akses platform melalui peramban di `http://localhost:3000`.
+
+**Terminal 2 — Detection Background Worker:**
+```bash
 npm run worker
 ```
 
-Command lain:
+---
 
-| Command | Fungsi |
-|---|---|
-| `npm test` | Jalankan test suite (Jest) |
-| `npm run lint` | ESLint |
-| `npm run build` | Production build |
-| `npm run migrate` | Terapkan migrasi database (idempoten) |
-| `npm run seed:standards` | Seed legend standar bawaan |
-| `npm run worker:legacy` | Worker via ts-node (fallback) |
+## Arsitektur Ketahanan AI & Rate-Limiting
+
+1. **Process-Wide Request Gate (`lib/gemini-request-gate.ts`):** Mengatur alokasi panggilan API secara adil antara ekstraksi legend dan pekerjaan deteksi dokumen (default batas aman: `15 RPM`).
+2. **Circuit Breaker Per-Model (`lib/ai-circuit-breaker.ts`):** Mengisolasi model yang mengalami error berulang (429 kuota habis atau 503 overload) selama waktu *cooldown* tertentu tanpa menghentikan worker.
+3. **Dynamic Model Resolver (`lib/model-resolver.ts`):** Menemukan model aktif yang tersedia pada runtime dan memicu fallback otomatis ke kandidat model cadangan.
+4. **Live Zero-Restart Tuning (`lib/tuning.ts`):** Semua ambang batas (*threshold* confidence, NMS IoU, delay antar region) dapat diubah langsung melalui antarmuka **Settings** tanpa perlu me-restart server.
 
 ---
 
-## Gemini Call Budget & Resilience
-
-Semua panggilan Gemini melewati lapisan ini, bukan memanggil provider langsung di setiap loop:
-
-| Modul | Tugas |
-|---|---|
-| `lib/gemini-request-gate.ts` | Rate limit **process-wide** (RPM), dibagi bersama Scan Legend & Run Detection |
-| `lib/ai-circuit-breaker.ts` | Breaker **per model**: model yang 429/503 berulang dilewati selama cooldown |
-| `lib/model-resolver.ts` | Discovery model saat runtime + fallback berurutan |
-| `lib/tuning.ts` | **Satu** jalur baca untuk semua nilai operasional (DB > .env > default) |
-
-Legenda ekstraksi memakai grid region + satu pass catch-up. Variable kunci:
-
-| Variable | Default | Dampak |
-|---|---|---|
-| `GEMINI_REQUESTS_PER_MINUTE` | `15` | Batas keras semua request Gemini di proses |
-| `GEMINI_MAX_MODEL_ATTEMPTS` | `3` | Jatuh maksimal model **per region** (bukan per halaman) |
-| `GEMINI_CIRCUIT_FAILURES` / `_COOLDOWN_MS` | `3` / `300000` | Kapan breaker suatu model trip |
-| `ENABLE_SYMBOL_FEATURE_EXTRACTION` | `false` | +1 panggilan per deteksi - menghabiskan kuota free tier |
-| `ENABLE_SYMBOL_EMBEDDING` | `false` | +1 panggilan embedding per deteksi |
-
-Nilai mana pun bisa dioverride dari **Settings → Tuning** tanpa restart (cache 30 detik).
-
----
-
-## Confidence & Validation Status
-
-Detection tidak memakai tiga band High/Medium/Low. `detections.validation_status`
-hanya punya tiga nilai:
-
-| Nilai | Kapan |
-|---|---|
-| `VALID` | Semua evidence konsisten, confidence ≥ `DETECTION_REVIEW_THRESHOLD` |
-| `NEEDS_REVIEW` | Tipe `UNKNOWN`, field evidence lemah, confidence di bawah threshold, atau total penalty ≥ `DETECTION_PENALTY_REVIEW_THRESHOLD` |
-| `CONFLICT` | Legend dan Company KB tidak sepakat |
-
-Default `DETECTION_REVIEW_THRESHOLD = 0.65` (bukan 0.80). Penalty lain: tag hilang,
-evidence tipis, bbox kebesaran, bbox degenerat. Semua configurable.
-
-Validasi berantai: `CACHE → LEGEND → KB → EMBEDDING → RULES → ISA → ISO → VISION → UNKNOWN`.
-
----
-
-## Excel Output
-
-File `Asset_Register.xlsx` berisi 5 sheet:
-1. **Asset Register** — daftar aset final
-2. **Equipment Summary** — ringkasan per tipe aset
-3. **Detection Summary** — statistik confidence
-4. **Legend Used** — legend yang dipakai
-5. **Detection Evidence** — bukti per deteksi
-
-Aset dengan status REJECTED tidak muncul di sheet Asset Register.
-
----
-
-## Struktur Folder
-
-```
-Asset-Detection/
-├── app/                       Next.js App Router pages + API routes
-│   ├── page.tsx               Dashboard
-│   ├── detection/             Workspace deteksi utama
-│   ├── review/                Batch review deteksi
-│   ├── assets/  asset-register/  documents/  projects/
-│   ├── legends/               Legend library + review simbol
-│   ├── settings/              Provider, key, model, tuning
-│   └── api/                   REST API routes
-├── components/ui/             Shared UI (button, card, table, modal, badge, …)
-├── lib/
-│   ├── ai-agent.ts             AI Agent runner (Gemini/DeepSeek) + fallback chain
-│   ├── ai-schemas.ts          Zod schema validasi output AI
-│   ├── ai-config.ts           Resolved provider/key/model (DB > env)
-│   ├── ai-circuit-breaker.ts  Breaker per model
-│   ├── ai-generation.ts       Generation config per flow
-│   ├── ai-prompts/            Prompt builder (symbol-detector, legend-extractor, rule-validator)
-│   ├── gemini.ts              Klien Gemini + DeepSeek
-│   ├── gemini-request-gate.ts Rate limit process-wide
-│   ├── model-resolver.ts      Discovery model runtime
-│   ├── tuning.ts              Jalur baca tunggal untuk semua tuning
-│   ├── env.ts                 Validasi env (Zod)
-│   ├── db.ts                  Pool PostgreSQL
-│   ├── queue.ts               BullMQ queue
-│   ├── workers/detection-worker.ts (lihat di bawah)
-│   ├── pdf-render.ts          Validasi + render PDF (mupdf, fallback render-page.mjs)
-│   ├── legend-extract.ts      Ekstraksi simbol legend (region grid + catch-up)
-│   ├── legend-crop.ts         Crop + simpan reference image
-│   ├── image-crop.ts          Utilitas crop
-│   ├── spatial.ts             Asosiasi tag↔simbol
-│   ├── rule-validator.ts      Rantai validasi 9 tahap
-│   ├── rule-engine.ts         Rule engine
-│   ├── confidence-fusion.ts   Fusion confidence
-│   ├── excel-export.ts        Workbook ExcelJS
-│   ├── storage.ts             File storage (local)
-│   ├── symbol-cache.ts        Cache & deteksi duplikat (image_hash lokal)
-│   ├── knowledge-db.ts        Company knowledge base
-│   ├── vector-repository.ts   Embedding search
-│   ├── embedding-service.ts   Embedding Gemini
-│   ├── feature-extractor.ts   Ekstraksi fitur visual (opt-in)
-│   ├── description-template.ts Template deskripsi
-│   ├── rate-limit.ts          Rate limit API
-│   ├── standard-legends.ts    Legend standar bawaan
-│   ├── detection/             config, geometry, region, legend, ai, persistence
-│   └── learning/negative-learning.ts
-├── workers/
-│   ├── detection-worker.ts    BullMQ processor
-│   └── preload.ts             Preload worker
-├── scripts/                   migrate, seed, backfill, render-page
-├── sql/                       init.sql + migrate-*.sql
-├── __tests__/                 Test suite Jest
-├── docs/                      PRD, arsitektur, export spec, V2 plan
-├── eval/                      Ground truth & laporan evaluasi
-├── docker-compose.yml         PostgreSQL + Redis
-├── start-services.bat         Helper start service (Windows)
-├── ecosystem.config.cjs       PM2 config
-└── .env.example               128 env var terdokumentasi
-```
+## Lisensi & Kontribusi
+TagFlow dikembangkan sebagai solusi industri independen untuk otomasi teknik perminyakan, gas, dan petrokimia.
+Hak Cipta © 2026 Tim Pengembang TagFlow.

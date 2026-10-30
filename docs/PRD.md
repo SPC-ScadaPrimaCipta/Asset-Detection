@@ -1,15 +1,15 @@
 # Product Requirements Document (PRD)
-## Gemini-First P&ID Asset Detection & Asset Register
+## TagFlow — AI P&ID Asset & Symbol Detection Platform (v3.5)
 
 | Informasi | Detail |
 |---|---|
-| Product Name | Asset Detection — AI P&ID Reader |
+| Product Name | TagFlow — Automatic Asset Detection |
 | Product Type | Web-Based Engineering Document Intelligence Platform |
-| Version | 2.0 |
-| Status | Draft |
-| Primary AI Engine | Google Gemini API |
+| Version | 3.5 (Production Release) |
+| Status | Active Production |
+| Primary AI Engine | Multi-Provider (Gemini, DeepSeek, Anthropic, OpenAI) |
 | Primary Input | Legend PDF dan P&ID PDF |
-| Primary Output | Verified Asset Register |
+| Primary Output | Verified Asset Register (.xlsx) & PT Accenture MDO (9-Kolom) |
 | Target Users | Document Controller, Process Engineer, Instrument Engineer, Reviewer, Approver, Asset Manager |
 | Frontend | Next.js / TypeScript |
 | Backend | Next.js API Routes / TypeScript |
