@@ -302,7 +302,9 @@ export function dedupeRegionDetections(
       const minArea = Math.min(k.bbox.width * k.bbox.height, d.bbox.width * d.bbox.height);
       const containment = minArea > 0 ? inter / minArea : 0;
 
-      return dist <= 10 && (containment >= 0.30 || iou >= 0.15);
+      // True duplicate symbols across overlapping passes have nearly coincident centers.
+      // Do not suppress adjacent distinct symbols (e.g. block valve + drain valve on drop leg).
+      return (containment >= 0.80 && dist <= 8) || (dist <= 5 && (containment >= 0.50 || iou >= 0.25));
     });
 
     if (dupIdx === -1) {

@@ -57,7 +57,8 @@ export const DEFAULT_GEO2_CONFIG: YoloGeo2Config = Object.freeze({
  */
 export function getEffectiveGeo2Config(overrides?: Partial<YoloGeo2Config>): YoloGeo2Config {
   const envModelPath = process.env.GEO2_MODEL_PATH;
-  const envConf = process.env.GEO2_CONFIDENCE_THRESHOLD ? parseFloat(process.env.GEO2_CONFIDENCE_THRESHOLD) : undefined;
+  const envConfStr = process.env.GEO2_CONFIDENCE_THRESHOLD || process.env.YOLO_CONFIDENCE_THRESHOLD;
+  const envConf = envConfStr ? parseFloat(envConfStr) : undefined;
   const envPerTileNms = process.env.GEO2_PER_TILE_NMS_IOU ? parseFloat(process.env.GEO2_PER_TILE_NMS_IOU) : undefined;
   const envGlobalMerge = process.env.GEO2_GLOBAL_MERGE_IOU ? parseFloat(process.env.GEO2_GLOBAL_MERGE_IOU) : undefined;
 

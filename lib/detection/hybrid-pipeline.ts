@@ -375,7 +375,7 @@ async function runAiFallback(
   pageImageB64: string,
   pageWidth: number,
   pageHeight: number,
-  existingBboxes: Array<{ x: number; y: number; width: number; height: number }>, // normalized 0-1000
+  existingDetections: PersistableDetection[],
   params: {
     page: number;
     legendId: string;
@@ -403,31 +403,33 @@ async function runAiFallback(
 
     for (const gd of aiResult.detections) {
       const gdBbox = { x: gd.bbox.x, y: gd.bbox.y, width: gd.bbox.width, height: gd.bbox.height };
-      const overlaps = existingBboxes.some(ex => {
+      const matchedIdx = existingDetections.findIndex(ex => {
         const iou = computeIoU(
-          { x1: ex.x, y1: ex.y, x2: ex.x + ex.width, y2: ex.y + ex.height },
+          { x1: ex.bbox.x, y1: ex.bbox.y, x2: ex.bbox.x + ex.bbox.width, y2: ex.bbox.y + ex.bbox.height },
           { x1: gdBbox.x, y1: gdBbox.y, x2: gdBbox.x + gdBbox.width, y2: gdBbox.y + gdBbox.height },
         );
         if (iou >= mergeIou) return true;
 
         // Small engineering symbols (valves, instruments) have small pixel areas
         // where standard IoU collapses even on a tiny shift. Check proximity + containment.
+        // Require true coincidence so closely-spaced inline equipment
+        // (e.g. block valve + bleeder/drain valve on drop leg) are not suppressed.
         const dist = Math.hypot(
-          ex.x + ex.width / 2 - (gdBbox.x + gdBbox.width / 2),
-          ex.y + ex.height / 2 - (gdBbox.y + gdBbox.height / 2),
+          ex.bbox.x + ex.bbox.width / 2 - (gdBbox.x + gdBbox.width / 2),
+          ex.bbox.y + ex.bbox.height / 2 - (gdBbox.y + gdBbox.height / 2),
         );
-        const ix0 = Math.max(ex.x, gdBbox.x);
-        const iy0 = Math.max(ex.y, gdBbox.y);
-        const ix1 = Math.min(ex.x + ex.width, gdBbox.x + gdBbox.width);
-        const iy1 = Math.min(ex.y + ex.height, gdBbox.y + gdBbox.height);
+        const ix0 = Math.max(ex.bbox.x, gdBbox.x);
+        const iy0 = Math.max(ex.bbox.y, gdBbox.y);
+        const ix1 = Math.min(ex.bbox.x + ex.bbox.width, gdBbox.x + gdBbox.width);
+        const iy1 = Math.min(ex.bbox.y + ex.bbox.height, gdBbox.y + gdBbox.height);
         const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
-        const minArea = Math.min(ex.width * ex.height, gdBbox.width * gdBbox.height);
+        const minArea = Math.min(ex.bbox.width * ex.bbox.height, gdBbox.width * gdBbox.height);
         const containment = minArea > 0 ? inter / minArea : 0;
 
-        return dist <= 12 && (iou >= 0.10 || containment >= 0.25);
+        return (containment >= 0.80 && dist <= 8) || (dist <= 5 && (containment >= 0.50 || iou >= 0.25));
       });
 
-      if (!overlaps) {
+      if (matchedIdx === -1) {
         // New detection from AI — apply negative learning penalty for consistency
         let negativePenalty = 0;
         if (env.NEGATIVE_LEARNING_ENABLED === 'true') {
@@ -451,6 +453,14 @@ async function runAiFallback(
         } as PersistableDetection);
       } else {
         merged++;
+        // If YOLO found the symbol but had no tag, enrich with AI tag if available
+        const matched = existingDetections[matchedIdx];
+        if (!matched.assetTag && gd.assetTag) {
+          matched.assetTag = gd.assetTag;
+          if (Array.isArray(matched.evidence)) {
+            matched.evidence.push(`Tag enriched from AI fallback: ${gd.assetTag}`);
+          }
+        }
       }
     }
 
@@ -781,7 +791,7 @@ export async function runHybridPipeline(
       input.pageImageBase64,
       input.pageWidth,
       input.pageHeight,
-      processedBboxesNorm,
+      persistable,
       {
         page: input.page,
         legendId: input.legendId,

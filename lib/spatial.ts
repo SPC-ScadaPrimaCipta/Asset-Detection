@@ -255,10 +255,12 @@ export function applyNMS<T extends {
       // Heavy geometric overlap / near-identical position on drawing:
       // Even if different tags were hallucinated or auto-assigned, two physical equipment
       // items of compatible type cannot occupy the same tiny pixel space on a P&ID pipe.
+      // Require true geometric coincidence so closely-spaced inline equipment
+      // (e.g. 2" block valve and 3/4" drain/bleed valve on the same branch) are not merged.
       const isSameSymbol =
         iou >= 0.45 ||
-        (dist <= 10 && (containment >= 0.25 || iou >= 0.10)) ||
-        (containment >= 0.60 && dist <= 15);
+        (containment >= 0.80 && dist <= 8) ||
+        (dist <= 5 && (containment >= 0.50 || iou >= 0.25));
 
       if (typeCompatible(cur.assetType, nxt.assetType) && isSameSymbol) {
         suppressed[j] = true;
