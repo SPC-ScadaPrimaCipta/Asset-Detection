@@ -743,6 +743,14 @@ function extractOfFromLabels(labels: TextLabel[], nodeDescription?: string | nul
     return cleanMdoFieldValue(nodeDescription);
   }
 
+  // Debug: log sample text if no match
+  if (labels.length > 0) {
+    const samples = labels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
+    if (!labels.some(lbl => ofPatterns.some(re => re.test(lbl.content)))) {
+      console.log(`[dxf-flow]   No OF match in labels. Samples: ${samples}`);
+    }
+  }
+
   for (const lbl of labels) {
     if (ofPatterns.some((re) => re.test(lbl.content))) {
       return cleanMdoFieldValue(lbl.content);
@@ -762,6 +770,14 @@ function extractAtFromContext(node: AssetNode, labels: TextLabel[]): string | nu
   if (node.description) {
     if (atPatterns.some((re) => re.test(node.description!))) {
       return cleanMdoFieldValue(node.description);
+    }
+  }
+
+  // Debug: log sample text if no match
+  if (labels.length > 0) {
+    const samples = labels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
+    if (!labels.some(lbl => atPatterns.some(re => re.test(lbl.content)))) {
+      console.log(`[dxf-flow]   No AT match in labels. Samples: ${samples}`);
     }
   }
 
