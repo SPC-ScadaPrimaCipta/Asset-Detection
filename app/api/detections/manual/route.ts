@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
       size,
       equipmentClass,
       bbox,
+      worldBbox,
     } = body;
 
     const docId = documentId || body.document_id;
@@ -56,6 +57,12 @@ export async function POST(req: NextRequest) {
     const w = bbox?.width != null ? Math.max(10, Math.round(Number(bbox.width))) : 50;
     const h = bbox?.height != null ? Math.max(10, Math.round(Number(bbox.height))) : 50;
 
+    const world = worldBbox ?? bbox?.world ?? null;
+    const wx = world?.x != null ? Number(world.x) : null;
+    const wy = world?.y != null ? Number(world.y) : null;
+    const ww = world?.width != null ? Number(world.width) : null;
+    const wh = world?.height != null ? Number(world.height) : null;
+
     const cleanTag = tag.trim().toUpperCase();
     const cleanType = type.trim();
     const cleanDesc = desc?.trim() || null;
@@ -72,6 +79,7 @@ export async function POST(req: NextRequest) {
         confidence, detection_status, review_status,
         detection_source,
         bbox_x, bbox_y, bbox_w, bbox_h,
+        bbox_frame, world_bbox_x, world_bbox_y, world_bbox_w, world_bbox_h,
         evidence,
         created_at, updated_at
       ) VALUES (
@@ -82,7 +90,8 @@ export async function POST(req: NextRequest) {
         1.0, 'MANUAL', 'APPROVED',
         'MANUAL_USER',
         $12, $13, $14, $15,
-        $16,
+        'GLOBAL_NORMALIZED', $16, $17, $18, $19,
+        $20,
         NOW(), NOW()
       )
       RETURNING *;
@@ -106,6 +115,10 @@ export async function POST(req: NextRequest) {
       y,
       w,
       h,
+      wx,
+      wy,
+      ww,
+      wh,
       JSON.stringify(evidence),
     ]);
 

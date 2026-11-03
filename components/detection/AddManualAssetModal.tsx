@@ -17,6 +17,7 @@ export interface BoundingBoxCoords {
   y: number;
   width: number;
   height: number;
+  world?: { x: number; y: number; width: number; height: number };
 }
 
 interface AddManualAssetModalProps {
@@ -105,6 +106,7 @@ export default function AddManualAssetModal({
           size: size.trim(),
           equipmentClass: equipmentClass.trim() || assetType.trim(),
           bbox,
+          worldBbox: bbox.world,
         }),
       });
 

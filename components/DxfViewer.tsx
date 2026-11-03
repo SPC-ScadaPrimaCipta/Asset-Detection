@@ -14,6 +14,14 @@ function bboxColor(d: { asset_type: string; review_status: string; detection_sta
   return getAssetTypeColor(d.asset_type).stroke;
 }
 
+export interface DxfDrawBbox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  world?: { x: number; y: number; width: number; height: number };
+}
+
 export interface DxfViewerProps {
   url: string;
   detections?: Array<{
@@ -40,6 +48,19 @@ export interface DxfViewerProps {
   }>;
   selectedId?: string | null;
   onSelectAsset?: (id: string) => void;
+  /** Hard-delete the selected detection after the user confirms. */
+  onDeleteAsset?: (id: string) => void;
+  /** Recrop bbox for selected detection. */
+  onRecrop?: (id: string) => void;
+  /** Edit detection metadata (tag, type, etc). */
+  onEdit?: (detection: any) => void;
+  /** Update existing detection bbox (drag/resize). */
+  onBboxUpdate?: (id: string, bbox: { x: number; y: number; width: number; height: number; world?: { x: number; y: number; width: number; height: number } }) => void;
+  /** Enable bbox drag/edit mode. */
+  editEnabled?: boolean;
+  /** Enable drag-to-draw manual bounding box mode. */
+  drawingEnabled?: boolean;
+  onDrawComplete?: (bbox: DxfDrawBbox) => void;
   showAll?: boolean;
   showReviewCandidates?: boolean;
   textTokens?: Array<{ text: string; x: number; y: number; w: number; h: number }>;
@@ -61,6 +82,13 @@ export default function DxfViewer({
   detections = [],
   selectedId = null,
   onSelectAsset,
+  onDeleteAsset,
+  onRecrop,
+  onEdit,
+  onBboxUpdate,
+  editEnabled = false,
+  drawingEnabled = false,
+  onDrawComplete,
   showAll = true,
   showReviewCandidates = false,
   textTokens = [],
@@ -84,6 +112,35 @@ export default function DxfViewer({
   const [layers, setLayers]         = useState<LayerInfo[]>([]);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+  const [selectedRect, setSelectedRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [viewSize, setViewSize] = useState({ w: 1200, h: 800 });
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const drawStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Drag existing bbox state (move only untuk DXF, resize bisa tambah nanti)
+  const [dragBbox, setDragBbox] = useState<{
+    id: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    origW: number;
+    origH: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isDraggingActive, setIsDraggingActive] = useState(false);
+
+  // Cleanup long press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -102,22 +159,51 @@ export default function DxfViewer({
     [],
   );
 
+  /** Map overlay canvas pixel → DXF world coord via current camera. */
+  const canvasToWorld = useCallback(
+    (cx: number, cy: number, cw: number, ch: number): { x: number; y: number } | null => {
+      const viewer = viewerRef.current;
+      if (!viewer) return null;
+      const origin = viewer.GetOrigin();
+      const cam = viewer.GetCamera() as THREE.OrthographicCamera | null;
+      if (!origin || !cam) return null;
+      const v = new THREE.Vector3((cx / cw) * 2 - 1, -(cy / ch) * 2 + 1, 0).unproject(cam);
+      return { x: v.x + origin.x, y: v.y + origin.y };
+    },
+    [],
+  );
+
   /** Get valid detections to render based on showAll / selectedId. */
   const getVisible = useCallback(() => {
-    const sheetDetections = activeSheet === null || activeSheet === undefined
-      ? detections
-      : detections.filter((d) => d.pid_page === null || d.pid_page === activeSheet);
+    console.log('[DxfViewer] getVisible called:', { 
+      totalDetections: detections.length, 
+      showAll, 
+      selectedId 
+    });
+    // For DXF (single-sheet), ignore activeSheet filtering entirely
+    // Only filter by showAll and selectedId
     const list = showAll
-      ? sheetDetections
-      : sheetDetections.filter((d) => d.id === selectedId);
-    return list.filter(
+      ? detections
+      : detections.filter((d) => d.id === selectedId);
+    console.log('[DxfViewer] after showAll/selected filter:', list.length);
+    
+    const visible = list.filter(
       (d) =>
         d.detection_status !== 'REJECTED' &&
         d.review_status    !== 'REJECTED' &&
         d.bbox_x !== null && d.bbox_y !== null &&
         d.bbox_w !== null && d.bbox_h !== null,
     );
-  }, [detections, selectedId, showAll, activeSheet]);
+    console.log('[DxfViewer] final visible count:', visible.length);
+    console.log('[DxfViewer] sample bbox:', visible[0] ? {
+      id: visible[0].id,
+      x: visible[0].bbox_x,
+      y: visible[0].bbox_y,
+      w: visible[0].bbox_w,
+      h: visible[0].bbox_h
+    } : 'none');
+    return visible;
+  }, [detections, selectedId, showAll]);
 
   // ── Draw overlay ─────────────────────────────────────────────────────────────
   const drawOverlay = useCallback(() => {
@@ -134,6 +220,7 @@ export default function DxfViewer({
     const cw = webglCanvas.clientWidth  || webglCanvas.width;
     const ch = webglCanvas.clientHeight || webglCanvas.height;
     if (cw === 0 || ch === 0) return;
+    setViewSize((prev) => (prev.w === cw && prev.h === ch ? prev : { w: cw, h: ch }));
 
     // Skala DPR agar garis tidak blur dan hit-test presisi di layar retina.
     const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
@@ -176,6 +263,16 @@ export default function DxfViewer({
     const sorted = [...visible].sort((a, b) =>
       a.id === selectedId ? 1 : b.id === selectedId ? -1 : 0,
     );
+    let selRect: { x: number; y: number; w: number; h: number } | null = null;
+
+    console.log('[DxfViewer] drawOverlay:', {
+      visibleCount: sorted.length,
+      boundsWorld: bounds,
+      canvasSize: { cw, ch }
+    });
+
+    let renderedCount = 0;
+    let outsideViewportCount = 0;
 
     for (const d of sorted) {
       const isSelected = d.id === selectedId;
@@ -186,19 +283,59 @@ export default function DxfViewer({
       const activeRegion = activeSheet == null ? null : regions.find((r) => r.pidPage === activeSheet);
       const hasSheetBox = activeRegion && d.sheet_bbox_x != null && d.sheet_bbox_y != null && d.sheet_bbox_w != null && d.sheet_bbox_h != null && d.pid_page === activeSheet;
       const hasWorldBox = d.world_bbox_x != null && d.world_bbox_y != null && d.world_bbox_w != null && d.world_bbox_h != null;
-      const wx1 = hasSheetBox ? activeRegion!.extents.minX + (d.sheet_bbox_x! / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x  ?? 0) / 1000) * spanX;
-      const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
-      const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
-      const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
+      
+      // Override koordinat jika sedang di-drag
+      let bboxX = d.bbox_x ?? 0;
+      let bboxY = d.bbox_y ?? 0;
+      let bboxW = d.bbox_w ?? 0;
+      let bboxH = d.bbox_h ?? 0;
+      if (dragBbox && dragBbox.id === d.id) {
+        bboxX = dragBbox.currentX;
+        bboxY = dragBbox.currentY;
+      }
+
+      const wx1 = hasSheetBox ? activeRegion!.extents.minX + (d.sheet_bbox_x! / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! : bounds.minX + (bboxX / 1000) * spanX;
+      const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - (bboxY / 1000) * spanY;
+      const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + ((bboxX + bboxW) / 1000) * spanX;
+      const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - ((bboxY + bboxH) / 1000) * spanY;
 
       const tl = worldToCanvas(wx1, wy1, cw, ch);
       const br = worldToCanvas(wx2, wy2, cw, ch);
 
-      const rx = Math.min(tl.x, br.x);
-      const ry = Math.min(tl.y, br.y);
-      const rw = Math.abs(br.x - tl.x);
-      const rh = Math.abs(br.y - tl.y);
-      if (rw < 2 || rh < 2) continue;
+      let rx = Math.min(tl.x, br.x);
+      let ry = Math.min(tl.y, br.y);
+      let rw = Math.abs(br.x - tl.x);
+      let rh = Math.abs(br.y - tl.y);
+      
+      // Expand very small bboxes for visibility (min 15px on screen)
+      const MIN_RENDER_SIZE = 15;
+      if (rw > 0 && rw < MIN_RENDER_SIZE) {
+        const expand = (MIN_RENDER_SIZE - rw) / 2;
+        rx -= expand;
+        rw = MIN_RENDER_SIZE;
+      }
+      if (rh > 0 && rh < MIN_RENDER_SIZE) {
+        const expand = (MIN_RENDER_SIZE - rh) / 2;
+        ry -= expand;
+        rh = MIN_RENDER_SIZE;
+      }
+      
+      if (renderedCount < 3) {
+        console.log(`[DxfViewer] bbox ${d.id.slice(0,8)}:`, {
+          world: { wx1, wy1, wx2, wy2 },
+          canvas: { rx: rx.toFixed(1), ry: ry.toFixed(1), rw: rw.toFixed(1), rh: rh.toFixed(1) },
+          hasWorldBox, hasSheetBox
+        });
+      }
+      
+      // Only skip if completely degenerate (0 size)
+      if (rw < 1 || rh < 1) {
+        outsideViewportCount++;
+        continue;
+      }
+      renderedCount++;
+
+      if (isSelected) selRect = { x: rx, y: ry, w: rw, h: rh };
 
       ctx.save();
 
@@ -246,6 +383,19 @@ export default function DxfViewer({
       ctx.restore();
     }
 
+    console.log('[DxfViewer] drawOverlay complete:', {
+      totalVisible: sorted.length,
+      rendered: renderedCount,
+      culled: outsideViewportCount
+    });
+
+    setSelectedRect((prev) => {
+      if (!selRect) return prev === null ? prev : null;
+      if (prev && Math.abs(prev.x - selRect.x) < 0.5 && Math.abs(prev.y - selRect.y) < 0.5 &&
+          Math.abs(prev.w - selRect.w) < 0.5 && Math.abs(prev.h - selRect.h) < 0.5) return prev;
+      return selRect;
+    });
+
     if (showText) {
       ctx.save();
       ctx.textBaseline = 'top';
@@ -266,12 +416,17 @@ export default function DxfViewer({
       }
       ctx.restore();
     }
-  }, [detections, selectedId, showAll, showReviewCandidates, textTokens, showText, loading, worldToCanvas, getVisible]);
+  }, [detections, selectedId, showAll, showReviewCandidates, textTokens, showText, loading, worldToCanvas, getVisible, dragBbox, regions, activeSheet]);
 
   // Selalu tunjuk ke implementasi terbaru (lawan closure basi).
   useEffect(() => {
     drawOverlayRef.current = drawOverlay;
   }, [drawOverlay]);
+
+  // Redraw overlay saat drag bbox untuk visual feedback real-time
+  useEffect(() => {
+    if (dragBbox) drawOverlay();
+  }, [dragBbox, drawOverlay]);
 
   // ── Initialize viewer ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -424,10 +579,24 @@ export default function DxfViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
-  // ── Redraw when detections / selection / showAll changes ─────────────────────
+  // ── Auto-navigate to first page with detections ──────────────────────────
   useEffect(() => {
-    if (!loading) drawOverlay();
-  }, [detections, selectedId, showAll, loading, drawOverlay]);
+    if (detections.length === 0 || regions.length === 0) return;
+    if (activeSheet !== null && activeSheet !== undefined) {
+      // Already on a specific page — check if it has detections
+      const hasDetOnPage = detections.some(d => d.pid_page === activeSheet);
+      if (hasDetOnPage) return; // Page has detections, stay
+    }
+    // Find first page with detections
+    const pagesWithDet = new Set(detections.map(d => d.pid_page).filter(p => p !== null && p !== undefined));
+    if (pagesWithDet.size > 0) {
+      const firstPageWithDet = Math.min(...Array.from(pagesWithDet));
+      if (activeSheet !== firstPageWithDet) {
+        // User hook would need to handle this — for now just log
+        console.log(`[DxfViewer] Detections found on page ${firstPageWithDet}, activeSheet=${activeSheet}`);
+      }
+    }
+  }, [detections, regions, activeSheet]);
 
   // ── Auto zoom to selected detection ─────────────────────────────────────────
   // Hanya saat mode single-select (showAll=false). Saat showAll=true kamera
@@ -545,10 +714,189 @@ export default function DxfViewer({
     });
   }, [drawOverlay]);
 
+  // ── Manual draw handlers ─────────────────────────────────────────────────────
+  const handleDrawStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - box.left;
+    const y = e.clientY - box.top;
+    drawStartRef.current = { x, y };
+    setDrawRect({ x, y, w: 0, h: 0 });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleDrawMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const start = drawStartRef.current;
+    if (!start) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - box.left;
+    const cy = e.clientY - box.top;
+    setDrawRect({
+      x: Math.min(start.x, cx),
+      y: Math.min(start.y, cy),
+      w: Math.abs(cx - start.x),
+      h: Math.abs(cy - start.y),
+    });
+  }, []);
+
+  const handleDrawEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const start = drawStartRef.current;
+    drawStartRef.current = null;
+    setDrawRect(null);
+    if (!start) return;
+
+    const box = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - box.left;
+    const cy = e.clientY - box.top;
+    const rx = Math.min(start.x, cx);
+    const ry = Math.min(start.y, cy);
+    const rw = Math.abs(cx - start.x);
+    const rh = Math.abs(cy - start.y);
+    if (rw < 8 || rh < 8) return;
+
+    const viewer = viewerRef.current;
+    const bounds = viewer?.GetBounds();
+    if (!viewer || !bounds) return;
+    const spanX = bounds.maxX - bounds.minX;
+    const spanY = bounds.maxY - bounds.minY;
+    if (spanX <= 0 || spanY <= 0) return;
+
+    const tl = canvasToWorld(rx, ry, box.width, box.height);
+    const br = canvasToWorld(rx + rw, ry + rh, box.width, box.height);
+    if (!tl || !br) return;
+
+    const worldX = Math.min(tl.x, br.x);
+    const worldY = Math.min(tl.y, br.y);
+    const worldW = Math.abs(br.x - tl.x);
+    const worldH = Math.abs(br.y - tl.y);
+    const clamp = (v: number) => Math.max(0, Math.min(1000, v));
+
+    onDrawComplete?.({
+      x: Math.round(clamp(((worldX - bounds.minX) / spanX) * 1000)),
+      y: Math.round(clamp(((bounds.maxY - (worldY + worldH)) / spanY) * 1000)),
+      width: Math.max(1, Math.round(clamp((worldW / spanX) * 1000))),
+      height: Math.max(1, Math.round(clamp((worldH / spanY) * 1000))),
+      world: { x: worldX, y: worldY, width: worldW, height: worldH },
+    });
+  }, [canvasToWorld, onDrawComplete]);
+
+  const handleDrawCancel = useCallback(() => {
+    drawStartRef.current = null;
+    setDrawRect(null);
+  }, []);
+
+  // ── Drag existing bbox handlers ──────────────────────────────────────────────
+  const handleBboxPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>, detectionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const detection = detections.find(d => d.id === detectionId);
+    if (!detection || detection.bbox_x == null || detection.bbox_y == null || detection.bbox_w == null || detection.bbox_h == null) return;
+    
+    const box = e.currentTarget.getBoundingClientRect();
+    const startX = e.clientX - box.left;
+    const startY = e.clientY - box.top;
+    const pointerId = e.pointerId;
+    const target = e.currentTarget; // Simpan ref sebelum async
+    
+    // Start long press timer (400ms)
+    longPressTimerRef.current = setTimeout(() => {
+      setIsDraggingActive(true);
+      setDragBbox({
+        id: detectionId,
+        startX,
+        startY,
+        origX: detection.bbox_x!,
+        origY: detection.bbox_y!,
+        origW: detection.bbox_w!,
+        origH: detection.bbox_h!,
+        currentX: detection.bbox_x!,
+        currentY: detection.bbox_y!,
+      });
+      try {
+        target.setPointerCapture(pointerId);
+      } catch (err) {
+        // Target bisa null jika unmounted, ignore
+      }
+    }, 400);
+  }, [detections]);
+
+  const handleBboxDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingActive || !dragBbox) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    const viewer = viewerRef.current;
+    const bounds = viewer?.GetBounds();
+    if (!bounds) return;
+
+    const cw = canvas.clientWidth || canvas.width;
+    const ch = canvas.clientHeight || canvas.height;
+    if (!cw || !ch) return;
+
+    const currentX = e.clientX - box.left;
+    const currentY = e.clientY - box.top;
+    const dx = ((currentX - dragBbox.startX) / cw) * 1000;
+    const dy = ((currentY - dragBbox.startY) / ch) * 1000;
+
+    const newX = Math.max(0, Math.min(1000 - dragBbox.origW, Math.round(dragBbox.origX + dx)));
+    const newY = Math.max(0, Math.min(1000 - dragBbox.origH, Math.round(dragBbox.origY + dy)));
+
+    setDragBbox(prev => prev ? { ...prev, currentX: newX, currentY: newY } : null);
+  }, [dragBbox]);
+
+  const handleBboxDragEnd = useCallback(() => {
+    // Clear long press timer jika masih pending
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (!dragBbox || !onBboxUpdate || !isDraggingActive) {
+      setDragBbox(null);
+      setIsDraggingActive(false);
+      return;
+    }
+
+    const hasChanged = dragBbox.currentX !== dragBbox.origX || dragBbox.currentY !== dragBbox.origY;
+    if (hasChanged) {
+      // Konversi normalized → world coords
+      const viewer = viewerRef.current;
+      const bounds = viewer?.GetBounds();
+      if (bounds) {
+        const spanX = bounds.maxX - bounds.minX;
+        const spanY = bounds.maxY - bounds.minY;
+        const worldX = bounds.minX + (dragBbox.currentX / 1000) * spanX;
+        const worldY = bounds.maxY - ((dragBbox.currentY + dragBbox.origH) / 1000) * spanY;
+        const worldW = (dragBbox.origW / 1000) * spanX;
+        const worldH = (dragBbox.origH / 1000) * spanY;
+
+        onBboxUpdate(dragBbox.id, {
+          x: dragBbox.currentX,
+          y: dragBbox.currentY,
+          width: dragBbox.origW,
+          height: dragBbox.origH,
+          world: { x: worldX, y: worldY, width: worldW, height: worldH },
+        });
+      }
+    }
+    setDragBbox(null);
+    setIsDraggingActive(false);
+  }, [dragBbox, onBboxUpdate, isDraggingActive]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   const activeDetections = detections.filter(
     (d) => d.detection_status !== 'REJECTED' && d.review_status !== 'REJECTED',
   );
+  const selectedDet = selectedId ? detections.find((d) => d.id === selectedId) ?? null : null;
+  const confirmDelete = selectedId != null && confirmId === selectedId;
+  const cardW = 230;
+  const cardLeft = selectedRect
+    ? Math.max(8, Math.min(selectedRect.x + selectedRect.w + 10, viewSize.w - cardW - 8))
+    : 8;
+  const cardTop = selectedRect ? Math.max(8, Math.min(selectedRect.y, viewSize.h - 160)) : 8;
 
   return (
     <div
@@ -583,6 +931,246 @@ export default function DxfViewer({
           pointerEvents: 'none',
         }}
       />
+
+      {/* Manual draw surface — only mounted in draw mode so pan/zoom stay free */}
+      {drawingEnabled && !loading && !error && (
+        <div
+          onPointerDown={handleDrawStart}
+          onPointerMove={handleDrawMove}
+          onPointerUp={handleDrawEnd}
+          onPointerCancel={handleDrawCancel}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 4,
+            cursor: 'crosshair',
+            touchAction: 'none',
+          }}
+        >
+          {drawRect && (
+            <div
+              style={{
+                position: 'absolute',
+                left: drawRect.x,
+                top: drawRect.y,
+                width: drawRect.w,
+                height: drawRect.h,
+                border: '2px dashed #22c55e',
+                background: 'rgba(34,197,94,0.15)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Drag bbox interaction layer — hotspots over each bbox */}
+      {!drawingEnabled && editEnabled && !loading && !error && (() => {
+        const viewer = viewerRef.current;
+        const canvas = overlayRef.current;
+        if (!viewer || !canvas) return null;
+        const bounds = viewer.GetBounds();
+        if (!bounds) return null;
+        const cw = canvas.clientWidth || canvas.width;
+        const ch = canvas.clientHeight || canvas.height;
+        if (!cw || !ch) return null;
+
+        const visible = getVisible().filter(d => 
+          d.bbox_x != null && d.bbox_y != null && d.bbox_w != null && d.bbox_h != null
+        );
+
+        return (
+          <div
+            onPointerMove={isDraggingActive && dragBbox ? handleBboxDragMove : undefined}
+            onPointerUp={handleBboxDragEnd}
+            onPointerCancel={() => {
+              if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+              setDragBbox(null);
+              setIsDraggingActive(false);
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: dragBbox ? 5 : 3,
+              pointerEvents: dragBbox ? 'auto' : 'none',
+              cursor: dragBbox ? 'grabbing' : 'default',
+              touchAction: 'none',
+            }}
+          >
+            {visible.map(d => {
+              const spanX = bounds.maxX - bounds.minX;
+              const spanY = bounds.maxY - bounds.minY;
+              const activeRegion = activeSheet == null ? null : regions.find(r => r.pidPage === activeSheet);
+              const hasSheetBox = activeRegion && d.sheet_bbox_x != null && d.sheet_bbox_y != null && d.sheet_bbox_w != null && d.sheet_bbox_h != null && d.pid_page === activeSheet;
+              const hasWorldBox = d.world_bbox_x != null && d.world_bbox_y != null && d.world_bbox_w != null && d.world_bbox_h != null;
+              
+              const wx1 = hasSheetBox ? activeRegion!.extents.minX + (d.sheet_bbox_x! / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! : bounds.minX + ((d.bbox_x ?? 0) / 1000) * spanX;
+              const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y ?? 0) / 1000) * spanY;
+              const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
+              const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
+
+              const tl = worldToCanvas(wx1, wy1, cw, ch);
+              const br = worldToCanvas(wx2, wy2, cw, ch);
+              let rx = Math.min(tl.x, br.x);
+              let ry = Math.min(tl.y, br.y);
+              let rw = Math.abs(br.x - tl.x);
+              let rh = Math.abs(br.y - tl.y);
+
+              const MIN_RENDER_SIZE = 15;
+              if (rw > 0 && rw < MIN_RENDER_SIZE) {
+                const expand = (MIN_RENDER_SIZE - rw) / 2;
+                rx -= expand;
+                rw = MIN_RENDER_SIZE;
+              }
+              if (rh > 0 && rh < MIN_RENDER_SIZE) {
+                const expand = (MIN_RENDER_SIZE - rh) / 2;
+                ry -= expand;
+                rh = MIN_RENDER_SIZE;
+              }
+
+              if (rw < 1 || rh < 1) return null;
+
+              // Override position jika sedang di-drag
+              if (dragBbox && dragBbox.id === d.id) {
+                const dx = ((dragBbox.currentX - dragBbox.origX) / 1000) * cw;
+                const dy = ((dragBbox.currentY - dragBbox.origY) / 1000) * ch;
+                rx += dx;
+                ry += dy;
+              }
+
+              return (
+                <div
+                  key={d.id}
+                  onPointerDown={(e) => handleBboxPointerDown(e, d.id)}
+                  style={{
+                    position: 'absolute',
+                    left: rx,
+                    top: ry,
+                    width: rw,
+                    height: rh,
+                    pointerEvents: dragBbox ? 'none' : 'auto',
+                    cursor: isDraggingActive ? 'grabbing' : 'grab',
+                    // Debug: uncomment untuk lihat hitbox
+                    // background: 'rgba(255,0,0,0.2)',
+                  }}
+                />
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Selected detection card — delete requires explicit confirmation */}
+      {!loading && !error && !drawingEnabled && selectedDet && selectedRect && (
+        <div
+          style={{
+            position: 'absolute',
+            left: cardLeft,
+            top: cardTop,
+            width: cardW,
+            zIndex: 7,
+            background: 'rgba(24,40,50,0.97)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid #46606D',
+            borderRadius: 8,
+            padding: 10,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            fontSize: 11,
+            color: '#e5e7eb',
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedDet.asset_tag ?? selectedDet.asset_type}
+          </div>
+          <div style={{ color: '#9ca3af', marginBottom: 8 }}>
+            {selectedDet.asset_type} · {Math.round((selectedDet.confidence ?? 0) * 100)}%
+          </div>
+
+          {confirmDelete ? (
+            <>
+              <div style={{ color: '#fca5a5', marginBottom: 8, lineHeight: 1.4 }}>
+                Hapus aset ini permanen?
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = selectedDet.id;
+                    setConfirmId(null);
+                    onDeleteAsset?.(id);
+                  }}
+                  style={{
+                    flex: 1, padding: '5px 8px', border: 'none', borderRadius: 5,
+                    background: '#ef4444', color: '#fff', fontWeight: 700,
+                    fontSize: 11, cursor: 'pointer',
+                  }}
+                >
+                  Ya, hapus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmId(null)}
+                  style={{
+                    flex: 1, padding: '5px 8px', borderRadius: 5,
+                    background: 'transparent', color: '#e5e7eb',
+                    border: '1px solid #46606D', fontWeight: 600,
+                    fontSize: 11, cursor: 'pointer',
+                  }}
+                >
+                  Batal
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onRecrop?.(selectedDet.id)}
+                  disabled={!onRecrop}
+                  style={{
+                    flex: 1, padding: '5px 8px', borderRadius: 5,
+                    background: 'rgba(59,130,246,0.15)', color: '#60a5fa',
+                    border: '1px solid rgba(59,130,246,0.5)', fontWeight: 700,
+                    fontSize: 11, cursor: onRecrop ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Recrop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEdit?.(selectedDet)}
+                  disabled={!onEdit}
+                  style={{
+                    flex: 1, padding: '5px 8px', borderRadius: 5,
+                    background: 'rgba(34,197,94,0.15)', color: '#4ade80',
+                    border: '1px solid rgba(34,197,94,0.5)', fontWeight: 700,
+                    fontSize: 11, cursor: onEdit ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmId(selectedDet.id)}
+                disabled={!onDeleteAsset}
+                style={{
+                  width: '100%', padding: '5px 8px', borderRadius: 5,
+                  background: 'rgba(239,68,68,0.16)', color: '#fca5a5',
+                  border: '1px solid rgba(239,68,68,0.5)', fontWeight: 700,
+                  fontSize: 11, cursor: onDeleteAsset ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Hapus
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (

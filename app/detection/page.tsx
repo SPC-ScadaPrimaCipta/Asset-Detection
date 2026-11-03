@@ -23,9 +23,11 @@ import {
   ArrowClockwise,
   Trash,
   Stack,
+  Crop,
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
 import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
+import type { DxfDrawBbox } from '@/components/DxfViewer';
 import DedupModal from '@/components/detection/DedupModal';
 import { getAssetTypeColor } from '@/lib/asset-type-colors';
 
@@ -71,6 +73,14 @@ interface Detection {
   bbox_y: number | null;
   bbox_w: number | null;
   bbox_h: number | null;
+  world_bbox_x?: number | null;
+  world_bbox_y?: number | null;
+  world_bbox_w?: number | null;
+  world_bbox_h?: number | null;
+  sheet_bbox_x?: number | null;
+  sheet_bbox_y?: number | null;
+  sheet_bbox_w?: number | null;
+  sheet_bbox_h?: number | null;
 }
 
 interface JobProgress {
@@ -141,6 +151,9 @@ function DetectionContent() {
 
   // Multi-selection (Bulk Action)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // Active sheet for DXF viewer — auto-jump to page with detections
+  const [activeSheet, setActiveSheet] = useState<number | null>(null);
 
   // Edit Modal State
   const [editingItem, setEditingItem] = useState<Detection | null>(null);
@@ -152,6 +165,9 @@ function DetectionContent() {
     size: '',
   });
   const [editSaving, setEditSaving] = useState(false);
+
+  // Recrop state — track detection being recropped
+  const [recropId, setRecropId] = useState<string | null>(null);
 
   // Viewer Pan & Zoom State
   const [zoom, setZoom] = useState(1);
@@ -240,6 +256,23 @@ function DetectionContent() {
     setDrawingStart(null);
     setCurrentDrawRect(null);
   }, [page, documentId]);
+
+  // Auto-navigate to first sheet with detections (DXF viewer)
+  useEffect(() => {
+    console.log('[detection] auto-sheet effect:', { detectionsCount: detections?.length, activeSheet });
+    if (!detections || detections.length === 0) {
+      setActiveSheet(null);
+      return;
+    }
+    // Find pages with detections
+    const pagesWithDet = new Set(detections.map(d => d.pid_page).filter(p => p !== null && p !== undefined));
+    console.log('[detection] pagesWithDet:', Array.from(pagesWithDet));
+    if (pagesWithDet.size > 0) {
+      const firstPageWithDet = Math.min(...Array.from(pagesWithDet as Set<number>));
+      console.log('[detection] setting activeSheet to:', firstPageWithDet);
+      setActiveSheet(firstPageWithDet);
+    }
+  }, [detections]);
 
   // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
   useEffect(() => {
@@ -637,6 +670,18 @@ function DetectionContent() {
       service: item.service || '',
       size: item.size || '',
     });
+  };
+
+  const handleRecrop = (id: string) => {
+    setRecropId(id);
+    setSelectedId(id);
+    setIsDrawingMode(true);
+    // Scroll ke card di list
+    setTimeout(() => cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+  };
+
+  const handleEditFromViewer = (detection: Detection) => {
+    handleOpenEdit(detection);
   };
 
   const handleSaveEdit = async () => {
@@ -1402,7 +1447,7 @@ function DetectionContent() {
                   setDrawingStart(null);
                   setCurrentDrawRect(null);
                 }}
-                disabled={!documentId || isDxf}
+                disabled={!documentId}
                 style={{
                   padding: '3px 10px',
                   fontSize: 11,
@@ -1410,15 +1455,15 @@ function DetectionContent() {
                   border: `1px solid ${isDrawingMode ? '#22c55e' : 'var(--border)'}`,
                   background: isDrawingMode ? 'rgba(34, 197, 94, 0.18)' : 'var(--surface)',
                   color: isDrawingMode ? '#22c55e' : 'var(--foreground)',
-                  cursor: !documentId || isDxf ? 'not-allowed' : 'pointer',
+                  cursor: !documentId ? 'not-allowed' : 'pointer',
                   fontWeight: 600,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 5,
-                  opacity: !documentId || isDxf ? 0.5 : 1,
+                  opacity: !documentId ? 0.5 : 1,
                   boxShadow: isDrawingMode ? '0 0 10px rgba(34,197,94,0.3)' : 'none',
                 }}
-                title={isDxf ? 'Manual add is available for PDF drawings' : 'Draw bounding box on PDF preview to add asset'}
+                title={isDxf ? 'Klik dan drag area simbol pada viewer DXF untuk menambah aset' : 'Draw bounding box on PDF preview to add asset'}
               >
                 <Plus size={12} weight="bold" />
                 {isDrawingMode ? 'Drawing Mode Active' : 'Add Asset Manual'}
@@ -1442,13 +1487,18 @@ function DetectionContent() {
                 flexShrink: 0,
               }}
             >
-              <span>Mode Seleksi Aktif: Klik dan drag mouse pada gambar P&ID untuk menandai area simbol asset baru.</span>
+              <span>
+                {recropId 
+                  ? 'Mode Recrop: Klik dan drag untuk menandai ulang area simbol yang terdeteksi.'
+                  : 'Mode Seleksi Aktif: Klik dan drag mouse pada gambar P&ID untuk menandai area simbol asset baru.'}
+              </span>
               <button
                 type="button"
                 onClick={() => {
                   setIsDrawingMode(false);
                   setDrawingStart(null);
                   setCurrentDrawRect(null);
+                  setRecropId(null);
                 }}
                 style={{
                   background: 'none',
@@ -1604,6 +1654,7 @@ function DetectionContent() {
                   url={`/api/documents/${documentId}/raw`}
                   detections={detections}
                   selectedId={selectedId}
+                  showAll={showAllBboxes}
                   onSelectAsset={(id: string) => {
                     setSelectedId(id);
                     // find which list-page this detection is on and scroll to it
@@ -1614,7 +1665,95 @@ function DetectionContent() {
                     }
                     setTimeout(() => cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
                   }}
-                  activeSheet={null}
+                  activeSheet={activeSheet}
+                  onDeleteAsset={(id: string) => handleDelete(id)}
+                  onRecrop={handleRecrop}
+                  onEdit={handleEditFromViewer}
+                  onBboxUpdate={(id, bbox) => {
+                    // Auto-save immediate
+                    setDetections((prev) =>
+                      prev.map((d) =>
+                        d.id === id
+                          ? {
+                              ...d,
+                              bbox_x: bbox.x,
+                              bbox_y: bbox.y,
+                              bbox_w: bbox.width,
+                              bbox_h: bbox.height,
+                              world_bbox_x: bbox.world?.x ?? d.world_bbox_x,
+                              world_bbox_y: bbox.world?.y ?? d.world_bbox_y,
+                              world_bbox_w: bbox.world?.width ?? d.world_bbox_w,
+                              world_bbox_h: bbox.world?.height ?? d.world_bbox_h,
+                            }
+                          : d
+                      )
+                    );
+                    fetch(`/api/detections/${id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        bbox_x: bbox.x,
+                        bbox_y: bbox.y,
+                        bbox_w: bbox.width,
+                        bbox_h: bbox.height,
+                        world_bbox_x: bbox.world?.x,
+                        world_bbox_y: bbox.world?.y,
+                        world_bbox_w: bbox.world?.width,
+                        world_bbox_h: bbox.world?.height,
+                      }),
+                    }).catch((err) => console.error('[detection] bbox update failed:', err));
+                  }}
+                  drawingEnabled={isDrawingMode}
+                  onDrawComplete={(bbox: DxfDrawBbox) => {
+                    if (recropId) {
+                      // Recrop existing detection
+                      setDetections((prev) =>
+                        prev.map((d) =>
+                          d.id === recropId
+                            ? {
+                                ...d,
+                                bbox_x: bbox.x,
+                                bbox_y: bbox.y,
+                                bbox_w: bbox.width,
+                                bbox_h: bbox.height,
+                                world_bbox_x: bbox.world?.x,
+                                world_bbox_y: bbox.world?.y,
+                                world_bbox_w: bbox.world?.width,
+                                world_bbox_h: bbox.world?.height,
+                              }
+                            : d
+                        )
+                      );
+                      // Save ke API
+                      fetch(`/api/detections/${recropId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          bbox_x: bbox.x,
+                          bbox_y: bbox.y,
+                          bbox_w: bbox.width,
+                          bbox_h: bbox.height,
+                          world_bbox_x: bbox.world?.x,
+                          world_bbox_y: bbox.world?.y,
+                          world_bbox_w: bbox.world?.width,
+                          world_bbox_h: bbox.world?.height,
+                        }),
+                      }).catch((err) => console.error('[detection] recrop failed:', err));
+                      
+                      // Open edit modal untuk ubah nama
+                      const detection = detections.find(d => d.id === recropId);
+                      if (detection) {
+                        handleOpenEdit(detection);
+                      }
+                      setRecropId(null);
+                      setIsDrawingMode(false);
+                    } else {
+                      // Manual add baru
+                      setPendingBbox(bbox);
+                      setManualModalOpen(true);
+                      setIsDrawingMode(false);
+                    }
+                  }}
                   style={{ position: 'absolute', inset: 0, minHeight: 0 }}
                 />
             ) : imgSrc ? (
@@ -2268,6 +2407,27 @@ function DetectionContent() {
                       >
                         <PencilSimple size={11} />
                       </button>
+                      {isDxf && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRecrop(d.id);
+                          }}
+                          title="Recrop Bbox"
+                          style={{
+                            background: recropId === d.id ? 'rgba(59,130,246,0.2)' : 'var(--surface-muted)',
+                            color: recropId === d.id ? '#60a5fa' : 'var(--foreground-muted)',
+                            border: 'none',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '3px 6px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <Crop size={11} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
