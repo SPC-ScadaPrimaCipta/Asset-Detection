@@ -479,8 +479,20 @@ export default function ProjectsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '36px 24px', textAlign: 'center', color: 'var(--foreground-muted)' }}>
-                    Loading projects…
+                  <td colSpan={5} style={{ padding: 48, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          border: '3px solid var(--border)',
+                          borderTopColor: 'var(--primary)',
+                          animation: 'spin 1s linear infinite',
+                        }}
+                      />
+                      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--foreground)' }}>Loading projects...</span>
+                    </div>
                   </td>
                 </tr>
               ) : projects.length === 0 ? (

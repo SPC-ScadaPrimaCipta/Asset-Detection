@@ -616,8 +616,20 @@ export default function UserManagementPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--foreground-muted)' }}>
-                    Memuat data pengguna...
+                  <td colSpan={6} style={{ padding: 48, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          border: '3px solid var(--border)',
+                          borderTopColor: 'var(--primary)',
+                          animation: 'spin 1s linear infinite',
+                        }}
+                      />
+                      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--foreground)' }}>Memuat data pengguna...</span>
+                    </div>
                   </td>
                 </tr>
               ) : users.length === 0 ? (

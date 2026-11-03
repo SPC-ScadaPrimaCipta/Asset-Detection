@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import {
   Lightning,
   CheckCircle,
@@ -801,7 +802,13 @@ function DetectionContent() {
   const imgSrc = documentId && !isDxf ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
+    <>
+      <LoadingOverlay
+        isVisible={running}
+        message="Starting Detection Job..."
+        subMessage="Submitting to AI detection queue. This may take a moment."
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
@@ -2481,6 +2488,7 @@ function DetectionContent() {
         />
       )}
     </div>
+    </>
   );
 }
 

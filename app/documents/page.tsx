@@ -285,9 +285,18 @@ export default function DocumentsPage() {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)', gap: 8 }}>
-            <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
-            <span style={{ fontSize: '14px' }}>Loading documents…</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                border: '3px solid var(--border)',
+                borderTopColor: 'var(--primary)',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--foreground)' }}>Loading documents...</span>
           </div>
         ) : documents.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
