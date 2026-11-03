@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs";
+import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
 import { saveCompanyKnowledge } from "@/lib/knowledge-db";
@@ -185,6 +187,54 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
         ]
       );
     }
+
+    // ── Dataset Collection for Future YOLO Fine-Tuning ──
+    // Non-blocking save of confirmed asset crop + metadata for active learning
+    (async () => {
+      try {
+        if (!d.document_page_id || !d.asset_type) return;
+        const pageRow = await db.query("SELECT image_path FROM document_pages WHERE id = $1", [d.document_page_id]);
+        const imgPath = pageRow.rows[0]?.image_path;
+        if (!imgPath) return;
+
+        const sharp = (await import('sharp')).default;
+        const fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.resolve(process.cwd(), imgPath);
+        if (!fs.existsSync(fullImgPath)) return;
+
+        const datasetDir = path.resolve(process.cwd(), 'storage/dataset');
+        const imgDir = path.join(datasetDir, 'images');
+        const labelDir = path.join(datasetDir, 'labels');
+        if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+        if (!fs.existsSync(labelDir)) fs.mkdirSync(labelDir, { recursive: true });
+
+        // Save metadata
+        const labelData = {
+          id: d.id,
+          assetType: d.asset_type,
+          assetTag: d.asset_tag,
+          bbox: { x: d.bbox_x, y: d.bbox_y, w: d.bbox_w, h: d.bbox_h },
+          confirmedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(path.join(labelDir, `${d.id}.json`), JSON.stringify(labelData, null, 2), 'utf8');
+
+        // Extract and save crop image
+        if (d.bbox_w > 0 && d.bbox_h > 0) {
+          const meta = await sharp(fullImgPath).metadata();
+          if (meta.width && meta.height) {
+            const left = Math.max(0, Math.min(meta.width - 1, Math.round((d.bbox_x / 1000) * meta.width)));
+            const top = Math.max(0, Math.min(meta.height - 1, Math.round((d.bbox_y / 1000) * meta.height)));
+            const width = Math.max(1, Math.min(meta.width - left, Math.round((d.bbox_w / 1000) * meta.width)));
+            const height = Math.max(1, Math.min(meta.height - top, Math.round((d.bbox_h / 1000) * meta.height)));
+            await sharp(fullImgPath)
+              .extract({ left, top, width, height })
+              .png()
+              .toFile(path.join(imgDir, `${d.id}.png`));
+          }
+        }
+      } catch (dsErr) {
+        console.warn('[dataset] auto-save failed (non-fatal):', dsErr instanceof Error ? dsErr.message : dsErr);
+      }
+    })();
 
     return NextResponse.json({ status: "CONFIRMED" });
   } catch (e: unknown) {

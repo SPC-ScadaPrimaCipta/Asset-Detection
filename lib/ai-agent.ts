@@ -375,41 +375,51 @@ async function collectRawDetections(
 
   const collected: Detection[] = [];
   let failed = 0;
-  for (let i = 0; i < crops.length; i++) {
-    const crop = crops[i];
-    const prompt = buildRegionSymbolDetectorPrompt(
-      input.legendSymbols,
-      crop.region.label,
-      { referenceExamples, hasReferenceCrops },
+  // Controlled 2-way parallelism to speed up region sweeps without overwhelming rate limits
+  const concurrency = 2;
+  for (let i = 0; i < crops.length; i += concurrency) {
+    const batch = crops.slice(i, i + concurrency);
+    const results = await Promise.allSettled(
+      batch.map(async (crop) => {
+        const prompt = buildRegionSymbolDetectorPrompt(
+          input.legendSymbols,
+          crop.region.label,
+          { referenceExamples, hasReferenceCrops },
+        );
+        const raw = await callWithRetry(
+          () =>
+            runWithVisionProvider(cfg, input, prompt, {
+              pngBase64: crop.pngBase64,
+              regionLabel: crop.region.label,
+            }),
+          { label: `page ${input.page} region ${crop.region.label}` },
+        );
+        return { crop, detections: raw.detections };
+      }),
     );
-    try {
-      const raw = await callWithRetry(
-        () =>
-          runWithVisionProvider(cfg, input, prompt, {
-            pngBase64: crop.pngBase64,
-            regionLabel: crop.region.label,
-          }),
-        { label: `page ${input.page} region ${i + 1}/${crops.length}` },
-      );
-      for (const d of raw.detections) {
-        collected.push({
-          ...d,
-          // Region-local 0-1000 → page 0-1000, or the viewer overlay breaks.
-          bbox: mapRegionBboxToPage(d.bbox, crop.region),
-          evidence: [...(d.evidence ?? []), `Region ${crop.region.label}`],
-        });
+
+    for (let j = 0; j < results.length; j++) {
+      const res = results[j];
+      const crop = batch[j];
+      if (res.status === 'fulfilled') {
+        for (const d of res.value.detections) {
+          collected.push({
+            ...d,
+            bbox: mapRegionBboxToPage(d.bbox, crop.region),
+            evidence: [...(d.evidence ?? []), `Region ${crop.region.label}`],
+          });
+        }
+      } else {
+        failed++;
+        console.warn(
+          `[detection] page ${input.page} region ${crop.region.label} failed: ${
+            res.reason instanceof Error ? res.reason.message.slice(0, 160) : String(res.reason)
+          }`,
+        );
       }
-    } catch (e: unknown) {
-      // One bad region must not lose the page: the remaining regions plus the
-      // catch-up pass still cover it, and the count is logged.
-      failed++;
-      console.warn(
-        `[detection] page ${input.page} region ${crop.region.label} failed: ${
-          e instanceof Error ? e.message.slice(0, 160) : String(e)
-        }`,
-      );
     }
-    if (i < crops.length - 1 && regionsCfg.delayMs > 0) {
+
+    if (i + concurrency < crops.length && regionsCfg.delayMs > 0) {
       await sleep(regionsCfg.delayMs);
     }
   }
@@ -917,31 +927,43 @@ Detect ALL equipment symbols on THIS PAGE. Return ONLY valid JSON: { "page": ${i
   const fullPrompt = `${prompt}\n\n${contextText}`;
   const imageBase64 = opts?.pngBase64 ?? input.pageImageBase64;
 
-  const result = await provider.generateVisionCompletion({
-    model,
-    prompt: fullPrompt,
-    imageBase64,
-    mimeType: 'image/png',
-    temperature: 0.1,
-    maxTokens: 4096,
-    responseFormat: 'json',
-  });
+  try {
+    const result = await provider.generateVisionCompletion({
+      model,
+      prompt: fullPrompt,
+      imageBase64,
+      mimeType: 'image/png',
+      temperature: 0.1,
+      maxTokens: 4096,
+      responseFormat: 'json',
+    });
 
-  const raw = result.text;
-  const json = extractJson(raw) as Record<string, unknown>;
-  const sanitized = sanitizePageJson(
-    json.page !== undefined ? json : { ...json, page: input.page },
-    input.page,
-    raw,
-  );
-  const parsed = PageDetectionSchema.safeParse(sanitized);
-  if (!parsed.success) {
-    throw new Error(
-      `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`,
+    const raw = result.text;
+    const json = extractJson(raw) as Record<string, unknown>;
+    const sanitized = sanitizePageJson(
+      json.page !== undefined ? json : { ...json, page: input.page },
+      input.page,
+      raw,
     );
+    const parsed = PageDetectionSchema.safeParse(sanitized);
+    if (!parsed.success) {
+      throw new Error(
+        `Schema validation failed: ${JSON.stringify(parsed.error.flatten())} — raw: ${raw.slice(0, 800)}`,
+      );
+    }
+    parsed.data.page = input.page;
+    return parsed.data;
+  } catch (err: unknown) {
+    // If primary provider (OpenAI/Anthropic proxy) fails, seamlessly fallback to Gemini if key exists
+    if (cfg.geminiKey) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[detection] primary vision provider (${cfg.provider}) failed: ${errMsg.slice(0, 160)}. Auto-falling back to Gemini (${cfg.geminiModel})...`,
+      );
+      return runWithGemini(input, prompt, cfg.geminiModel, opts);
+    }
+    throw err;
   }
-  parsed.data.page = input.page;
-  return parsed.data;
 }
 
 async function runWithGemini(

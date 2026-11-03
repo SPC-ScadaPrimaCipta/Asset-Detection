@@ -109,11 +109,40 @@ export function extractBestTagFromText(text: string): string | null {
 export async function runTagOcr(buffer: Buffer): Promise<{ rawText: string, normalizedText: string, confidence: number, isTag: boolean }> {
   const worker = await getWorker();
   const { data: { text, confidence } } = await worker.recognize(buffer);
-  const trimmed = text.trim();
+  let trimmed = text.trim();
+  let bestTag = extractBestTagFromText(trimmed);
+  let bestConf = confidence / 100;
+
+  // Multi-angle rotation check: If horizontal OCR found no tag or low confidence,
+  // rotate 90° and 270° to capture vertical text on vertical piping/lines.
+  if (!bestTag || bestConf < 0.55) {
+    try {
+      const rot90 = await sharp(buffer).rotate(90).toBuffer();
+      const res90 = await worker.recognize(rot90);
+      const tag90 = extractBestTagFromText(res90.data.text.trim());
+      if (tag90) {
+        trimmed = res90.data.text.trim();
+        bestTag = tag90;
+        bestConf = Math.max(bestConf, res90.data.confidence / 100);
+      } else {
+        const rot270 = await sharp(buffer).rotate(270).toBuffer();
+        const res270 = await worker.recognize(rot270);
+        const tag270 = extractBestTagFromText(res270.data.text.trim());
+        if (tag270) {
+          trimmed = res270.data.text.trim();
+          bestTag = tag270;
+          bestConf = Math.max(bestConf, res270.data.confidence / 100);
+        }
+      }
+    } catch {
+      // Rotation fallback is non-fatal
+    }
+  }
+
   return {
     rawText: trimmed,
     normalizedText: trimmed,
-    confidence: confidence / 100,
-    isTag: !!extractBestTagFromText(trimmed)
+    confidence: bestConf,
+    isTag: !!bestTag
   };
 }
