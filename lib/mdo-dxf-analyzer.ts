@@ -397,10 +397,21 @@ function analyzeAssetConnections(
   const size = extractSizeFromLabels(nearLabels);
 
   // Extract OF (parent line/header) - labeled text OR keyword match
-  const of = labeledRelations.of || extractOfFromLabels(nearLabels);
+  // If no nearby labels, search entire label pool
+  let ofLabels = nearLabels;
+  if (ofLabels.length === 0) {
+    ofLabels = allLabels; // fallback to all labels
+    console.log(`[dxf-flow]   No near labels for ${node.tag}, using global pool (${allLabels.length} total)`);
+  }
+  const of = labeledRelations.of || extractOfFromLabels(ofLabels);
 
   // Extract AT (location) - labeled text OR keyword match OR description
-  const at = labeledRelations.at || extractAtFromContext(node, nearLabels);
+  // If no nearby labels, search entire label pool
+  let atLabels = nearLabels;
+  if (atLabels.length === 0) {
+    atLabels = allLabels; // fallback to all labels
+  }
+  const at = labeledRelations.at || extractAtFromContext(node, atLabels);
 
   // Determine flow direction from arrows OR segment context
   const direction = determineFlowDirection(
