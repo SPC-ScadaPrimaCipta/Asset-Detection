@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { UploadSimple, FilePdf, CheckCircle, WarningCircle } from '@phosphor-icons/react';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 
 interface UploadLegendModalProps {
   isOpen: boolean;
@@ -168,6 +169,11 @@ export default function UploadLegendModal({ isOpen, onClose }: UploadLegendModal
 
   return (
     <Modal isOpen={isOpen} onClose={handleModalClose} title="Upload Legend Standar" maxWidth="560px">
+      <LoadingOverlay
+        isVisible={uploading}
+        message="Processing Legend..."
+        subMessage={uploadProgress?.message || 'Extracting symbols and components'}
+      />
       <form onSubmit={handleSubmit} style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
           Unggah dokumen P&amp;ID Legend (PDF tepat 1 halaman). AI akan mengekstraksi simbol komponen, tipe aset, deskripsi, dan singkatan secara otomatis.

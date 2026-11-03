@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle, FileText, FileCode } from '@phosphor-icons/react';
 import { Card, CardHeader, Button, Badge } from '@/components/ui';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,7 +140,13 @@ export default function DocumentsPage() {
   const canUpload = !!selectedProjectId && !!selectedFile && !uploading;
 
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <>
+      <LoadingOverlay
+        isVisible={uploading}
+        message="Uploading document..."
+        subMessage="Processing file. This may take a moment."
+      />
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div>
         <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Documents</h1>
@@ -433,6 +440,7 @@ export default function DocumentsPage() {
           </Button>
         </div>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }
