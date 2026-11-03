@@ -408,7 +408,13 @@ function MdoContent() {
   const activeDoc = documents.find((d) => d.id === documentId);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 20px)', overflow: 'hidden' }}>
+    <>
+      <LoadingOverlay
+        isVisible={enriching}
+        message="Analyzing Process Flow..."
+        subMessage="AI is building Material Data Origin from detected assets"
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 20px)', overflow: 'hidden' }}>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
@@ -715,8 +721,23 @@ function MdoContent() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={12} style={{ padding: 40, textAlign: 'center', color: 'var(--foreground-muted)' }}>
-                    Loading Master Data Object records…
+                  <td colSpan={12} style={{ padding: 60, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                      <div
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: '50%',
+                          border: '4px solid var(--border)',
+                          borderTopColor: 'var(--primary)',
+                          animation: 'spin 1s linear infinite',
+                        }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--foreground)' }}>Loading MDO Records...</span>
+                        <span style={{ fontSize: 12, color: 'var(--foreground-muted)' }}>Fetching Material Data Origin from detection results</span>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : records.length === 0 ? (
@@ -1160,6 +1181,7 @@ function MdoContent() {
         </div>
       )}
     </div>
+    </>
   );
 }
 
