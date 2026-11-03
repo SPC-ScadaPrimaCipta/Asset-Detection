@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import {
   Sparkle,
   CheckCircle,
