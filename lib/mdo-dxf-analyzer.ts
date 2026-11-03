@@ -528,27 +528,49 @@ function traceConnections(
 
   // Trace from each connection point
   const allReachedAssets: string[] = [];
+  const upstreamCandidates: string[] = [];
+  const downstreamCandidates: string[] = [];
+
   for (const point of connectedPoints) {
     // Walk along connected segments
     const reachedAssets = walkPipeNetwork(point, graph, allNodes, node.tag, 10); // max 10 hops
+
+    // Heuristic: classify by proximity
+    // Assets reached from left/top of bbox = likely upstream
+    // Assets reached from right/bottom = likely downstream
+    for (const asset of reachedAssets) {
+      const assetNode = allNodes.find(n => n.tag === asset);
+      if (assetNode) {
+        const isLeft = assetNode.center.x < node.center.x;
+        const isTop = assetNode.center.y < node.center.y;
+        
+        if (isLeft || isTop) {
+          upstreamCandidates.push(asset);
+        } else {
+          downstreamCandidates.push(asset);
+        }
+      }
+    }
+
     allReachedAssets.push(...reachedAssets);
   }
 
-  // Remove duplicates while preserving order
+  // Remove duplicates
+  const uniqueUpstream = Array.from(new Set(upstreamCandidates));
+  const uniqueDownstream = Array.from(new Set(downstreamCandidates));
   const uniqueReached = Array.from(new Set(allReachedAssets));
 
-  // Assign: first reached = upstream (inlet), second = downstream (outlet)
-  // This is a heuristic; arrow direction or flow context would be more accurate
-  if (uniqueReached.length > 0) {
+  // Assign: prefer directional if detected, else use proximity order
+  if (uniqueUpstream.length > 0) {
+    upstream = uniqueUpstream[0];
+  } else if (uniqueReached.length > 0) {
     upstream = uniqueReached[0];
   }
-  if (uniqueReached.length > 1) {
+
+  if (uniqueDownstream.length > 0) {
+    downstream = uniqueDownstream[0];
+  } else if (uniqueReached.length > 1) {
     downstream = uniqueReached[1];
-  }
-  // If only 1 asset reached, try to classify via arrow direction or heuristic
-  if (uniqueReached.length === 1 && !downstream) {
-    // Could be inlet or outlet — leave for arrow/heuristic logic
-    downstream = uniqueReached[0]; // fallback: assume it's downstream
   }
 
   // Fallback: if no connected points or single connection, find nearby assets by proximity
@@ -737,21 +759,27 @@ function extractSizeFromLabels(labels: TextLabel[]): string | null {
  */
 function extractOfFromLabels(labels: TextLabel[], nodeDescription?: string | null): string | null {
   const ofPatterns = [/header|line|main|slug\s*catcher|metering|pipe|stream|circuit|loop|system/i];
+  const genericPatterns = [/one\s+line\s+diagram|facility|gathering|station|psid|intan/i]; // Skip generic document titles
 
   // Check node description first (highest priority)
-  if (nodeDescription && ofPatterns.some((re) => re.test(nodeDescription))) {
+  if (nodeDescription && ofPatterns.some((re) => re.test(nodeDescription)) && !genericPatterns.some(re => re.test(nodeDescription))) {
     return cleanMdoFieldValue(nodeDescription);
   }
 
   // Debug: log sample text if no match
   if (labels.length > 0) {
-    const samples = labels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
-    if (!labels.some(lbl => ofPatterns.some(re => re.test(lbl.content)))) {
-      console.log(`[dxf-flow]   No OF match in labels. Samples: ${samples}`);
+    const validLabels = labels.filter(lbl => !genericPatterns.some(re => re.test(lbl.content)));
+    if (validLabels.length > 0) {
+      const samples = validLabels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
+      if (!validLabels.some(lbl => ofPatterns.some(re => re.test(lbl.content)))) {
+        console.log(`[dxf-flow]   No OF match in labels. Samples: ${samples}`);
+      }
     }
   }
 
   for (const lbl of labels) {
+    // Skip generic document titles
+    if (genericPatterns.some(re => re.test(lbl.content))) continue;
     if (ofPatterns.some((re) => re.test(lbl.content))) {
       return cleanMdoFieldValue(lbl.content);
     }
@@ -765,24 +793,30 @@ function extractOfFromLabels(labels: TextLabel[], nodeDescription?: string | nul
  */
 function extractAtFromContext(node: AssetNode, labels: TextLabel[]): string | null {
   const atPatterns = [/wellhead|discharge|suction|nozzle|tower|top|bottom|inlet|outlet|connection|port|opening|takeoff/i];
+  const genericPatterns = [/one\s+line\s+diagram|facility|gathering|station|psid|intan/i]; // Skip generic document titles
 
   // Check node description first
   if (node.description) {
-    if (atPatterns.some((re) => re.test(node.description!))) {
+    if (atPatterns.some((re) => re.test(node.description!)) && !genericPatterns.some(re => re.test(node.description!))) {
       return cleanMdoFieldValue(node.description);
     }
   }
 
   // Debug: log sample text if no match
   if (labels.length > 0) {
-    const samples = labels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
-    if (!labels.some(lbl => atPatterns.some(re => re.test(lbl.content)))) {
-      console.log(`[dxf-flow]   No AT match in labels. Samples: ${samples}`);
+    const validLabels = labels.filter(lbl => !genericPatterns.some(re => re.test(lbl.content)));
+    if (validLabels.length > 0) {
+      const samples = validLabels.slice(0, 3).map(l => `"${l.content}"`).join(', ');
+      if (!validLabels.some(lbl => atPatterns.some(re => re.test(lbl.content)))) {
+        console.log(`[dxf-flow]   No AT match in labels. Samples: ${samples}`);
+      }
     }
   }
 
-  // Check nearby labels
+  // Check nearby labels (skip generic)
   for (const lbl of labels) {
+    // Skip generic document titles
+    if (genericPatterns.some(re => re.test(lbl.content))) continue;
     if (atPatterns.some((re) => re.test(lbl.content))) {
       return cleanMdoFieldValue(lbl.content);
     }
