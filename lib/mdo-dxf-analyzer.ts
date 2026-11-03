@@ -365,7 +365,7 @@ function analyzeAssetConnections(
 ): MdoFlowRelation {
   // Scale search radius with drawing size (10% of drawing dimension for large drawings)
   const drawingScale = Math.max(extents.width, extents.height);
-  const searchRadius = Math.max(500, drawingScale * 0.10); // min 500, or 10% of drawing (increased from 5%)
+  const searchRadius = Math.max(1500, drawingScale * 0.20); // min 1500, or 20% of drawing (increased from 10%)
   console.log(`[dxf-flow]   Search radius: ${searchRadius.toFixed(0)} units (drawing scale: ${drawingScale.toFixed(0)})`);
 
   // Find pipe segments near this asset
@@ -403,7 +403,7 @@ function analyzeAssetConnections(
     ofLabels = allLabels; // fallback to all labels
     console.log(`[dxf-flow]   No near labels for ${node.tag}, using global pool (${allLabels.length} total)`);
   }
-  const of = labeledRelations.of || extractOfFromLabels(ofLabels);
+  const of = labeledRelations.of || extractOfFromLabels(ofLabels, node.description);
 
   // Extract AT (location) - labeled text OR keyword match OR description
   // If no nearby labels, search entire label pool
@@ -735,8 +735,13 @@ function extractSizeFromLabels(labels: TextLabel[]): string | null {
 /**
  * Extract OF (parent line/header) from labels.
  */
-function extractOfFromLabels(labels: TextLabel[]): string | null {
+function extractOfFromLabels(labels: TextLabel[], nodeDescription?: string | null): string | null {
   const ofPatterns = [/header|line|main|slug\s*catcher|metering|pipe|stream|circuit|loop|system/i];
+
+  // Check node description first (highest priority)
+  if (nodeDescription && ofPatterns.some((re) => re.test(nodeDescription))) {
+    return cleanMdoFieldValue(nodeDescription);
+  }
 
   for (const lbl of labels) {
     if (ofPatterns.some((re) => re.test(lbl.content))) {
