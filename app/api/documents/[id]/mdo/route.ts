@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { getFile } from '@/lib/storage';
 import { parseDxf, splitDxfRegions } from '@/lib/dxf-parser';
-import { buildMdoRecord, buildPdfMdoRecord } from '@/lib/mdo-enrichment';
+import { buildMdoRecord, buildPdfMdoRecord, buildDxfMdoRecordWithFlowAnalysis } from '@/lib/mdo-enrichment';
 import { buildPidGraph, classifyPortDirection, detectArrowheads } from '@/lib/pid-graph';
 import { renderPageToPng } from '@/lib/pdf-render';
 import { getDocumentTextTokens } from '@/lib/text-tokens';
@@ -86,34 +86,83 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const parsed = parseDxf(buf);
       const regions = splitDxfRegions(parsed);
 
+      console.log('[mdo-dxf] Document:', doc.id);
+      console.log('[mdo-dxf] Parsed entities:', parsed.entities.length);
+      console.log('[mdo-dxf] Regions:', regions.length);
+      console.log('[mdo-dxf] Extents:', JSON.stringify(parsed.extents));
+      console.log('[mdo-dxf] Detections to process:', detections.length);
+
+      // Prepare all detections with bbox for flow analysis
+      const allDetections = detections.map((d) => {
+        const region = regions.find((r) => r.index + 1 === (d.pid_page ?? 1)) ?? regions[0];
+        if (!region) return null;
+        const x = d.bbox_x == null ? 500 : d.bbox_x;
+        const y = d.bbox_y == null ? 500 : d.bbox_y;
+        const w = d.bbox_w == null ? 100 : d.bbox_w;
+        const h = d.bbox_h == null ? 100 : d.bbox_h;
+        const centerX = region.extents.minX + (x / 1000) * region.extents.width;
+        const centerY = region.extents.maxY - (y / 1000) * region.extents.height;
+        const halfW = (w / 1000) * region.extents.width / 2;
+        const halfH = (h / 1000) * region.extents.height / 2;
+        return {
+          assetTag: d.asset_tag,
+          assetType: d.asset_type,
+          description: d.description,
+          bbox: {
+            x: centerX - halfW,
+            y: centerY - halfH,
+            width: halfW * 2,
+            height: halfH * 2,
+          },
+        };
+      }).filter((x): x is NonNullable<typeof x> => x !== null);
+
       for (const d of detections) {
         const region = regions.find((r) => r.index + 1 === (d.pid_page ?? 1)) ?? regions[0];
         if (!region) continue;
         const x = d.bbox_x == null ? 500 : d.bbox_x;
         const y = d.bbox_y == null ? 500 : d.bbox_y;
-        const center = {
-          x: region.extents.minX + (x / 1000) * region.extents.width,
-          y: region.extents.maxY - (y / 1000) * region.extents.height,
-        };
+        const w = d.bbox_w == null ? 100 : d.bbox_w;
+        const h = d.bbox_h == null ? 100 : d.bbox_h;
+        const centerX = region.extents.minX + (x / 1000) * region.extents.width;
+        const centerY = region.extents.maxY - (y / 1000) * region.extents.height;
+        const halfW = (w / 1000) * region.extents.width / 2;
+        const halfH = (h / 1000) * region.extents.height / 2;
+        
+        console.log(`[mdo-dxf] Processing: ${d.asset_tag} @ normalized (${x}, ${y}) → DXF (${centerX.toFixed(1)}, ${centerY.toFixed(1)})`);
+        
         const anchors = region.entities
           .filter((e): e is Extract<typeof e, { kind: 'TEXT' | 'MTEXT' }> => e.kind === 'TEXT' || e.kind === 'MTEXT')
           .map((e) => ({ text: e.text, x: e.position.x, y: e.position.y }));
-        const graph = buildPidGraph(region.entities, Math.max(region.extents.width, region.extents.height) * 0.002);
-        const arrows = detectArrowheads(region.entities, Math.max(region.extents.width, region.extents.height) * 0.08);
-        const arrowDirection = arrows.map((arrow) => classifyPortDirection(arrow, center, Math.max(region.extents.width, region.extents.height) * 0.08)).find((value) => value !== 'UNKNOWN') ?? 'UNKNOWN';
 
-        const mdo = buildMdoRecord({
-          assetTag: d.asset_tag,
-          assetType: d.asset_type,
-          description: d.description,
-          size: d.size,
-          rawPosition: center,
-          relationRadius: Math.max(region.extents.width, region.extents.height) * 0.08,
-          graph,
-          graphTolerance: Math.max(region.extents.width, region.extents.height) * 0.05,
-          arrowDirection,
+        console.log(`[mdo-dxf] Anchors near ${d.asset_tag}: ${anchors.length} text entities`);
+
+        const mdo = await buildDxfMdoRecordWithFlowAnalysis({
+          detection: {
+            assetTag: d.asset_tag,
+            assetType: d.asset_type,
+            description: d.description,
+            size: d.size,
+            bbox: {
+              x: centerX - halfW,
+              y: centerY - halfH,
+              width: halfW * 2,
+              height: halfH * 2,
+            },
+          },
+          dxfData: parsed,
+          allDetections,
+          anchors,
           locationPrefix,
-        }, anchors);
+        });
+
+        console.log(`[mdo-dxf] Result for ${d.asset_tag}:`, {
+          from: mdo.from,
+          to: mdo.to,
+          of: mdo.of,
+          at: mdo.at,
+          size: mdo.size,
+        });
 
         await db.query(UPSERT_MDO_SQL, [
           d.id, documentId, locationPrefix, mdo.tagNoProposed,
