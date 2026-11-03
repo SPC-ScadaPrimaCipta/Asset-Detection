@@ -220,3 +220,64 @@ button, input, select, textarea {
     border-radius: var(--radius-md);
   }
 }
+
+/* ── Mobile Responsive Utilities ── */
+@media (max-width: 768px) {
+  .dashboard-main-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  
+  .stat-cards-row {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .project-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .document-table-wrapper {
+    overflow-x: auto;
+  }
+
+  .legend-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hide secondary columns in tables on mobile */
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  /* Stack action buttons vertically */
+  .action-buttons-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  /* Reduce padding */
+  .page-container {
+    padding: 12px !important;
+  }
+
+  /* Reduce stat card padding */
+  .stat-card {
+    padding: 12px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --topbar-height: 56px;
+  }
+
+  .chart-container {
+    min-height: 200px !important;
+  }
+
+  .modal-dialog {
+    width: calc(100vw - 24px) !important;
+    margin: 12px !important;
+  }
+}

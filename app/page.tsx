@@ -119,6 +119,7 @@ export default function Dashboard() {
               gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
               gap: 20,
             }}
+            className="stat-cards-row"
           >
             <StatCard
               label="Detected Assets"

@@ -119,7 +119,7 @@ export default function LegendsPage() {
             </button>
           </div>
         ) : (
-          <div style={{ width: '100%', overflowX: 'auto' }}>
+          <div style={{ width: '100%', overflowX: 'auto' }} className="document-table-wrapper">
             <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
