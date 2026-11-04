@@ -2,6 +2,8 @@ import { Worker, Queue, type Job, type WorkerOptions } from "bullmq";
 import IORedis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import sharp from "sharp";
+import * as fs from "fs";
+import * as path from "path";
 import db from "@/lib/db";
 import { getFile } from "@/lib/storage";
 import { runDetectionAgent } from "@/lib/ai-agent";
@@ -1181,7 +1183,7 @@ export const worker = new Worker(
       // Non-fatal: crop load failures are silently skipped — detection proceeds without them.
       const MAX_REFERENCE_CROPS = tuning.detection.maxReferenceCrops ?? 10;
       const referenceCrops = new Map<string, string>();
-      if (!yoloActive && MAX_REFERENCE_CROPS > 0) {
+      if (MAX_REFERENCE_CROPS > 0) {
         // Only validated symbols with a crop are eligible as reference images.
         const withCrop = cappedSymbols
           .filter((s) => s.quality_status === 'validated' && typeof s.reference_image_url === 'string' && s.reference_image_url)
@@ -1196,6 +1198,31 @@ export const worker = new Worker(
             // file missing or storage error — skip this crop silently
           }
         }));
+
+        // Active Learning: Load confirmed asset crops from dataset if slots remain
+        const remainingSlots = MAX_REFERENCE_CROPS - referenceCrops.size;
+        if (remainingSlots > 0 && jrow.project_id) {
+          try {
+            const confirmedRows = await db.query<{ id: string; asset_type: string }>(
+              `SELECT d.id, d.asset_type 
+               FROM detections d 
+               JOIN documents doc ON d.document_id = doc.id
+               WHERE doc.project_id = $1 AND d.detection_status = 'CONFIRMED'
+               ORDER BY d.updated_at DESC
+               LIMIT $2`,
+              [jrow.project_id, remainingSlots]
+            );
+            for (const cRow of confirmedRows.rows) {
+              const datasetImgPath = path.resolve(process.cwd(), `storage/dataset/images/${cRow.id}.png`);
+              if (fs.existsSync(datasetImgPath)) {
+                const buf = fs.readFileSync(datasetImgPath);
+                referenceCrops.set(`confirmed-${cRow.id}`, buf.toString('base64'));
+              }
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
 
         if (referenceCrops.size > 0) {
           log(`loaded ${referenceCrops.size} validated reference crop(s) for legend symbols`);

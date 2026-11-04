@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   BookOpenCheck,
+  Cpu,
+  Terminal,
+  Download,
   FolderKanban,
   BookOpen,
   FileText,
@@ -33,6 +36,7 @@ const SECTIONS = [
   { id: 'interactive-review', title: '6. Workspace Review Kanvas P&ID', icon: CheckCircle2 },
   { id: 'mdo-flow', title: '7. MDO Flow & Export MDO', icon: GitFork },
   { id: 'troubleshooting', title: '8. Tips & Troubleshooting', icon: HelpCircle },
+  { id: 'it-mlops', title: '9. Khusus Tim IT: Training YOLO (Colab)', icon: Cpu, isItSpecial: true },
 ];
 
 const cardStyle: React.CSSProperties = {
@@ -70,11 +74,22 @@ const calloutStyle = (border: string, bg: string): React.CSSProperties => ({
 export default function UserGuidePage() {
   const [activeSection, setActiveSection] = useState('overview');
   const [copiedCode, setCopiedCode] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then((d) => setCurrentUser(d.user))
+      .catch(() => setCurrentUser(null));
+  }, []);
+
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN';
+  const visibleSections = SECTIONS.filter((sec) => !(sec as any).isItSpecial || isAdmin);
 
   useEffect(() => {
     const handleScroll = () => {
       const scrollPosition = window.scrollY + 140;
-      for (const section of SECTIONS) {
+      for (const section of visibleSections) {
         const el = document.getElementById(section.id);
         if (el) {
           const top = el.offsetTop;
@@ -108,8 +123,8 @@ export default function UserGuidePage() {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '80px' }}>
       {/* Header Banner */}
-      <div style={{ marginBottom: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+      <div style={{ marginBottom: '32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
               width: '42px',
@@ -133,6 +148,37 @@ export default function UserGuidePage() {
             </p>
           </div>
         </div>
+        {isAdmin && (
+        <button
+          onClick={() => scrollTo('it-mlops')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '12px',
+            border: '1.5px solid var(--primary, #3451D1)',
+            background: 'var(--primary-soft, rgba(74, 102, 222, 0.1))',
+            color: 'var(--primary, #3451D1)',
+            fontSize: '13px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            boxShadow: '0 2px 8px rgba(52, 81, 209, 0.08)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--primary, #3451D1)';
+            e.currentTarget.style.color = '#FFFFFF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--primary-soft, rgba(74, 102, 222, 0.1))';
+            e.currentTarget.style.color = 'var(--primary, #3451D1)';
+          }}
+        >
+          <Cpu size={16} />
+          <span>Khusus Tim IT: Training YOLO & Colab →</span>
+        </button>
+      )}
       </div>
 
       {/* Main Two-Column Grid */}
@@ -602,6 +648,218 @@ export default function UserGuidePage() {
               </div>
             </div>
           </section>
+
+          {/* ============================================================== */}
+          {/* BAB 9: KHUSUS TIM IT & MLOPS: RETRAINING YOLO VIA COLAB       */}
+          {/* ============================================================== */}
+          {isAdmin && (
+          <section
+            id="it-mlops"
+            style={{
+              ...cardStyle,
+              border: '2px solid var(--primary, #3451D1)',
+              background: 'linear-gradient(180deg, var(--surface, #FFFFFF) 0%, var(--surface-2, #F8FAFC) 100%)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Top Badge */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    color: '#FFFFFF',
+                    background: 'var(--primary, #3451D1)',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  <Cpu size={12} /> KHUSUS TIM IT & MLOPS
+                </span>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--foreground)', margin: 0 }}>
+                  9. Retraining Model YOLO via Google Colab (GPU T4 Gratis)
+                </h2>
+              </div>
+
+              {/* Action Buttons Toolbar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <a
+                  href="/api/colab-notebook"
+                  download="train_yolo_pid_colab.ipynb"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    background: 'var(--primary, #3451D1)',
+                    color: '#FFFFFF',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 4px rgba(52, 81, 209, 0.2)',
+                  }}
+                >
+                  <Download size={14} />
+                  <span>Download Notebook (.ipynb)</span>
+                </a>
+                <a
+                  href="https://colab.research.google.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    color: 'var(--foreground)',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <ExternalLink size={14} />
+                  <span>Buka Google Colab</span>
+                </a>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--foreground)', marginBottom: '16px' }}>
+              Dokumentasi ini adalah SOP bagi <strong>Tim IT / DevOps / Data Engineer</strong> untuk memperbarui model deteksi visual
+              lokal (<code>yolo-pid-v8n-203.onnx</code>) menggunakan fasilitas <strong>Google Colab (GPU NVIDIA T4 Gratis)</strong>.
+              Server aplikasi Anda tidak memerlukan GPU sama sekali karena proses inferensi sehari-hari menggunakan ONNX Runtime CPU.
+            </p>
+
+            {/* Quick Command Snippets */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              {/* Command 1: Export */}
+              <div
+                style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: '#0F172A',
+                  color: '#E2E8F0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8' }}>1. Ekspor Dataset di Server</span>
+                  <button
+                    onClick={() => copySampleCode('npm run dataset:export-yolo')}
+                    style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#E2E8F0',
+                      borderRadius: '4px',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    {copiedCode ? <Check size={12} color="#4ADE80" /> : <Copy size={12} />}
+                    <span>{copiedCode ? 'Disalin' : 'Salin'}</span>
+                  </button>
+                </div>
+                <code style={{ fontSize: '12px', color: '#38BDF8', fontFamily: 'monospace' }}>npm run dataset:export-yolo</code>
+                <span style={{ fontSize: '10px', color: '#64748B' }}>Menghasilkan file siap latih: yolo_dataset.zip</span>
+              </div>
+
+              {/* Command 2: Restart Worker */}
+              <div
+                style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: '#0F172A',
+                  color: '#E2E8F0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8' }}>2. Muat Ulang Model di Server</span>
+                  <button
+                    onClick={() => copySampleCode('npm run worker')}
+                    style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#E2E8F0',
+                      borderRadius: '4px',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Copy size={12} />
+                    <span>Salin</span>
+                  </button>
+                </div>
+                <code style={{ fontSize: '12px', color: '#38BDF8', fontFamily: 'monospace' }}>npm run worker</code>
+                <span style={{ fontSize: '10px', color: '#64748B' }}>Setelah menimpa file di model/yolo-pid-v8n-203.onnx</span>
+              </div>
+            </div>
+
+            {/* SOP Steps */}
+            <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--foreground)', marginTop: '20px', marginBottom: '12px' }}>
+              Alur Kerja 5 Tahap untuk Tim IT:
+            </h3>
+
+            <ol style={{ fontSize: '13px', lineHeight: 1.8, color: 'var(--foreground)', paddingLeft: '20px', margin: 0 }}>
+              <li style={{ marginBottom: '8px' }}>
+                <strong>Kapan Harus Menjalankan:</strong> Pantau indikator counter di <em>Dashboard</em> (<code>YOLO Dataset: X / 500</code>).
+                Retraining hanya disarankan jika dataset konfirmasi telah mencapai <strong>≥ 500 sampel baru</strong> atau secara berkala per kuartal (3–6 bulan sekali).
+              </li>
+              <li style={{ marginBottom: '8px' }}>
+                <strong>Ekspor Dataset:</strong> Jalankan perintah <code>npm run dataset:export-yolo</code> di terminal server. File <code>yolo_dataset.zip</code> akan terbuat otomatis.
+              </li>
+              <li style={{ marginBottom: '8px' }}>
+                <strong>Buka Google Colab:</strong> Kunjungi <a href="https://colab.research.google.com" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '600' }}>Google Colab</a>,
+                upload template notebook <code>train_yolo_pid_colab.ipynb</code>, lalu ubah runtime ke <strong>T4 GPU</strong> (gratis).
+              </li>
+              <li style={{ marginBottom: '8px' }}>
+                <strong>Jalankan Training (~15–20 Menit):</strong> Upload file <code>yolo_dataset.zip</code> ke panel Files di Colab, lalu tekan <em>Run All</em>.
+                Script otomatis melakukan fine-tuning dan mengekspor model terbaik ke <code>yolo-pid-v8n-203.onnx</code>.
+              </li>
+              <li style={{ marginBottom: '8px' }}>
+                <strong>Deploy Model Baru (Hot-Swap):</strong> Download file <code>yolo-pid-v8n-203.onnx</code> (~15 MB) dari Colab,
+                backup file model lama di server, lalu timpa file baru ke folder <code>model/</code>. Restart worker dengan <code>npm run worker</code>.
+              </li>
+            </ol>
+
+            {/* Rollback Note */}
+            <div style={calloutStyle('var(--warning, #E08A26)', 'rgba(224, 138, 38, 0.08)')}>
+              <strong>🛡️ Prosedur Rollback 30 Detik:</strong> Jika model baru menunjukkan anomali, cukup kembalikan file cadangan:
+              <br />
+              <code style={{ fontSize: '12px', background: 'rgba(0,0,0,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
+                cp model/yolo-pid-v8n-203.bak.onnx model/yolo-pid-v8n-203.onnx && npm run worker
+              </code>
+            </div>
+          </section>
+          )}
         </div>
 
         {/* Right Column: Sticky Table of Contents */}
@@ -625,9 +883,10 @@ export default function UserGuidePage() {
           </div>
 
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {SECTIONS.map((sec) => {
+            {visibleSections.map((sec) => {
               const Icon = sec.icon;
               const isActive = activeSection === sec.id;
+              const isIt = (sec as any).isItSpecial;
               return (
                 <button
                   key={sec.id}
@@ -638,10 +897,10 @@ export default function UserGuidePage() {
                     gap: '8px',
                     padding: '8px 10px',
                     borderRadius: '8px',
-                    border: 'none',
-                    background: isActive ? 'var(--primary-soft, rgba(74, 102, 222, 0.1))' : 'transparent',
-                    color: isActive ? 'var(--primary, #3451D1)' : 'var(--foreground-muted)',
-                    fontWeight: isActive ? '600' : '400',
+                    border: isIt ? '1px dashed var(--primary, #3451D1)' : 'none',
+                    background: isActive ? 'var(--primary-soft, rgba(74, 102, 222, 0.1))' : isIt ? 'rgba(52, 81, 209, 0.04)' : 'transparent',
+                    color: isActive ? 'var(--primary, #3451D1)' : isIt ? 'var(--primary, #3451D1)' : 'var(--foreground-muted)',
+                    fontWeight: isActive || isIt ? '600' : '400',
                     fontSize: '12px',
                     textAlign: 'left',
                     cursor: 'pointer',

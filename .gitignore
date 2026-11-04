@@ -71,3 +71,7 @@ labels.zip
 /scratch/
 
 /.playwright-mcp
+
+# ML datasets & exports
+/dataset_yolo/
+yolo_dataset.zip
