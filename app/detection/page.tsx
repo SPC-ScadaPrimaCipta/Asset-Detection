@@ -855,7 +855,7 @@ function DetectionContent() {
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }} className="detection-controls">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
           {/* Project Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1353,9 +1353,9 @@ function DetectionContent() {
       )}
 
       {/* ── Main Workspace Area (Split Viewer + Cards) ─────────────────── */}
-      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }} className="detection-viewer-row">
         {/* Left Side: Interactive Canvas / DXF Viewer */}
-        <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="detection-canvas-container">
           {/* Viewer Toolbar */}
           <div
             style={{
@@ -2018,6 +2018,7 @@ function DetectionContent() {
 
         {/* Right Side: Compact Cards List (Legend Preview Layout) */}
         <aside
+          className="detection-sidebar"
           style={{
             ...cardStyle,
             width: 380,
