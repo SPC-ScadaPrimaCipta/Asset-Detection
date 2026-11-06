@@ -51,8 +51,26 @@ export function qualityGate(candidate: {
   const synthetic = candidate.assetTag && /^(?:UNK|PV|NV|VLV)-\d+$/i.test(candidate.assetTag)
     && /auto[- ]tag|generated unique/i.test(evidence);
   if (synthetic) return 'DROP';
-  if (candidate.assetTag?.trim()) return 'KEEP';
-  if (/destination label|from continuation|to continuation/i.test(evidence)) return 'REVIEW';
+
+  // Gate 1: tagged text-only detections (no symbol evidence) → DROP
+  // Evidence keywords indicating real equipment symbol presence
+  const hasSymbolEvidence = /symbol|legend|equipment|insert|block|circle|shape|visual|geometry|valve|pump|vessel|tank|instrument|transmitter|actuator/i.test(evidence);
+  const isContinuation = /destination label|from continuation|to continuation/i.test(evidence);
+  
+  if (candidate.assetTag?.trim()) {
+    // Continuation labels (FROM/TO routing) = text-only references, not equipment
+    if (isContinuation) return 'REVIEW';
+    // Tagged but NO equipment symbol evidence → likely isolated text → DROP
+    if (!hasSymbolEvidence && !isContinuation) {
+      // Exception: if assetType is strong AND confidence high, may be valid small symbol
+      const strongType = candidate.assetType && !/^(UNKNOWN|OTHER|EQUIPMENT)$/i.test(candidate.assetType);
+      if (strongType && candidate.confidence >= 0.8) return 'REVIEW';
+      return 'DROP';
+    }
+    return 'KEEP';
+  }
+
+  if (isContinuation) return 'REVIEW';
   if (!candidate.assetType || /^(UNKNOWN|OTHER|EQUIPMENT)$/i.test(candidate.assetType)) return 'DROP';
   if (/legend\s+(?:match|symbol)|matches selected legend|symbol matches|rule:\s*legend/i.test(evidence)) return 'REVIEW';
   if (candidate.source === 'VISION' && candidate.confidence >= 0.75) return 'REVIEW';

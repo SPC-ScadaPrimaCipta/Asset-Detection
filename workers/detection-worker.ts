@@ -414,16 +414,112 @@ export const worker = new Worker(
           [jobId]
         );
 
+        // ═══════════════════════════════════════════════════════════════════
+        // ULTIMATE HYBRID DETECTION PIPELINE (v4.0)
+        // ═══════════════════════════════════════════════════════════════════
+        // Multi-source detection with tiling, zoom, coordinate mapping
+        
+        // FEATURE FLAG: Disable until Python endpoints ready
+        const ENABLE_MULTI_SOURCE = process.env.ENABLE_MULTI_SOURCE === 'true';
+        
+        let multiSourceDetections: Array<any> = [];
+        let dxfParsed: import('@/lib/dxf-parser').DxfParseResult | null = null;
+        let dxfRegions: Array<any> = [];
+        let yoloDetections: Array<any> = []; // Declare at outer scope for merge logic
+        
+        if (ENABLE_MULTI_SOURCE) {
+          try {
+            const { parseDxf, splitDxfRegions } = await import('@/lib/dxf-parser');
+            const { renderDxfRegionToPng } = await import('@/lib/dxf-svg-renderer');
+            
+            // Parse DXF untuk coordinate mapping
+            dxfParsed = parseDxf(buf);
+            dxfRegions = splitDxfRegions(dxfParsed);
+            
+            log("multi-source detection start", { 
+              regions: dxfRegions.length,
+              entities: dxfParsed.entities.length 
+            });
+            
+            // ── 1. Legend-Based Detection (pgvector similarity) ──────────────
+            log("stage 1: legend matching");
+            const { detectViaLegendEmbeddings } = await import('@/lib/detection/multi-source/legend-detector');
+            const legendDetections = await detectViaLegendEmbeddings(
+              dxfParsed,
+              dxfRegions,
+              doc.project_id,
+              dxfLegendSymbols
+            );
+            multiSourceDetections.push(...legendDetections.map(d => ({ ...d, source: 'LEGEND' })));
+            
+            // ── 2. OpenCV Template Matching (approved crops from storage) ───
+            log("stage 2: opencv template matching");
+            const { detectViaOpenCVTemplates } = await import('@/lib/detection/multi-source/opencv-detector');
+            const cvDetections = await detectViaOpenCVTemplates(
+              dxfParsed,
+              dxfRegions,
+              doc.project_id,
+              renderDxfRegionToPng
+            );
+            multiSourceDetections.push(...cvDetections.map(d => ({ ...d, source: 'OPENCV' })));
+            
+            // ── 3. YOLO Detection dengan Tiling + Multi-Scale ───────────────
+            log("stage 3: yolo tiled detection");
+            const { detectViaYOLOTiled } = await import('@/lib/detection/multi-source/yolo-tiled-detector');
+            yoloDetections = await detectViaYOLOTiled(
+              dxfParsed,
+              dxfRegions,
+              renderDxfRegionToPng,
+              {
+                tileSize: 1024,
+                overlap: 0.2,
+                scales: [1.0, 1.5, 2.0], // zoom levels untuk komponen kecil
+              }
+            );
+            multiSourceDetections.push(...yoloDetections.map(d => ({ ...d, source: 'YOLO' })));
+            
+            // ── 4. OCR Text Detection ────────────────────────────────────────
+            log("stage 4: ocr text extraction");
+            const { extractOCRTexts } = await import('@/lib/detection/multi-source/ocr-extractor');
+            const ocrTexts = await extractOCRTexts(
+              dxfParsed,
+              dxfRegions,
+              renderDxfRegionToPng
+            );
+            
+            log("multi-source detection done", { 
+              legend: legendDetections.length,
+              opencv: cvDetections.length,
+              yolo: yoloDetections.length,
+              ocr: ocrTexts.length,
+              total: multiSourceDetections.length
+            });
+            
+            await db.query(
+              "UPDATE detection_jobs SET progress_pct=30 WHERE id=$1",
+              [jobId]
+            );
+          } catch (multiErr: unknown) {
+            const msg = multiErr instanceof Error ? multiErr.message : String(multiErr);
+            log("multi-source detection failed (non-fatal)", { error: msg.slice(0, 200) });
+            // Continue with text-based fallback
+          }
+        } else {
+          log("multi-source detection disabled (ENABLE_MULTI_SOURCE=false)");
+        }
+
         let dxfResult: Awaited<ReturnType<typeof runDxfDetection>>;
         // Keep parsed result for rawEntities (Gemini fallback)
         let parsedDxf: import('@/lib/dxf-parser').DxfParseResult | null = null;
         try {
           const { parseDxf } = await import('@/lib/dxf-parser');
           parsedDxf = parseDxf(buf);
+          const tuning = await getTuning();
           dxfResult = runDxfDetection(buf, dxfLegendSymbols, {
             layerProfiles,
             adaptiveSpatial: true,
             parsed: parsedDxf, // Blok 9: jangan parse 6MB dua kali
+            bboxExpansionMultiplier: tuning.detection.bboxExpansionMultiplier,
           });
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -443,6 +539,117 @@ export const worker = new Worker(
           detections: dxfResult.detections.length,
           aiCandidates,
         });
+
+        // ── Merge YOLO detections with text-based detections ────────────────
+        // YOLO bbox → match to legend via class name or embedding similarity
+        // Add YOLO detections that don't overlap with existing text detections
+        if (yoloDetections.length > 0) {
+          const { YOLO_CLASS_NAMES_V203 } = await import('@/lib/detection/yolo/yolo-class-map-v203');
+          const { computeIoU, mapYoloClassToAssetType } = await import('@/lib/detection/yolo-merge-utils');
+          
+          // Filter legend symbols to valid non-null entries
+          const validLegendSymbols = dxfLegendSymbols
+            .filter(s => s.symbol_name && s.asset_type)
+            .map(s => ({
+              symbol_name: s.symbol_name!,
+              asset_type: s.asset_type!,
+              aliases: s.aliases || [],
+            }));
+          
+          for (const yDet of yoloDetections) {
+            // Map YOLO class ID → legend symbol via name matching + embedding similarity
+            const className = YOLO_CLASS_NAMES_V203[yDet.classId] ?? 'unknown';
+            
+            // Check overlap with existing text-based detections (NMS)
+            const overlaps = dxfResult.detections.some(existing => {
+              if (existing.pidPage !== yDet.pidPage) return false;
+              const iou = computeIoU(existing.bbox, yDet.bbox);
+              return iou > 0.3; // IoU threshold for duplicate suppression
+            });
+            
+            if (!overlaps) {
+              // Map class name to asset type (async with embedding fallback)
+              const mappedAssetType = await mapYoloClassToAssetType(
+                className,
+                validLegendSymbols,
+                doc.project_id
+              );
+              
+              // ── OCR Tag Association ──────────────────────────────────────
+              // Find nearest TEXT entity to YOLO bbox (multi-line aware)
+              let associatedTag: string | null = null;
+              let tagConfidence = 0;
+              const tagEvidence: string[] = [];
+              
+              if (yoloParsed && yoloRegions.length > 0) {
+                const { findNearestTag } = await import('@/lib/detection/yolo-tag-association');
+                
+                const region = yoloRegions.find((r: any) => r.pidPage === yDet.pidPage);
+                const regionExtents = region?.extents ?? yoloParsed.extents;
+                
+                if (regionExtents) {
+                  // Build tag patterns from legend symbols
+                  const tagPatterns = validLegendSymbols
+                    .flatMap(s => {
+                      const pattern = s.aliases?.find((a: string) => a.includes('#'));
+                      if (!pattern) return [];
+                      // Convert CV-### to regex: ^CV-\d{3,}$
+                      const regex = pattern.replace(/#+/g, (m) => `\\d{${m.length},}`);
+                      try {
+                        return [new RegExp(`^${regex}$`, 'i')];
+                      } catch {
+                        return [];
+                      }
+                    });
+                  
+                  const tagResult = findNearestTag(
+                    yDet.bbox,
+                    yoloParsed,
+                    regionExtents,
+                    tagPatterns.length > 0 ? tagPatterns : undefined,
+                    2.0 // search radius = 2× symbol width
+                  );
+                  
+                  associatedTag = tagResult.tag;
+                  tagConfidence = tagResult.confidence;
+                  tagEvidence.push(...tagResult.evidence);
+                } else {
+                  tagEvidence.push('No region extents available for tag association');
+                }
+              } else {
+                tagEvidence.push('DXF parsing unavailable for tag association');
+              }
+              
+              // Add as new detection
+              dxfResult.detections.push({
+                assetTag: associatedTag,
+                assetType: mappedAssetType,
+                description: null,
+                confidence: yDet.confidence * (associatedTag ? (0.7 + tagConfidence * 0.3) : 1.0), // boost if tag found
+                bbox: yDet.bbox,
+                evidence: [
+                  `YOLO v203 detection: ${className}`,
+                  `Class confidence: ${yDet.confidence.toFixed(3)}`,
+                  'Source: Vision-based symbol detector',
+                  ...tagEvidence,
+                ],
+                blockName: null,
+                layer: 'YOLO',
+                source: 'VISION',
+                rawPosition: { x: yDet.bbox.x, y: yDet.bbox.y },
+                needsAiClassification: false,
+                regionIndex: yDet.regionIndex,
+                pidPage: yDet.pidPage,
+                size: null,
+              });
+            }
+          }
+          
+          log("yolo merge done", {
+            yoloTotal: yoloDetections.length,
+            afterMerge: dxfResult.detections.length,
+          });
+        }
 
         await db.query(
           "UPDATE detection_jobs SET progress_pct=45 WHERE id=$1",
@@ -639,6 +846,7 @@ export const worker = new Worker(
                 out.vr.index + 1,
                 out.vr.index,
                 isTagValid,
+                0.75, // minUntaggedConfidence — drop untagged vision-only below 75%
               );
               vMerged += st.mergedIntoVector;
               vNew += st.visionOnlyNew;
