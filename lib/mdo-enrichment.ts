@@ -2,7 +2,8 @@ import { extractPidRelations, type PidTextAnchor } from '@/lib/mdo-pid-rules';
 import { graphRelationEvidence, type PidGraph } from '@/lib/pid-graph';
 import { suggestAbbreviation } from '@/lib/tag-generator';
 export const suggestTagPrefix = suggestAbbreviation;
-import { assembleMdoDescription } from '@/lib/mdo-description';
+import { assembleMdoDescription, isInstrumentAsset, INSTRUMENT_SHORT_CODES } from '@/lib/mdo-description';
+export { isInstrumentAsset, INSTRUMENT_SHORT_CODES };
 import type { MdoFlowRelation } from '@/lib/mdo-ai-analyzer';
 import type { DxfParseResult } from '@/lib/dxf-parser';
 
@@ -176,13 +177,17 @@ export function buildMdoRecord(
   const size = detection.size?.trim() || null;
   const locationPrefix = detection.locationPrefix ?? null;
 
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : relations.from;
+  const finalTo = isInstrument ? null : relations.to;
+
   const description = assembleMdoDescription({
     locationPrefix,
     equipmentTypeShort: shortType,
     size,
     ofValue: relations.of,
-    fromValue: relations.from,
-    toValue: relations.to,
+    fromValue: finalFrom,
+    toValue: finalTo,
     atValue: relations.at,
   });
 
@@ -191,8 +196,8 @@ export function buildMdoRecord(
     equipmentTypeShort: shortType,
     equipmentName,
     size,
-    from: relations.from,
-    to: relations.to,
+    from: finalFrom,
+    to: finalTo,
     of: relations.of,
     description,
     locationPrefix,
@@ -236,13 +241,17 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     detection.description,
   );
 
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : from;
+  const finalTo = isInstrument ? null : to;
+
   const description = assembleMdoDescription({
     locationPrefix,
     equipmentTypeShort: shortType,
     size,
     ofValue: of,
-    fromValue: from,
-    toValue: to,
+    fromValue: finalFrom,
+    toValue: finalTo,
     atValue: at,
   });
 
@@ -251,8 +260,8 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     equipmentTypeShort: shortType,
     equipmentName,
     size,
-    from,
-    to,
+    from: finalFrom,
+    to: finalTo,
     of,
     description,
     locationPrefix,
@@ -326,13 +335,17 @@ export async function buildDxfMdoRecordWithFlowAnalysis(input: DxfMdoDetectionIn
     detection.description,
   );
 
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : from;
+  const finalTo = isInstrument ? null : to;
+
   const description = assembleMdoDescription({
     locationPrefix,
     equipmentTypeShort: shortType,
     size,
     ofValue: of,
-    fromValue: from,
-    toValue: to,
+    fromValue: finalFrom,
+    toValue: finalTo,
     atValue: at,
   });
 
@@ -341,8 +354,8 @@ export async function buildDxfMdoRecordWithFlowAnalysis(input: DxfMdoDetectionIn
     equipmentTypeShort: shortType,
     equipmentName,
     size,
-    from,
-    to,
+    from: finalFrom,
+    to: finalTo,
     of,
     description,
     locationPrefix,

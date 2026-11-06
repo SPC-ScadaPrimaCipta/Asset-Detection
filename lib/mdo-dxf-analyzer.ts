@@ -22,7 +22,7 @@ import type {
   DxfCircleEntity,
   DxfPoint,
 } from '@/lib/dxf-parser';
-import { cleanMdoFieldValue } from '@/lib/mdo-description';
+import { cleanMdoFieldValue, isInstrumentAsset } from '@/lib/mdo-description';
 import {
   detectDxfArrows,
   matchArrowsToPipes,
@@ -421,16 +421,20 @@ function analyzeAssetConnections(
     arrowAnalysis, // ← Use arrow analysis
   );
 
+  const isInst = isInstrumentAsset(node.type, node.tag);
+  const finalFrom = isInst ? null : from;
+  const finalTo = isInst ? null : to;
+
   return {
     assetTag: node.tag,
-    from,
-    to,
+    from: finalFrom,
+    to: finalTo,
     of,
     at,
     size,
-    direction,
+    direction: isInst ? 'UNKNOWN' : direction,
     confidence: calculateConfidence(
-      { upstream: from, downstream: to },
+      { upstream: finalFrom, downstream: finalTo },
       size,
       of,
       at,

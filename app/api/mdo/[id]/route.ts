@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { assembleMdoDescription } from '@/lib/mdo-description';
+import { assembleMdoDescription, isInstrumentAsset } from '@/lib/mdo-description';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,11 +39,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const equipmentTypeShort = body.equipment_type_short !== undefined ? body.equipment_type_short : existing.equipment_type_short;
     const equipmentName = body.equipment_name !== undefined ? body.equipment_name : existing.equipment_name;
     const size = body.size !== undefined ? body.size : existing.size;
-    const fromValue = body.from_value !== undefined ? body.from_value : existing.from_value;
-    const toValue = body.to_value !== undefined ? body.to_value : existing.to_value;
+    const rawFrom = body.from_value !== undefined ? body.from_value : existing.from_value;
+    const rawTo = body.to_value !== undefined ? body.to_value : existing.to_value;
     const ofValue = body.of_value !== undefined ? body.of_value : existing.of_value;
     const atValue = body.at_value !== undefined ? body.at_value : existing.at_value;
     const locationPrefix = body.location_prefix !== undefined ? body.location_prefix : existing.location_prefix;
+
+    // Instruments never transport fluid (strictly enforce from/to = null)
+    const isInst = isInstrumentAsset(equipmentName || existing.equipment_type, equipmentTypeShort);
+    const fromValue = isInst ? null : rawFrom;
+    const toValue = isInst ? null : rawTo;
 
     // Recalculate description using rule engine, unless manually overridden
     const description = body.description !== undefined && body.description !== null

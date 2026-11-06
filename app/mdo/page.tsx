@@ -19,7 +19,7 @@ import {
   MagnifyingGlass,
   Info,
 } from '@phosphor-icons/react';
-import { assembleMdoDescription } from '@/lib/mdo-description';
+import { assembleMdoDescription, isInstrumentAsset } from '@/lib/mdo-description';
 
 interface Document {
   id: string;
@@ -282,6 +282,11 @@ function MdoContent() {
     });
   };
 
+  // Check if active editing record is an instrument
+  const isEditingInstrument = useMemo(() => {
+    return isInstrumentAsset(editForm.equipment_name || editingRecord?.asset_type, editForm.equipment_type_short);
+  }, [editForm.equipment_name, editForm.equipment_type_short, editingRecord?.asset_type]);
+
   // Computed description preview in edit modal
   const computedDescriptionPreview = useMemo(() => {
     if (editForm.manualDescriptionOverride) {
@@ -292,8 +297,8 @@ function MdoContent() {
       equipmentTypeShort: editForm.equipment_type_short || 'EQ',
       size: editForm.size,
       ofValue: editForm.of_value,
-      fromValue: editForm.from_value,
-      toValue: editForm.to_value,
+      fromValue: isEditingInstrument ? null : editForm.from_value,
+      toValue: isEditingInstrument ? null : editForm.to_value,
       atValue: editForm.at_value,
     });
   }, [
@@ -306,6 +311,7 @@ function MdoContent() {
     editForm.from_value,
     editForm.to_value,
     editForm.at_value,
+    isEditingInstrument,
   ]);
 
   // Save Edit
@@ -323,8 +329,8 @@ function MdoContent() {
         equipment_type_short: editForm.equipment_type_short.trim() || null,
         equipment_name: editForm.equipment_name.trim() || null,
         size: editForm.size.trim() || null,
-        from_value: editForm.from_value.trim() || null,
-        to_value: editForm.to_value.trim() || null,
+        from_value: isEditingInstrument ? null : (editForm.from_value.trim() || null),
+        to_value: isEditingInstrument ? null : (editForm.to_value.trim() || null),
         of_value: editForm.of_value.trim() || null,
         at_value: editForm.at_value.trim() || null,
         description: finalDescription,
@@ -1040,28 +1046,67 @@ function MdoContent() {
                 </label>
               </div>
 
+              {isEditingInstrument && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  color: 'var(--foreground)',
+                  fontSize: 11,
+                }}>
+                  <Info size={14} color="#3b82f6" />
+                  <span><strong>Kaidah Instrumen:</strong> Tidak ada aliran fluida keluar/masuk. Field <strong>FROM</strong> dan <strong>TO</strong> dinonaktifkan (Clean Omission).</span>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {/* 5. From */}
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)' }}>From (Origin)</span>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, opacity: isEditingInstrument ? 0.6 : 1 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)' }}>
+                    From (Origin) {isEditingInstrument && <span style={{ color: '#3b82f6', fontWeight: 700 }}>(N/A for Instruments)</span>}
+                  </span>
                   <input
                     type="text"
-                    value={editForm.from_value}
+                    disabled={isEditingInstrument}
+                    value={isEditingInstrument ? '' : editForm.from_value}
                     onChange={(e) => setEditForm((p) => ({ ...p, from_value: e.target.value }))}
-                    placeholder="e.g. SDV-1012, GRS"
-                    style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 12 }}
+                    placeholder={isEditingInstrument ? '— (N/A for Instruments)' : 'e.g. SDV-1012, GRS'}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)',
+                      background: isEditingInstrument ? 'var(--surface-muted)' : 'var(--background)',
+                      color: 'var(--foreground)',
+                      fontSize: 12,
+                      cursor: isEditingInstrument ? 'not-allowed' : 'text',
+                    }}
                   />
                 </label>
 
                 {/* 6. To */}
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)' }}>To (Destination)</span>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, opacity: isEditingInstrument ? 0.6 : 1 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--foreground-muted)' }}>
+                    To (Destination) {isEditingInstrument && <span style={{ color: '#3b82f6', fontWeight: 700 }}>(N/A for Instruments)</span>}
+                  </span>
                   <input
                     type="text"
-                    value={editForm.to_value}
+                    disabled={isEditingInstrument}
+                    value={isEditingInstrument ? '' : editForm.to_value}
                     onChange={(e) => setEditForm((p) => ({ ...p, to_value: e.target.value }))}
-                    placeholder="e.g. PRESSURE TRANSMITTER A, VENT"
-                    style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 12 }}
+                    placeholder={isEditingInstrument ? '— (N/A for Instruments)' : 'e.g. VENT, SUMP TANK'}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)',
+                      background: isEditingInstrument ? 'var(--surface-muted)' : 'var(--background)',
+                      color: 'var(--foreground)',
+                      fontSize: 12,
+                      cursor: isEditingInstrument ? 'not-allowed' : 'text',
+                    }}
                   />
                 </label>
               </div>
