@@ -75,7 +75,7 @@ async function main() {
     fs.mkdirSync(dir, { recursive: true })
   );
 
-  // Ambil semua aset yang sudah dikonfirmasi
+  // Ambil semua aset yang sudah dikonfirmasi (prioritaskan yang belum pernah diexport)
   const res = await db.query<ConfirmedDetection>(`
     SELECT 
       d.id, d.document_page_id, d.asset_type,
@@ -85,6 +85,9 @@ async function main() {
     JOIN document_pages dp ON d.document_page_id = dp.id
     WHERE (d.detection_status = 'CONFIRMED' OR d.validation_status = 'VALID')
       AND d.bbox_w > 0 AND d.bbox_h > 0
+    ORDER BY 
+      CASE WHEN d.included_in_training = TRUE THEN 1 ELSE 0 END,
+      d.confirmed_at DESC NULLS LAST
   `);
 
   if (res.rows.length === 0) {
@@ -198,6 +201,25 @@ names:
   fs.writeFileSync(path.join(outputBase, 'data.yaml'), yamlContent, 'utf8');
   console.log(`✅ ${processedCount} anotasi pada ${pageIds.length} halaman berhasil disiapkan.`);
 
+  // Mark detections as included in training
+  const allDetectionIds = res.rows.map(r => r.id);
+  if (allDetectionIds.length > 0) {
+    await db.query(`
+      UPDATE detections 
+      SET included_in_training = TRUE, 
+          training_exported_at = NOW() 
+      WHERE id = ANY($1)
+    `, [allDetectionIds]);
+    console.log(`📝 Marked ${allDetectionIds.length} detections as included in training.`);
+  }
+
+  // Log export metadata
+  const uniqueTypes = new Set(res.rows.map(r => r.asset_type.toLowerCase())).size;
+  await db.query(`
+    INSERT INTO training_exports (confirmed_count, unique_classes, zip_size_bytes, notes)
+    VALUES ($1, $2, 0, $3)
+  `, [processedCount, uniqueTypes, `Export berhasil: ${pageIds.length} pages, ${processedCount} annotations`]);
+
   // Buat ZIP file
   const zipPath = path.resolve(process.cwd(), 'yolo_dataset.zip');
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
@@ -212,7 +234,18 @@ names:
     } else {
       execSync(`cd "${outputBase}" && zip -r "${zipPath}" ./*`, { stdio: 'inherit' });
     }
+    
+    const finalZipSize = fs.existsSync(zipPath) ? fs.statSync(zipPath).size : 0;
+    
+    // Update training_exports with actual ZIP size
+    await db.query(`
+      UPDATE training_exports 
+      SET zip_size_bytes = $1 
+      WHERE id = (SELECT id FROM training_exports ORDER BY exported_at DESC LIMIT 1)
+    `, [finalZipSize]);
+    
     console.log(`🎉 Berhasil! File dataset siap upload ke Google Colab: ${zipPath}`);
+    console.log(`   Size: ${(finalZipSize / 1024 / 1024).toFixed(2)} MB`);
   } catch (zipErr) {
     console.error('Gagal membuat zip secara otomatis:', zipErr);
     console.log(`Anda dapat mengompres folder '${outputBase}' secara manual.`);

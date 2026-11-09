@@ -322,17 +322,19 @@ function extractPrefixFromOcr(ocrText: string | undefined, assetType: string | n
   // ISA 5.1 standard first-letter identifier mapping (asset type → expected prefix starts)
   // Only map types where prefix is unambiguously multi-char in ISA standard.
   // Do NOT map types that share first letter with other equipment (e.g. Pump=P, Pressure=P).
+  // IMPORTANT: Sort prefixStarts by length DESC to match longest first (PDI before PI, FIC before FI)
   const ISA_PREFIX_HINTS: Array<{ keywords: string[]; prefixStarts: string[] }> = [
-    { keywords: ['flow transmitter', 'flow indicator', 'flow controller'], prefixStarts: ['FT', 'FI', 'FIC', 'FC'] },
-    { keywords: ['pressure transmitter', 'pressure indicator', 'pressure controller', 'pressure differential'], prefixStarts: ['PT', 'PI', 'PIC', 'PDT', 'PD'] },
-    { keywords: ['temperature transmitter', 'temperature indicator', 'temperature controller'], prefixStarts: ['TT', 'TI', 'TIC', 'TC'] },
-    { keywords: ['level transmitter', 'level indicator', 'level controller'], prefixStarts: ['LT', 'LI', 'LIC', 'LC'] },
+    { keywords: ['flow transmitter', 'flow indicator', 'flow controller'], prefixStarts: ['FIC', 'FT', 'FI', 'FC'] },
+    { keywords: ['pressure transmitter', 'pressure indicator', 'pressure controller', 'pressure differential'], prefixStarts: ['PDI', 'PDT', 'PIC', 'PT', 'PI', 'PD'] },
+    { keywords: ['temperature transmitter', 'temperature indicator', 'temperature controller'], prefixStarts: ['TIC', 'TT', 'TI', 'TC'] },
+    { keywords: ['level transmitter', 'level indicator', 'level controller', 'level switch', 'level glass'], prefixStarts: ['LIC', 'LSH', 'LSL', 'LT', 'LI', 'LC', 'LS', 'LG'] },
     { keywords: ['pressure safety valve', 'pressure relief', 'safety relief'], prefixStarts: ['PSV', 'PRV', 'SRV'] },
     { keywords: ['shutdown valve', 'emergency shutdown'], prefixStarts: ['SDV', 'ESV', 'BDV'] },
-    { keywords: ['control valve', 'flow control valve'], prefixStarts: ['FCV', 'FV', 'LCV', 'LV', 'PCV', 'PV', 'TCV', 'TV', 'XV'] },
-    { keywords: ['solenoid valve', 'on/off valve'], prefixStarts: ['XV', 'SDV', 'MOV'] },
+    { keywords: ['control valve', 'flow control valve'], prefixStarts: ['FCV', 'LCV', 'PCV', 'TCV', 'FV', 'LV', 'PV', 'TV', 'XV'] },
+    { keywords: ['solenoid valve', 'on/off valve'], prefixStarts: ['SDV', 'MOV', 'XV'] },
     { keywords: ['motor operated valve'], prefixStarts: ['MOV', 'XV'] },
-    { keywords: ['analyzer', 'analysis'], prefixStarts: ['AT', 'AI', 'AIC', 'AC'] },
+    { keywords: ['analyzer', 'analysis'], prefixStarts: ['AIC', 'AT', 'AI', 'AC'] },
+    { keywords: ['hand switch', 'hand-off-auto', 'selector switch'], prefixStarts: ['HOA', 'HS'] },
     { keywords: ['junction box'], prefixStarts: ['JB'] },
     { keywords: ['local control panel', 'control panel'], prefixStarts: ['LCP', 'CP'] },
   ];

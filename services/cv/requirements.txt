@@ -21,6 +21,13 @@ easyocr==1.7.2
 # Image processing
 pillow==12.3.0
 
+# Embedding generation (for pgvector)
+torch>=2.0.0
+torchvision>=0.15.0
+ftfy>=6.1.0
+regex>=2023.0.0
+git+https://github.com/openai/CLIP.git
+
 # HTTP client (for health checks between services)
 httpx==0.28.1
 
