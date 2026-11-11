@@ -74,6 +74,8 @@ export interface DetectionJobInput {
    * Max ~10 entries; missing entries are silently skipped.
    */
   referenceCrops?: Map<string, string>;
+  /** Optional override for region mode: 'page' (single full-page call) or 'regions' (grid sweep). */
+  regionMode?: 'page' | 'regions';
 }
 
 // Extended detection result with rule validation metadata + embedding data
@@ -344,7 +346,7 @@ async function collectRawDetections(
   const tuning = await getTuning();
   const regionsCfg = tuning.regions;
 
-  if (regionsCfg.mode === "page") {
+  if (input.regionMode === "page" || regionsCfg.mode === "page") {
     const raw = await callWithRetry(
       () => runWithVisionProvider(cfg, input, fullPagePrompt()),
       { label: `detection page ${input.page}` },

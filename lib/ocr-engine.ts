@@ -31,6 +31,8 @@ export async function extractTextFromRegion(imageBuffer: Buffer, bbox: { left: n
   const imgH = meta.height ?? 100000;
   const rect = clampExtractRegion(imgW, imgH, bbox.left, bbox.top, bbox.width, bbox.height);
 
+  if (rect.width < 10 || rect.height < 10) return '';
+
   const processed = await sharp(imageBuffer)
     .extract(rect)
     .greyscale()
@@ -107,42 +109,51 @@ export function extractBestTagFromText(text: string): string | null {
 }
 
 export async function runTagOcr(buffer: Buffer): Promise<{ rawText: string, normalizedText: string, confidence: number, isTag: boolean }> {
-  const worker = await getWorker();
-  const { data: { text, confidence } } = await worker.recognize(buffer);
-  let trimmed = text.trim();
-  let bestTag = extractBestTagFromText(trimmed);
-  let bestConf = confidence / 100;
+  try {
+    const meta = await sharp(buffer).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
 
-  // Multi-angle rotation check: If horizontal OCR found no tag or low confidence,
-  // rotate 90° and 270° to capture vertical text on vertical piping/lines.
-  if (!bestTag || bestConf < 0.55) {
-    try {
-      const rot90 = await sharp(buffer).rotate(90).toBuffer();
-      const res90 = await worker.recognize(rot90);
-      const tag90 = extractBestTagFromText(res90.data.text.trim());
-      if (tag90) {
-        trimmed = res90.data.text.trim();
-        bestTag = tag90;
-        bestConf = Math.max(bestConf, res90.data.confidence / 100);
-      } else {
-        const rot270 = await sharp(buffer).rotate(270).toBuffer();
-        const res270 = await worker.recognize(rot270);
-        const tag270 = extractBestTagFromText(res270.data.text.trim());
-        if (tag270) {
-          trimmed = res270.data.text.trim();
-          bestTag = tag270;
-          bestConf = Math.max(bestConf, res270.data.confidence / 100);
-        }
-      }
-    } catch {
-      // Rotation fallback is non-fatal
+    // Guard: Leptonica crashes or emits "Image too small to scale!! (2x36 vs min width of 3)" to stderr
+    // when width or height is below 3 px. Furthermore, legible tag text requires at least ~10x10 px.
+    if (width < 10 || height < 10) {
+      return { rawText: '', normalizedText: '', confidence: 0, isTag: false };
     }
-  }
 
-  return {
-    rawText: trimmed,
-    normalizedText: trimmed,
-    confidence: bestConf,
-    isTag: !!bestTag
-  };
+    const worker = await getWorker();
+    const { data: { text, confidence } } = await worker.recognize(buffer);
+    let trimmed = text.trim();
+    let bestTag = extractBestTagFromText(trimmed);
+    let bestConf = confidence / 100;
+
+    // Multi-angle rotation check: Only attempt rotation if tag was NOT found,
+    // AND there were actual characters detected or crop is tall (vertical text).
+    // If the image had no text or was empty, rotating blank pixels is a guaranteed waste of time.
+    if (!bestTag && (trimmed.length > 0 || height > width * 1.2)) {
+      try {
+        const rot90 = await sharp(buffer).rotate(90).toBuffer();
+        const meta90 = await sharp(rot90).metadata();
+        if ((meta90.width ?? 0) >= 10 && (meta90.height ?? 0) >= 10) {
+          const res90 = await worker.recognize(rot90);
+          const tag90 = extractBestTagFromText(res90.data.text.trim());
+          if (tag90) {
+            trimmed = res90.data.text.trim();
+            bestTag = tag90;
+            bestConf = Math.max(bestConf, res90.data.confidence / 100);
+          }
+        }
+      } catch {
+        // Rotation fallback is non-fatal
+      }
+    }
+
+    return {
+      rawText: trimmed,
+      normalizedText: trimmed,
+      confidence: bestConf,
+      isTag: !!bestTag
+    };
+  } catch {
+    return { rawText: '', normalizedText: '', confidence: 0, isTag: false };
+  }
 }

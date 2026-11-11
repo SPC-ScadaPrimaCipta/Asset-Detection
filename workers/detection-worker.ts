@@ -1480,6 +1480,7 @@ export const worker = new Worker(
         let pngWidth: number;
         let pngHeight: number;
         try {
+          log(`page ${page}: [Rendering] Rendering page to high-res PNG (scale=${renderScale})...`);
           const { png, width, height } = await renderPageToPng(
             buf,
             page,
@@ -1628,6 +1629,7 @@ export const worker = new Worker(
           });
         }
 
+        log(`page ${page}: [Database] Saving ${deduped.length} detections to database...`);
         await persistDetections(
           db,
           deduped,
@@ -1642,7 +1644,7 @@ export const worker = new Worker(
           page,
         );
 
-        log(`page ${page}/${pageCount} detections=${deduped.length}`, {
+        log(`page ${page}/${pageCount}: [Done] Completed — ${deduped.length} detections saved (${Date.now() - pageStart}ms)`, {
           page,
           count: deduped.length,
           ms: Date.now() - pageStart,

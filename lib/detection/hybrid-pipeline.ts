@@ -22,7 +22,6 @@ import { createHash } from 'crypto';
 import { env } from '@/lib/env';
 import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
 import { runYoloGeo2Page } from '@/lib/detection/yolo/yolo-geo2-runner';
-import { extractTextFromRegion } from '@/lib/ocr-engine';
 import {
   cropBBoxFromBuffer,
   cropAdaptiveTagRegionFromBuffer,
@@ -113,13 +112,20 @@ async function runYoloWithOcr(
   skipOcr = false,
 ): Promise<YoloOcrDetection[]> {
   // ── 1. YOLO ──
+  log(`[Stage 1/5: YOLO] Slicing ${pageWidth}x${pageHeight} into tiles and running ONNX inference...`);
   const yoloResult = await runYoloGeo2Page(pngBuffer, pageWidth, pageHeight);
-  log(`YOLO: ${yoloResult.detections.length} detections (${yoloResult.totalTiles} tiles, ${yoloResult.durationMs}ms)`);
+  log(`[Stage 1/5: YOLO] Complete — ${yoloResult.detections.length} symbols found (${yoloResult.totalTiles} tiles, ${yoloResult.durationMs}ms)`);
 
   const results: YoloOcrDetection[] = [];
   const ocrEnabled = !skipOcr && env.OCR_ENGINE !== 'none';
   const batchSize = env.OCR_BATCH_SIZE ?? 5;
   const dets = yoloResult.detections;
+
+  if (ocrEnabled && dets.length > 0) {
+    log(`[Stage 2/5: OCR] Extracting equipment tags for ${dets.length} candidate crops...`);
+  }
+  const ocrStart = Date.now();
+  let tagsFoundCount = 0;
 
   // ── 2. OCR per bbox (batched) ──
   for (let i = 0; i < dets.length; i += batchSize) {
@@ -135,7 +141,6 @@ async function runYoloWithOcr(
       let ocrText: string | null = null;
       let ocrConf = 0;
       let isTag = false;
-      let descText: string | undefined;
 
       try {
         cropBuffer = await cropBBoxFromBuffer(pngBuffer, symbolBboxPx, 8);
@@ -148,14 +153,6 @@ async function runYoloWithOcr(
       // 2. Adaptive expanded crop for OCR reading of tags in surrounding context
       if (ocrEnabled) {
         try {
-          // New: Deep OCR for component name/description
-          descText = await extractTextFromRegion(pngBuffer, {
-            left: Math.max(0, symbolBboxPx.x - 50),
-            top: Math.max(0, symbolBboxPx.y + symbolBboxPx.height),
-            width: symbolBboxPx.width + 100,
-            height: 100,
-          });
-
           const { buffer: tagCropBuffer } = await cropAdaptiveTagRegionFromBuffer(
             pngBuffer,
             symbolBboxPx,
@@ -191,6 +188,10 @@ async function runYoloWithOcr(
               isTag = r.isTag;
             }
           }
+
+          if (isTag) {
+            tagsFoundCount++;
+          }
         } catch (e) {
           log(`OCR failed for ${det.assetType}: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -205,12 +206,19 @@ async function runYoloWithOcr(
         ocrText: ocrText,
         ocrConfidence: ocrConf,
         isTag,
-        ocrDescription: (ocrEnabled && typeof descText !== 'undefined') ? descText : null,
+        ocrDescription: null,
         cropB64,
         imageHash,
       });
+    }));
 
-}));
+    if (ocrEnabled && ((i + batchSize) % 20 < batchSize || i + batchSize >= dets.length)) {
+      log(`[Stage 2/5: OCR] Progress: ${Math.min(i + batchSize, dets.length)}/${dets.length} candidates processed (${tagsFoundCount} tags found)`);
+    }
+  }
+
+  if (ocrEnabled && dets.length > 0) {
+    log(`[Stage 2/5: OCR] Complete in ${Date.now() - ocrStart}ms (${tagsFoundCount} tags found)`);
   }
 
   return results;
@@ -386,6 +394,7 @@ async function runAiFallback(
   log: (msg: string) => void,
 ): Promise<PersistableDetection[]> {
   try {
+    log('running AI full-page fallback detection...');
     const aiResult = await runDetectionAgent({
       page: params.page,
       pageImageBase64: pageImageB64,
@@ -395,6 +404,7 @@ async function runAiFallback(
       pngHeight: pageHeight,
       projectId: params.projectId,
       drawingType: params.drawingType,
+      regionMode: 'page',
     });
 
     const mergeIou = env.HYBRID_MERGE_IOU ?? 0.4;
@@ -650,6 +660,8 @@ export async function runHybridPipeline(
   const persistable: PersistableDetection[] = [];
   const processedBboxesNorm: Array<{ x: number; y: number; width: number; height: number }> = [];
 
+  pageLog(`[Stage 3/5: Rules & Verification] Validating ${yoloOcrDets.length} detections against legend rules...`);
+
   for (const det of yoloOcrDets) {
     // Stage 3: Rule Validator
     const rule = await runRuleValidation(
@@ -682,6 +694,7 @@ export async function runHybridPipeline(
 
     if (shouldVerify && det.cropB64 && verifierCalls < (env.VERIFIER_MAX_CALLS_PER_PAGE ?? 10)) {
       verifierCalls++;
+      pageLog(`[Stage 3/5: AI Verifier] Verifying ambiguous symbol #${verifierCalls} (${det.rawLabel})...`);
       const v = await runAiVerifier(det, rule.ruleConfidence, input.legendId, input.legendSymbols, input.pageImageBase64);
       verifiedConf = v.verifiedConf;
       verifiedType = resolveVerifierType(v.verifiedType, input.legendSymbols);
@@ -782,11 +795,13 @@ export async function runHybridPipeline(
       },
     } as PersistableDetection);
   }
+  pageLog(`[Stage 3/5: Rules & Verification] Complete — ${persistable.length} valid assets resolved (${verifierCalls} AI verifier calls)`);
 
-  // ── Stage 5: AI Full-page Fallback ──
+  // ── Stage 4: AI Full-page Fallback ──
   let aiFallbackDets: PersistableDetection[] = [];
   const fallbackEnabled = (env.AI_FALLBACK_ENABLED ?? env.GEMINI_FALLBACK_ENABLED) === 'true';
   if (fallbackEnabled && input.legendSymbols.length > 0) {
+    pageLog(`[Stage 4/5: AI Fallback] Running full-page AI vision fallback to detect missed symbols...`);
     aiFallbackDets = await runAiFallback(
       input.pageImageBase64,
       input.pageWidth,
@@ -801,11 +816,15 @@ export async function runHybridPipeline(
       },
       pageLog,
     );
+  } else {
+    pageLog(`[Stage 4/5: AI Fallback] Skipped (${fallbackEnabled ? 'no legend symbols' : 'disabled by config'})`);
   }
 
-  // ── Stage 6: Merge + NMS ──
+  // ── Stage 5: Merge + NMS ──
+  pageLog(`[Stage 5/5: Merge & NMS] Merging detections and applying NMS...`);
   const allDets = [...persistable, ...aiFallbackDets];
   const finalDets = applyNMS(allDets, env.HYBRID_MERGE_IOU ?? 0.4) as PersistableDetection[];
+  pageLog(`[Stage 5/5: Merge & NMS] Complete — ${finalDets.length} final detections retained (${Date.now() - t0}ms total)`);
 
   return {
     detections: finalDets,

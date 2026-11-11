@@ -1,7 +1,9 @@
 import {
   calculateAdaptiveTagBBox,
   extractBestTagFromText,
+  runTagOcr,
 } from '@/lib/ocr-engine';
+import sharp from 'sharp';
 
 describe('Adaptive Tag OCR ROI & Tag Extraction', () => {
   const pageW = 2000;
@@ -62,5 +64,22 @@ describe('Adaptive Tag OCR ROI & Tag Extraction', () => {
     const multilineOcr = 'JUST RANDOM NOISE 123 456';
     const tag = extractBestTagFromText(multilineOcr);
     expect(tag).toBeNull();
+  });
+
+  it('safely skips OCR on tiny or degenerate buffers (e.g. 2x36) without crashing or emitting Leptonica errors', async () => {
+    // 2x36 image buffer — reproducing the exact Leptonica warning scenario
+    const tinyBuffer = await sharp({
+      create: {
+        width: 2,
+        height: 36,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    }).png().toBuffer();
+
+    const res = await runTagOcr(tinyBuffer);
+    expect(res.rawText).toBe('');
+    expect(res.isTag).toBe(false);
+    expect(res.confidence).toBe(0);
   });
 });
