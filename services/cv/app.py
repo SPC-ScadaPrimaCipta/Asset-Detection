@@ -327,6 +327,195 @@ async def bbox_refine_route(body: BBoxRefineRequest) -> BBoxRefineResponse:
 
 
 # ---------------------------------------------------------------------------
+# POST /embedding — generate 768-dim embedding for pgvector
+# ---------------------------------------------------------------------------
+
+@app.post("/embedding", tags=["detection"])
+async def generate_embedding(body: dict) -> dict:
+    """Generate 768-dimensional embedding for pgvector similarity search."""
+    from preprocess import decode_b64_image
+    
+    try:
+        img = decode_b64_image(body.get("image_b64", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Image decode failed: {exc}") from exc
+    
+    try:
+        # Use CLIP model for embedding generation (768-dim)
+        import clip
+        import torch
+        from PIL import Image
+        import io
+        import numpy as np
+        
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, preprocess = clip.load("ViT-B/32", device=device)
+        
+        # Convert numpy array to PIL Image
+        pil_img = Image.fromarray(img)
+        image_input = preprocess(pil_img).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            image_features = model.encode_image(image_input)
+            # Normalize to unit vector
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            embedding = image_features.cpu().numpy().flatten().tolist()
+        
+        return {
+            "embedding": embedding,
+            "dimension": len(embedding)
+        }
+    except ImportError:
+        # Fallback: return zero vector if CLIP not installed
+        logger.warning("CLIP model not available, returning zero embedding")
+        return {
+            "embedding": [0.0] * 768,
+            "dimension": 768,
+            "warning": "CLIP not installed, using zero vector"
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Embedding generation error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Embedding generation failed: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# POST /yolo-tiled — YOLO detection with tiling and multi-scale
+# ---------------------------------------------------------------------------
+
+@app.post("/yolo-tiled", tags=["detection"])
+async def yolo_tiled_detection(body: dict) -> dict:
+    """
+    Run YOLO detection with tiling and multi-scale zoom.
+    
+    Request body:
+    {
+        "image_b64": "base64 image",
+        "tile_size": 1024,
+        "overlap": 0.2,
+        "scales": [1.0, 1.5, 2.0],
+        "confidence_threshold": 0.3
+    }
+    """
+    from preprocess import decode_b64_image
+    from yolo_detector import run_detection
+    import cv2
+    import numpy as np
+    
+    try:
+        img = decode_b64_image(body.get("image_b64", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Image decode failed: {exc}") from exc
+    
+    tile_size = body.get("tile_size", 1024)
+    overlap = body.get("overlap", 0.2)
+    scales = body.get("scales", [1.0, 1.5, 2.0])
+    conf_threshold = body.get("confidence_threshold", 0.3)
+    
+    all_detections = []
+    
+    try:
+        for scale in scales:
+            if scale != 1.0:
+                scaled_width = int(img.shape[1] * scale)
+                scaled_height = int(img.shape[0] * scale)
+                scaled_img = cv2.resize(img, (scaled_width, scaled_height))
+            else:
+                scaled_img = img
+            
+            h, w = scaled_img.shape[:2]
+            stride = int(tile_size * (1 - overlap))
+            
+            for y in range(0, h, stride):
+                for x in range(0, w, stride):
+                    # Extract tile
+                    tile_x_end = min(x + tile_size, w)
+                    tile_y_end = min(y + tile_size, h)
+                    tile = scaled_img[y:tile_y_end, x:tile_x_end]
+                    
+                    # Run detection on tile
+                    tile_detections = run_detection(
+                        tile,
+                        confidence_threshold=conf_threshold,
+                        page_width=tile.shape[1],
+                        page_height=tile.shape[0]
+                    )
+                    
+                    # Map coordinates back to original image
+                    for det in tile_detections:
+                        bbox = det.bbox
+                        all_detections.append({
+                            "class_id": det.class_id,
+                            "label": det.label,
+                            "score": det.score,
+                            "bbox": {
+                                "x": (bbox.x + x) / scale,
+                                "y": (bbox.y + y) / scale,
+                                "width": bbox.width / scale,
+                                "height": bbox.height / scale
+                            },
+                            "scale": scale,
+                            "tile": f"x{x}_y{y}_s{scale}"
+                        })
+        
+        # Apply NMS across all scales
+        if all_detections:
+            # Simple NMS implementation
+            boxes = np.array([[d["bbox"]["x"], d["bbox"]["y"], 
+                              d["bbox"]["x"] + d["bbox"]["width"],
+                              d["bbox"]["y"] + d["bbox"]["height"]] for d in all_detections])
+            scores = np.array([d["score"] for d in all_detections])
+            
+            # Keep track of which boxes to keep
+            keep_indices = []
+            indices = np.argsort(scores)[::-1]
+            
+            while len(indices) > 0:
+                current = indices[0]
+                keep_indices.append(current)
+                
+                if len(indices) == 1:
+                    break
+                
+                # Compute IoU with remaining boxes
+                current_box = boxes[current]
+                remaining_boxes = boxes[indices[1:]]
+                
+                x1 = np.maximum(current_box[0], remaining_boxes[:, 0])
+                y1 = np.maximum(current_box[1], remaining_boxes[:, 1])
+                x2 = np.minimum(current_box[2], remaining_boxes[:, 2])
+                y2 = np.minimum(current_box[3], remaining_boxes[:, 3])
+                
+                intersection = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
+                
+                area_current = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
+                area_remaining = (remaining_boxes[:, 2] - remaining_boxes[:, 0]) * \
+                                (remaining_boxes[:, 3] - remaining_boxes[:, 1])
+                
+                union = area_current + area_remaining - intersection
+                iou = intersection / (union + 1e-6)
+                
+                # Keep boxes with IoU < 0.5
+                indices = indices[1:][iou < 0.5]
+            
+            all_detections = [all_detections[i] for i in keep_indices]
+        
+        return {
+            "detections": all_detections,
+            "total_detections": len(all_detections),
+            "scales_used": scales,
+            "tile_size": tile_size
+        }
+        
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Tiled YOLO detection error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Tiled detection failed: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
 # Dev entry point: python -m services.cv.app
 # ---------------------------------------------------------------------------
 

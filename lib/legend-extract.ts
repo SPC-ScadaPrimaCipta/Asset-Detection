@@ -261,10 +261,17 @@ In this P&ID legend sheet, each equipment item consists of TWO separate visual p
 1. The DRAWING / GRAPHIC / ICON: The physical drawing of the equipment (impeller, casing, nozzle, circle, lines, valve body).
 2. The TEXT LABEL: The printed alphanumeric text (e.g. "CENTRIFUGAL PUMP").
 
-For EACH distinct symbol:
+CRITICAL: ONLY extract items that have BOTH a physical drawing/icon AND a text label.
+DO NOT extract:
+- Instrument function code tables (e.g., "FI - Flow Indicator", "PT - Pressure Transmitter") WITHOUT physical graphic symbols
+- Text-only lists or abbreviation tables
+- Column headers or title text
+- Notes sections or explanatory text
+
+For EACH distinct symbol with a physical graphic:
 - "name": The exact text label (e.g. "CENTRIFUGAL PUMP")
 - "assetType": Equipment category from list: Pump|Valve|Vessel|Tank|Compressor|Heat Exchanger|Filter|Instrument|PSV|Control Valve|Motor|Fan|Column|Reactor|Separator|Agitator|Ejector|Strainer|Driver|Fitting|Nozzle|Flange|Reducer|Tee|Elbow|other
-- "tagPattern": Tag pattern if shown (e.g. P-###), or null
+- "tagPattern": Tag pattern if shown (e.g. P-###, FIC-###), or null. DO NOT use regex syntax. Use simple format with # for digits.
 - "aliases": List of short codes/abbreviations if shown (e.g. ["P"]), or []
 - "label_bbox": [ymin, xmin, ymax, xmax] coordinates of the TEXT WORDS ONLY (0-1000 space)
 - "graphic_bbox": [ymin, xmin, ymax, xmax] coordinates of the PHYSICAL DRAWING / ICON ONLY (0-1000 space). TIGHT around the drawing lines only. Look beside/left/above the label to locate the drawing.
@@ -288,7 +295,7 @@ RULES:
 - Scan systematically top-to-bottom, left-to-right — do not skip any row or column
 - Small/simple symbols (single line, circle, rectangle, triangle) MUST be included
 - Each symbol graphic = one entry.
-- Do NOT include: title headers, text-only rows, grid lines, page numbers, notes sections
+- Do NOT include: title headers, text-only rows, grid lines, page numbers, notes sections, instrument code tables
 - Aliases: short codes printed near the label, e.g. "XV" for "Solenoid Valve", "P" for "Pump"
 - If truly no symbols visible: return {"symbols":[]}`;
 }
@@ -726,6 +733,17 @@ export async function extractLegendSymbolsFromPng(
   const deduplicated = deduplicateSymbols(allSymbols, perf.legendDedupeNameIou);
   console.log(`[legend-extract] page ${page}: ${allSymbols.length} raw → ${deduplicated.length} after dedup`);
 
+  // ── Post-extraction filter: reject text-only entries (instrument code tables) ──
+  // Symbols must have bbox coordinates — text-only lists without graphic icons are invalid.
+  const withBbox = deduplicated.filter(s => {
+    if (s.bbox_x == null || s.bbox_y == null || s.bbox_w == null || s.bbox_h == null) {
+      console.warn(`[legend-extract] rejected symbol without bbox: "${s.symbol_name}" (likely text-only code table)`);
+      return false;
+    }
+    return true;
+  });
+  console.log(`[legend-extract] page ${page}: ${deduplicated.length} deduped → ${withBbox.length} after bbox filter`);
+
   // ── Catch-up pass: full page scan to find anything missed ───────────────────
   // Send full page with list of already-detected names so model only returns NEW ones
   onProgress?.({
@@ -740,7 +758,7 @@ export async function extractLegendSymbolsFromPng(
       throw new Error('skipping catch-up: no usable model left (all circuits open)');
     }
 
-    const detectedNames = deduplicated
+    const detectedNames = withBbox
       .filter(s => s.symbol_name)
       .map(s => s.symbol_name!)
       .slice(0, 120); // cap raised from 60 — dense legends have 80-100+ symbols
@@ -848,10 +866,15 @@ Return JSON ONLY:
       );
       for (const s of missed) {
         const { x, y, w, h } = extractBbox(s);
+        // Reject catchup symbols without bbox (same filter as main pass)
+        if (x === null || y === null || w === null || h === null) {
+          console.warn(`[legend-extract] catchup rejected symbol without bbox: "${s.name}"`);
+          continue;
+        }
         // Model output is untrusted: every field is coerced to its declared type
         // rather than assigned as-is, so a non-string name or pattern cannot
         // reach the DB column.
-        deduplicated.push({
+        withBbox.push({
           asset_type: String(s.assetType ?? 'Unknown').slice(0, 120),
           symbol_name: strOrNull(s.name),
           tag_pattern: strOrNull(s.tagPattern),
@@ -867,7 +890,7 @@ Return JSON ONLY:
     console.warn(`[legend-extract] page ${page} catchup pass failed:`, e instanceof Error ? e.message.slice(0, 150) : e);
   }
 
-  const final = deduplicateSymbols(deduplicated, perf.legendDedupeNameIou);
+  const final = deduplicateSymbols(withBbox, perf.legendDedupeNameIou);
   console.log(`[legend-extract] page ${page}: final ${final.length} symbols`);
   return final;
 }

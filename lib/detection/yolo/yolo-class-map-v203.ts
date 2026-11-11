@@ -264,6 +264,12 @@ const RAW_CLASS_NAMES_V203: Record<number, string> = {
 };
 
 /**
+ * Exported array of YOLO class names (203 classes, indexed by class ID).
+ * Used for quick lookup: YOLO_CLASS_NAMES_V203[classId] → class label.
+ */
+export const YOLO_CLASS_NAMES_V203: string[] = Object.values(RAW_CLASS_NAMES_V203);
+
+/**
  * Build YoloV203ClassInfo map from raw class names.
  * Semantic register fields stay unresolved; Legend matching owns that mapping.
  */
