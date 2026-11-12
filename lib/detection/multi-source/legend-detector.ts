@@ -111,7 +111,7 @@ function extractCandidateRegions(parsed: DxfParseResult): Array<any> {
   for (const block of blocks) {
     // Calculate bbox dari entity coordinates
     const bbox = calculateEntityBbox(block);
-    const dxfCoords = { x: block.x || 0, y: block.y || 0 };
+    const dxfCoords = { x: (block as any).x || 0, y: (block as any).y || 0 };
     
     candidates.push({
       entity: block,

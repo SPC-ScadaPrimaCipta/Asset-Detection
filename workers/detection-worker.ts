@@ -581,11 +581,12 @@ export const worker = new Worker(
               let tagConfidence = 0;
               const tagEvidence: string[] = [];
               
-              if (yoloParsed && yoloRegions.length > 0) {
+              const parsedForTag = dxfParsed ?? parsedDxf;
+              if (parsedForTag && dxfRegions.length > 0) {
                 const { findNearestTag } = await import('@/lib/detection/yolo-tag-association');
                 
-                const region = yoloRegions.find((r: any) => r.pidPage === yDet.pidPage);
-                const regionExtents = region?.extents ?? yoloParsed.extents;
+                const region = dxfRegions.find((r: any) => r.pidPage === yDet.pidPage);
+                const regionExtents = region?.extents ?? parsedForTag.extents;
                 
                 if (regionExtents) {
                   // Build tag patterns from legend symbols
@@ -604,7 +605,7 @@ export const worker = new Worker(
                   
                   const tagResult = findNearestTag(
                     yDet.bbox,
-                    yoloParsed,
+                    parsedForTag,
                     regionExtents,
                     tagPatterns.length > 0 ? tagPatterns : undefined,
                     2.0 // search radius = 2× symbol width

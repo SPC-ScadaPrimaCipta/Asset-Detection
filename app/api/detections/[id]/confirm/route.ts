@@ -218,13 +218,14 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
         fs.writeFileSync(path.join(labelDir, `${d.id}.json`), JSON.stringify(labelData, null, 2), 'utf8');
 
         // Extract and save crop image
+        let imgMeta: import('sharp').Metadata | null = null;
         if (d.bbox_w > 0 && d.bbox_h > 0) {
-          const meta = await sharp(fullImgPath).metadata();
-          if (meta.width && meta.height) {
-            const left = Math.max(0, Math.min(meta.width - 1, Math.round((d.bbox_x / 1000) * meta.width)));
-            const top = Math.max(0, Math.min(meta.height - 1, Math.round((d.bbox_y / 1000) * meta.height)));
-            const width = Math.max(1, Math.min(meta.width - left, Math.round((d.bbox_w / 1000) * meta.width)));
-            const height = Math.max(1, Math.min(meta.height - top, Math.round((d.bbox_h / 1000) * meta.height)));
+          imgMeta = await sharp(fullImgPath).metadata();
+          if (imgMeta.width && imgMeta.height) {
+            const left = Math.max(0, Math.min(imgMeta.width - 1, Math.round((d.bbox_x / 1000) * imgMeta.width)));
+            const top = Math.max(0, Math.min(imgMeta.height - 1, Math.round((d.bbox_y / 1000) * imgMeta.height)));
+            const width = Math.max(1, Math.min(imgMeta.width - left, Math.round((d.bbox_w / 1000) * imgMeta.width)));
+            const height = Math.max(1, Math.min(imgMeta.height - top, Math.round((d.bbox_h / 1000) * imgMeta.height)));
             await sharp(fullImgPath)
               .extract({ left, top, width, height })
               .png()
@@ -249,10 +250,10 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
                 asset_type: d.asset_type,
                 symbol_category: d.equipment_class || d.asset_type,
                 bbox_px: {
-                  x: Math.round((d.bbox_x / 1000) * (meta?.width || 1)),
-                  y: Math.round((d.bbox_y / 1000) * (meta?.height || 1)),
-                  width: Math.round((d.bbox_w / 1000) * (meta?.width || 1)),
-                  height: Math.round((d.bbox_h / 1000) * (meta?.height || 1))
+                  x: Math.round((d.bbox_x / 1000) * (imgMeta?.width || 1)),
+                  y: Math.round((d.bbox_y / 1000) * (imgMeta?.height || 1)),
+                  width: Math.round((d.bbox_w / 1000) * (imgMeta?.width || 1)),
+                  height: Math.round((d.bbox_h / 1000) * (imgMeta?.height || 1))
                 },
                 bbox_dxf: {
                   x_min: d.bbox_x,
