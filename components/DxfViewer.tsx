@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { DxfViewer as DxfViewerEngine, type LayerInfo } from 'dxf-viewer';
-import { ArrowsOutSimple, Eye, EyeSlash, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
+import { ArrowsOutSimple, Eye, EyeSlash, MagnifyingGlassPlus, MagnifyingGlassMinus, ArrowClockwise } from '@phosphor-icons/react';
 
 import { getAssetTypeColor } from '@/lib/asset-type-colors';
 
@@ -73,6 +73,10 @@ export interface DxfViewerProps {
   }>;
   /** Active sheet to fit (pidPage). Null/undefined = no forced fit. */
   activeSheet?: number | null;
+  /** Rotation angle in degrees (0, 90, 180, 270) */
+  rotation?: number;
+  /** Callback when rotation changes via viewer controls */
+  onRotateChange?: (rotation: number) => void;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -95,6 +99,8 @@ export default function DxfViewer({
   showText = true,
   regions = [],
   activeSheet = null,
+  rotation: rotationProp,
+  onRotateChange,
   className,
   style,
 }: DxfViewerProps) {
@@ -104,6 +110,22 @@ export default function DxfViewer({
   // Ref ke drawOverlay terbaru — Subscribe('viewChanged') di bawah memakai ref
   // ini agar tidak mengikat closure basi (bbox lama / showAll lama).
   const drawOverlayRef = useRef<() => void>(() => {});
+
+  const [internalRotation, setInternalRotation] = useState(0);
+  const currentRotation = rotationProp !== undefined ? rotationProp : internalRotation;
+  const rotationRef = useRef(currentRotation);
+  rotationRef.current = currentRotation;
+
+  const setRotation = useCallback((r: number | ((prev: number) => number)) => {
+    const next = typeof r === 'function' ? r(currentRotation) : r;
+    const normalized = ((next % 360) + 360) % 360;
+    if (onRotateChange) onRotateChange(normalized);
+    setInternalRotation(normalized);
+  }, [currentRotation, onRotateChange]);
+
+  const handleRotate = useCallback(() => {
+    setRotation((r) => (r + 90) % 360);
+  }, [setRotation]);
 
   const [loading, setLoading]       = useState(true);
   const [loadPhase, setLoadPhase]   = useState<string>('Loading...');
@@ -144,7 +166,7 @@ export default function DxfViewer({
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  /** Map DXF world coord → overlay canvas pixel via current camera. */
+  /** Map DXF world coord → overlay canvas pixel via current camera (rotation-aware). */
   const worldToCanvas = useCallback(
     (wx: number, wy: number, cw: number, ch: number): { x: number; y: number } => {
       const viewer = viewerRef.current;
@@ -153,13 +175,15 @@ export default function DxfViewer({
       const cam = viewer.GetCamera() as THREE.OrthographicCamera | null;
       if (!origin || !cam) return { x: 0, y: 0 };
       const v = new THREE.Vector3(wx - origin.x, wy - origin.y, 0);
+      const rad = (rotationRef.current * Math.PI) / 180;
+      if (rad) v.applyAxisAngle(new THREE.Vector3(0, 0, 1), rad);
       v.project(cam);
       return { x: ((v.x + 1) / 2) * cw, y: ((1 - v.y) / 2) * ch };
     },
     [],
   );
 
-  /** Map overlay canvas pixel → DXF world coord via current camera. */
+  /** Map overlay canvas pixel → DXF world coord via current camera (rotation-aware). */
   const canvasToWorld = useCallback(
     (cx: number, cy: number, cw: number, ch: number): { x: number; y: number } | null => {
       const viewer = viewerRef.current;
@@ -168,9 +192,27 @@ export default function DxfViewer({
       const cam = viewer.GetCamera() as THREE.OrthographicCamera | null;
       if (!origin || !cam) return null;
       const v = new THREE.Vector3((cx / cw) * 2 - 1, -(cy / ch) * 2 + 1, 0).unproject(cam);
+      const rad = (rotationRef.current * Math.PI) / 180;
+      if (rad) v.applyAxisAngle(new THREE.Vector3(0, 0, 1), -rad);
       return { x: v.x + origin.x, y: v.y + origin.y };
     },
     [],
+  );
+
+  /** Calculate 4-corner screen bbox from DXF world coordinates (rotation-aware). */
+  const getBboxCanvasRect = useCallback(
+    (wx1: number, wy1: number, wx2: number, wy2: number, cw: number, ch: number) => {
+      const p1 = worldToCanvas(wx1, wy1, cw, ch);
+      const p2 = worldToCanvas(wx2, wy1, cw, ch);
+      const p3 = worldToCanvas(wx2, wy2, cw, ch);
+      const p4 = worldToCanvas(wx1, wy2, cw, ch);
+      const rx = Math.min(p1.x, p2.x, p3.x, p4.x);
+      const ry = Math.min(p1.y, p2.y, p3.y, p4.y);
+      const rw = Math.max(p1.x, p2.x, p3.x, p4.x) - rx;
+      const rh = Math.max(p1.y, p2.y, p3.y, p4.y) - ry;
+      return { rx, ry, rw, rh };
+    },
+    [worldToCanvas],
   );
 
   /** Get valid detections to render based on showAll / selectedId. */
@@ -299,13 +341,7 @@ export default function DxfViewer({
       const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + ((bboxX + bboxW) / 1000) * spanX;
       const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - ((bboxY + bboxH) / 1000) * spanY;
 
-      const tl = worldToCanvas(wx1, wy1, cw, ch);
-      const br = worldToCanvas(wx2, wy2, cw, ch);
-
-      let rx = Math.min(tl.x, br.x);
-      let ry = Math.min(tl.y, br.y);
-      let rw = Math.abs(br.x - tl.x);
-      let rh = Math.abs(br.y - tl.y);
+      let { rx, ry, rw, rh } = getBboxCanvasRect(wx1, wy1, wx2, wy2, cw, ch);
       
       // Expand very small bboxes for visibility (min 15px on screen)
       const MIN_RENDER_SIZE = 15;
@@ -408,7 +444,7 @@ export default function DxfViewer({
         const point = worldToCanvas(wx, wy, cw, ch);
         const textHeightWorld = Math.max(0.001, (token.h / 1000) * spanY);
         const textTop = worldToCanvas(wx, wy - textHeightWorld, cw, ch);
-        const fontSize = Math.max(6, Math.min(72, Math.abs(point.y - textTop.y)));
+        const fontSize = Math.max(6, Math.min(72, Math.hypot(point.x - textTop.x, point.y - textTop.y)));
         ctx.font = `${fontSize}px ui-monospace, monospace`;
         if (point.x < -500 || point.x > cw + 500 || point.y < -100 || point.y > ch + 100) continue;
         ctx.strokeText(token.text, point.x, point.y);
@@ -416,7 +452,7 @@ export default function DxfViewer({
       }
       ctx.restore();
     }
-  }, [detections, selectedId, showAll, showReviewCandidates, textTokens, showText, loading, worldToCanvas, getVisible, dragBbox, regions, activeSheet]);
+  }, [detections, selectedId, showAll, showReviewCandidates, textTokens, showText, loading, worldToCanvas, getBboxCanvasRect, getVisible, dragBbox, regions, activeSheet]);
 
   // Selalu tunjuk ke implementasi terbaru (lawan closure basi).
   useEffect(() => {
@@ -500,6 +536,8 @@ export default function DxfViewer({
 
         const wts = (wx: number, wy: number) => {
           const v = new THREE.Vector3(wx - origin.x, wy - origin.y, 0);
+          const rad = (rotationRef.current * Math.PI) / 180;
+          if (rad) v.applyAxisAngle(new THREE.Vector3(0, 0, 1), rad);
           v.project(cam);
           return { x: ((v.x + 1) / 2) * cw, y: ((1 - v.y) / 2) * ch };
         };
@@ -523,10 +561,14 @@ export default function DxfViewer({
           const wy1 = hasSheetBox ? activeRegion!.extents.maxY - ((d.sheet_bbox_y! + d.sheet_bbox_h!) / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! + d.world_bbox_h! : bounds.maxY - ((d.bbox_y  ?? 0) / 1000) * spanY;
           const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
           const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
-          const tl = wts(wx1, wy1);
-          const br = wts(wx2, wy2);
-          const rx = Math.min(tl.x, br.x), ry = Math.min(tl.y, br.y);
-          const rw = Math.abs(br.x - tl.x), rh = Math.abs(br.y - tl.y);
+          const p1 = wts(wx1, wy1);
+          const p2 = wts(wx2, wy1);
+          const p3 = wts(wx2, wy2);
+          const p4 = wts(wx1, wy2);
+          const rx = Math.min(p1.x, p2.x, p3.x, p4.x);
+          const ry = Math.min(p1.y, p2.y, p3.y, p4.y);
+          const rw = Math.max(p1.x, p2.x, p3.x, p4.x) - rx;
+          const rh = Math.max(p1.y, p2.y, p3.y, p4.y) - ry;
           if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh) {
             onSelectAsset(d.id);
             return;
@@ -554,6 +596,14 @@ export default function DxfViewer({
           if (isCancelled || !viewer) return;
           setLoading(false);
           setLayers(Array.from(viewer.GetLayers(true)));
+          const rad = (rotationRef.current * Math.PI) / 180;
+          if (rad) {
+            const scene = viewer.GetScene();
+            if (scene) {
+              scene.rotation.z = rad;
+              scene.updateMatrix();
+            }
+          }
           viewer.Render();
         })
         .catch((err: unknown) => {
@@ -624,19 +674,41 @@ export default function DxfViewer({
     const wx2 = bounds.minX + ((det.bbox_x + det.bbox_w) / 1000) * spanX;
     const wy2 = bounds.maxY - ((det.bbox_y + det.bbox_h) / 1000) * spanY;
 
-    // 50% padding for visual context
-    const pw = (wx2 - wx1) * 0.5;
-    const ph = (wy1 - wy2) * 0.5;
+    const rad = (rotationRef.current * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    const corners = [
+      { x: wx1 - origin.x, y: wy2 - origin.y },
+      { x: wx2 - origin.x, y: wy2 - origin.y },
+      { x: wx2 - origin.x, y: wy1 - origin.y },
+      { x: wx1 - origin.x, y: wy1 - origin.y },
+    ];
+
+    let rMinX = Infinity, rMaxX = -Infinity;
+    let rMinY = Infinity, rMaxY = -Infinity;
+
+    for (const c of corners) {
+      const rx = c.x * cos - c.y * sin;
+      const ry = c.x * sin + c.y * cos;
+      if (rx < rMinX) rMinX = rx;
+      if (rx > rMaxX) rMaxX = rx;
+      if (ry < rMinY) rMinY = ry;
+      if (ry > rMaxY) rMaxY = ry;
+    }
+
+    const pw = (rMaxX - rMinX) * 0.5;
+    const ph = (rMaxY - rMinY) * 0.5;
 
     viewer.FitView(
-      wx1 - pw - origin.x,
-      wx2 + pw - origin.x,
-      wy2 - ph - origin.y,
-      wy1 + ph - origin.y,
+      rMinX - pw,
+      rMaxX + pw,
+      rMinY - ph,
+      rMaxY + ph,
     );
     viewer.Render();
-    drawOverlay();
-  }, [selectedId, loading, detections, drawOverlay, showAll]);
+    drawOverlayRef.current();
+  }, [selectedId, loading, detections, showAll]);
 
   // ── Sheet navigation: fit camera to region world rect ───────────────────────
   const fitRegion = useCallback((pidPage: number) => {
@@ -646,13 +718,37 @@ export default function DxfViewer({
     if (!region) return;
     const origin = viewer.GetOrigin();
     if (!origin) return;
-    const padX = (region.extents.maxX - region.extents.minX) * 0.02;
-    const padY = (region.extents.maxY - region.extents.minY) * 0.02;
+
+    const rad = (rotationRef.current * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    const corners = [
+      { x: region.extents.minX - origin.x, y: region.extents.minY - origin.y },
+      { x: region.extents.maxX - origin.x, y: region.extents.minY - origin.y },
+      { x: region.extents.maxX - origin.x, y: region.extents.maxY - origin.y },
+      { x: region.extents.minX - origin.x, y: region.extents.maxY - origin.y },
+    ];
+
+    let rMinX = Infinity, rMaxX = -Infinity;
+    let rMinY = Infinity, rMaxY = -Infinity;
+
+    for (const c of corners) {
+      const rx = c.x * cos - c.y * sin;
+      const ry = c.x * sin + c.y * cos;
+      if (rx < rMinX) rMinX = rx;
+      if (rx > rMaxX) rMaxX = rx;
+      if (ry < rMinY) rMinY = ry;
+      if (ry > rMaxY) rMaxY = ry;
+    }
+
+    const padX = (rMaxX - rMinX) * 0.02;
+    const padY = (rMaxY - rMinY) * 0.02;
     viewer.FitView(
-      region.extents.minX - padX - origin.x,
-      region.extents.maxX + padX - origin.x,
-      region.extents.minY - padY - origin.y,
-      region.extents.maxY + padY - origin.y,
+      rMinX - padX,
+      rMaxX + padX,
+      rMinY - padY,
+      rMaxY + padY,
     );
     viewer.Render();
     drawOverlayRef.current();
@@ -675,14 +771,51 @@ export default function DxfViewer({
     const bounds = viewer.GetBounds();
     const origin = viewer.GetOrigin();
     if (bounds && origin) {
-      viewer.FitView(
-        bounds.minX - origin.x, bounds.maxX - origin.x,
-        bounds.minY - origin.y, bounds.maxY - origin.y,
-      );
+      const rad = (rotationRef.current * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      const corners = [
+        { x: bounds.minX - origin.x, y: bounds.minY - origin.y },
+        { x: bounds.maxX - origin.x, y: bounds.minY - origin.y },
+        { x: bounds.maxX - origin.x, y: bounds.maxY - origin.y },
+        { x: bounds.minX - origin.x, y: bounds.maxY - origin.y },
+      ];
+
+      let rMinX = Infinity, rMaxX = -Infinity;
+      let rMinY = Infinity, rMaxY = -Infinity;
+
+      for (const c of corners) {
+        const rx = c.x * cos - c.y * sin;
+        const ry = c.x * sin + c.y * cos;
+        if (rx < rMinX) rMinX = rx;
+        if (rx > rMaxX) rMaxX = rx;
+        if (ry < rMinY) rMinY = ry;
+        if (ry > rMaxY) rMaxY = ry;
+      }
+
+      viewer.FitView(rMinX, rMaxX, rMinY, rMaxY);
       viewer.Render();
-      drawOverlay();
+      drawOverlayRef.current();
     }
-  }, [drawOverlay]);
+  }, []);
+
+  // ── Apply rotation to scene & re-fit ─────────────────────────────────────────
+  useEffect(() => {
+    rotationRef.current = currentRotation;
+    const viewer = viewerRef.current;
+    if (!viewer || loading) return;
+    const scene = viewer.GetScene();
+    if (!scene) return;
+    const rad = (currentRotation * Math.PI) / 180;
+    scene.rotation.z = rad;
+    scene.updateMatrix();
+    if (activeSheet !== null && activeSheet !== undefined) {
+      fitRegion(activeSheet);
+    } else {
+      handleFitView();
+    }
+  }, [currentRotation, loading, activeSheet, fitRegion, handleFitView]);
 
   const handleZoom = useCallback((direction: 'in' | 'out') => {
     const viewer = viewerRef.current;
@@ -763,14 +896,18 @@ export default function DxfViewer({
     const spanY = bounds.maxY - bounds.minY;
     if (spanX <= 0 || spanY <= 0) return;
 
-    const tl = canvasToWorld(rx, ry, box.width, box.height);
-    const br = canvasToWorld(rx + rw, ry + rh, box.width, box.height);
-    if (!tl || !br) return;
+    const p1 = canvasToWorld(rx, ry, box.width, box.height);
+    const p2 = canvasToWorld(rx + rw, ry, box.width, box.height);
+    const p3 = canvasToWorld(rx + rw, ry + rh, box.width, box.height);
+    const p4 = canvasToWorld(rx, ry + rh, box.width, box.height);
+    if (!p1 || !p2 || !p3 || !p4) return;
 
-    const worldX = Math.min(tl.x, br.x);
-    const worldY = Math.min(tl.y, br.y);
-    const worldW = Math.abs(br.x - tl.x);
-    const worldH = Math.abs(br.y - tl.y);
+    const worldX = Math.min(p1.x, p2.x, p3.x, p4.x);
+    const worldY = Math.min(p1.y, p2.y, p3.y, p4.y);
+    const worldMaxX = Math.max(p1.x, p2.x, p3.x, p4.x);
+    const worldMaxY = Math.max(p1.y, p2.y, p3.y, p4.y);
+    const worldW = worldMaxX - worldX;
+    const worldH = worldMaxY - worldY;
     const clamp = (v: number) => Math.max(0, Math.min(1000, v));
 
     onDrawComplete?.({
@@ -838,14 +975,23 @@ export default function DxfViewer({
 
     const currentX = e.clientX - box.left;
     const currentY = e.clientY - box.top;
-    const dx = ((currentX - dragBbox.startX) / cw) * 1000;
-    const dy = ((currentY - dragBbox.startY) / ch) * 1000;
+
+    const curW = canvasToWorld(currentX, currentY, cw, ch);
+    const startW = canvasToWorld(dragBbox.startX, dragBbox.startY, cw, ch);
+    if (!curW || !startW) return;
+
+    const spanX = bounds.maxX - bounds.minX;
+    const spanY = bounds.maxY - bounds.minY;
+    if (spanX <= 0 || spanY <= 0) return;
+
+    const dx = ((curW.x - startW.x) / spanX) * 1000;
+    const dy = -((curW.y - startW.y) / spanY) * 1000;
 
     const newX = Math.max(0, Math.min(1000 - dragBbox.origW, Math.round(dragBbox.origX + dx)));
     const newY = Math.max(0, Math.min(1000 - dragBbox.origH, Math.round(dragBbox.origY + dy)));
 
     setDragBbox(prev => prev ? { ...prev, currentX: newX, currentY: newY } : null);
-  }, [dragBbox]);
+  }, [dragBbox, isDraggingActive, canvasToWorld]);
 
   const handleBboxDragEnd = useCallback(() => {
     // Clear long press timer jika masih pending
@@ -1012,12 +1158,7 @@ export default function DxfViewer({
               const wx2 = hasSheetBox ? activeRegion!.extents.minX + ((d.sheet_bbox_x! + d.sheet_bbox_w!) / 1000) * (activeRegion!.extents.maxX - activeRegion!.extents.minX) : hasWorldBox ? d.world_bbox_x! + d.world_bbox_w! : bounds.minX + (((d.bbox_x ?? 0) + (d.bbox_w ?? 0)) / 1000) * spanX;
               const wy2 = hasSheetBox ? activeRegion!.extents.maxY - (d.sheet_bbox_y! / 1000) * (activeRegion!.extents.maxY - activeRegion!.extents.minY) : hasWorldBox ? d.world_bbox_y! : bounds.maxY - (((d.bbox_y ?? 0) + (d.bbox_h ?? 0)) / 1000) * spanY;
 
-              const tl = worldToCanvas(wx1, wy1, cw, ch);
-              const br = worldToCanvas(wx2, wy2, cw, ch);
-              let rx = Math.min(tl.x, br.x);
-              let ry = Math.min(tl.y, br.y);
-              let rw = Math.abs(br.x - tl.x);
-              let rh = Math.abs(br.y - tl.y);
+              let { rx, ry, rw, rh } = getBboxCanvasRect(wx1, wy1, wx2, wy2, cw, ch);
 
               const MIN_RENDER_SIZE = 15;
               if (rw > 0 && rw < MIN_RENDER_SIZE) {
@@ -1249,6 +1390,14 @@ export default function DxfViewer({
               borderRadius: 5, color: '#e5e7eb', cursor: 'pointer' }}
           >
             <MagnifyingGlassMinus size={16} />
+          </button>
+          <button type="button" onClick={handleRotate} title="Putar 90°"
+            style={{ padding: '6px 10px', background: 'transparent', border: 'none',
+              borderRadius: 5, color: '#e5e7eb', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
+          >
+            <ArrowClockwise size={16} />
+            {currentRotation > 0 && <span>{currentRotation}°</span>}
           </button>
           {layers.length > 0 && (
             <button type="button" onClick={() => setShowLayerPanel((v) => !v)}

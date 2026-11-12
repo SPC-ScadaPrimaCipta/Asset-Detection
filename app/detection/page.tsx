@@ -169,9 +169,10 @@ function DetectionContent() {
   // Recrop state — track detection being recropped
   const [recropId, setRecropId] = useState<string | null>(null);
 
-  // Viewer Pan & Zoom State
+  // Viewer Pan, Zoom & Rotation State
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showAllBboxes, setShowAllBboxes] = useState(true);
@@ -197,6 +198,38 @@ function DetectionContent() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Helper: Map screen client coords -> normalized (0-1000) image coords taking CSS rotation into account
+  const clientToNorm = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } => {
+      const container = imageContainerRef.current;
+      if (!container) return { x: 0, y: 0 };
+      const rect = container.getBoundingClientRect();
+      const W = container.offsetWidth;
+      const H = container.offsetHeight;
+      if (!W || !H) return { x: 0, y: 0 };
+
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = clientX - centerX;
+      const dy = clientY - centerY;
+
+      const rad = (rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+
+      const px = lx + W / 2;
+      const py = ly + H / 2;
+
+      const normX = Math.min(1000, Math.max(0, (px / W) * 1000));
+      const normY = Math.min(1000, Math.max(0, (py / H) * 1000));
+      return { x: normX, y: normY };
+    },
+    [rotation],
+  );
 
   // Manual Asset Drawing State
   const [isDrawingMode, setIsDrawingMode] = useState(false);
@@ -247,10 +280,11 @@ function DetectionContent() {
     }
   }, [imgNatural, containerSize]);
 
-  // Reset zoom & pan when page or document changes
+  // Reset zoom, pan & rotation when page or document changes
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
     setImgNatural(null);
     setIsDrawingMode(false);
     setDrawingStart(null);
@@ -518,6 +552,7 @@ function DetectionContent() {
       setPage(1);
       setPan({ x: 0, y: 0 });
       setZoom(1);
+      setRotation(0);
 
       // Fetch latest job for this document, load detections scoped to that job
       fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
@@ -836,12 +871,14 @@ function DetectionContent() {
 
   const selectedItem = detections.find((d) => d.id === selectedId) ?? null;
 
-  // Zoom handlers
+  // Zoom & Rotation handlers
   const handleZoomIn = () => setZoom((z) => Math.min(8, Number((z * 1.25).toFixed(2))));
   const handleZoomOut = () => setZoom((z) => Math.max(0.2, Number((z * 0.8).toFixed(2))));
+  const handleRotate = () => setRotation((r) => (r + 90) % 360);
   const handleResetZoom = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
   };
 
   const imgSrc = documentId && !isDxf ? `/api/documents/${documentId}/pages/${page}/image` : null;
@@ -1418,6 +1455,25 @@ function DetectionContent() {
                 >
                   Reset
                 </button>
+                <button
+                  onClick={handleRotate}
+                  title="Putar 90° (0° / 90° / 180° / 270°)"
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: 11,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    cursor: 'pointer',
+                    borderRadius: 'var(--radius-sm)',
+                    marginLeft: 4,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  <ArrowClockwise size={12} />
+                  {rotation > 0 && <span>{rotation}°</span>}
+                </button>
               </div>
 
               <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
@@ -1521,11 +1577,9 @@ function DetectionContent() {
             onMouseDown={(e) => {
               if (isDrawingMode) {
                 if (!imageContainerRef.current) return;
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                const normX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
-                const normY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
-                setDrawingStart({ x: normX, y: normY });
-                setCurrentDrawRect({ x: normX, y: normY, w: 0, h: 0 });
+                const norm = clientToNorm(e.clientX, e.clientY);
+                setDrawingStart(norm);
+                setCurrentDrawRect({ x: norm.x, y: norm.y, w: 0, h: 0 });
               } else if (e.button === 0 || e.button === 1) {
                 setDragging(true);
                 setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -1533,47 +1587,43 @@ function DetectionContent() {
             }}
             onMouseMove={(e) => {
               if (dragBbox && imageContainerRef.current) {
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  const dx = ((e.clientX - dragBbox.startX) / rect.width) * 1000;
-                  const dy = ((e.clientY - dragBbox.startY) / rect.height) * 1000;
-                  let nx = dragBbox.origX;
-                  let ny = dragBbox.origY;
-                  let nw = dragBbox.origW;
-                  let nh = dragBbox.origH;
+                const curNorm = clientToNorm(e.clientX, e.clientY);
+                const dx = curNorm.x - dragBbox.startX;
+                const dy = curNorm.y - dragBbox.startY;
+                let nx = dragBbox.origX;
+                let ny = dragBbox.origY;
+                let nw = dragBbox.origW;
+                let nh = dragBbox.origH;
 
-                  if (dragBbox.mode === 'move') {
-                    nx = Math.max(0, Math.min(1000 - nw, Math.round(dragBbox.origX + dx)));
-                    ny = Math.max(0, Math.min(1000 - nh, Math.round(dragBbox.origY + dy)));
-                  } else if (dragBbox.mode === 'br') {
-                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
-                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
-                  } else if (dragBbox.mode === 'tl') {
-                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
-                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
-                    nw = dragBbox.origX + dragBbox.origW - nx;
-                    nh = dragBbox.origY + dragBbox.origH - ny;
-                  } else if (dragBbox.mode === 'tr') {
-                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
-                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
-                    nh = dragBbox.origY + dragBbox.origH - ny;
-                  } else if (dragBbox.mode === 'bl') {
-                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
-                    nw = dragBbox.origX + dragBbox.origW - nx;
-                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
-                  }
-                  setDragBbox((prev) => (prev ? { ...prev, x: nx, y: ny, w: nw, h: nh } : null));
-                  suppressClickRef.current = true;
+                if (dragBbox.mode === 'move') {
+                  nx = Math.max(0, Math.min(1000 - nw, Math.round(dragBbox.origX + dx)));
+                  ny = Math.max(0, Math.min(1000 - nh, Math.round(dragBbox.origY + dy)));
+                } else if (dragBbox.mode === 'br') {
+                  nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                  nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
+                } else if (dragBbox.mode === 'tl') {
+                  nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                  ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                  nw = dragBbox.origX + dragBbox.origW - nx;
+                  nh = dragBbox.origY + dragBbox.origH - ny;
+                } else if (dragBbox.mode === 'tr') {
+                  ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                  nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                  nh = dragBbox.origY + dragBbox.origH - ny;
+                } else if (dragBbox.mode === 'bl') {
+                  nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                  nw = dragBbox.origX + dragBbox.origW - nx;
+                  nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
                 }
+                setDragBbox((prev) => (prev ? { ...prev, x: nx, y: ny, w: nw, h: nh } : null));
+                suppressClickRef.current = true;
               } else if (isDrawingMode && drawingStart) {
                 if (!imageContainerRef.current) return;
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                const currentX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
-                const currentY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
-                const rx = Math.min(drawingStart.x, currentX);
-                const ry = Math.min(drawingStart.y, currentY);
-                const rw = Math.abs(currentX - drawingStart.x);
-                const rh = Math.abs(currentY - drawingStart.y);
+                const curNorm = clientToNorm(e.clientX, e.clientY);
+                const rx = Math.min(drawingStart.x, curNorm.x);
+                const ry = Math.min(drawingStart.y, curNorm.y);
+                const rw = Math.abs(curNorm.x - drawingStart.x);
+                const rh = Math.abs(curNorm.y - drawingStart.y);
                 setCurrentDrawRect({ x: rx, y: ry, w: rw, h: rh });
               } else if (dragging) {
                 setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
@@ -1655,6 +1705,8 @@ function DetectionContent() {
                   detections={detections}
                   selectedId={selectedId}
                   showAll={showAllBboxes}
+                  rotation={rotation}
+                  onRotateChange={setRotation}
                   onSelectAsset={(id: string) => {
                     setSelectedId(id);
                     // find which list-page this detection is on and scroll to it
@@ -1766,7 +1818,7 @@ function DetectionContent() {
                   maxWidth: baseSize ? undefined : '100%',
                   maxHeight: baseSize ? undefined : '100%',
                   flexShrink: 0,
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  transform: `translate(${pan.x}px, ${pan.y}px) rotate(${rotation}deg)`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
                   transition: dragging || (isDrawingMode && drawingStart) ? 'none' : 'transform 40ms ease-out',
                   display: 'flex',
@@ -1843,11 +1895,12 @@ function DetectionContent() {
                               e.stopPropagation();
                               suppressClickRef.current = false;
                               const handle = (e.target as Element).getAttribute?.('data-handle') as 'tl' | 'tr' | 'bl' | 'br' | null;
+                              const startNorm = clientToNorm(e.clientX, e.clientY);
                               if (handle) {
                                 setDragBbox({
                                   id: d.id,
                                   x, y, w, h,
-                                  startX: e.clientX, startY: e.clientY,
+                                  startX: startNorm.x, startY: startNorm.y,
                                   origX: x, origY: y, origW: w, origH: h,
                                   mode: handle,
                                 });
@@ -1855,7 +1908,7 @@ function DetectionContent() {
                                 setDragBbox({
                                   id: d.id,
                                   x, y, w, h,
-                                  startX: e.clientX, startY: e.clientY,
+                                  startX: startNorm.x, startY: startNorm.y,
                                   origX: x, origY: y, origW: w, origH: h,
                                   mode: 'move',
                                 });
