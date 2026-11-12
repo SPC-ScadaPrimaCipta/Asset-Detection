@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs";
+import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import db from "@/lib/db";
 import { saveCompanyKnowledge } from "@/lib/knowledge-db";
@@ -185,6 +187,101 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
         ]
       );
     }
+
+    // ── Dataset Collection for Future YOLO Fine-Tuning ──
+    // Non-blocking save of confirmed asset crop + metadata for active learning
+    (async () => {
+      try {
+        if (!d.document_page_id || !d.asset_type) return;
+        const pageRow = await db.query("SELECT image_path FROM document_pages WHERE id = $1", [d.document_page_id]);
+        const imgPath = pageRow.rows[0]?.image_path;
+        if (!imgPath) return;
+
+        const sharp = (await import('sharp')).default;
+        const fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.resolve(process.cwd(), imgPath);
+        if (!fs.existsSync(fullImgPath)) return;
+
+        const datasetDir = path.resolve(process.cwd(), 'storage/dataset');
+        const imgDir = path.join(datasetDir, 'images');
+        const labelDir = path.join(datasetDir, 'labels');
+        if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+        if (!fs.existsSync(labelDir)) fs.mkdirSync(labelDir, { recursive: true });
+
+        // Save metadata
+        const labelData = {
+          id: d.id,
+          assetType: d.asset_type,
+          assetTag: d.asset_tag,
+          bbox: { x: d.bbox_x, y: d.bbox_y, w: d.bbox_w, h: d.bbox_h },
+          confirmedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(path.join(labelDir, `${d.id}.json`), JSON.stringify(labelData, null, 2), 'utf8');
+
+        // Extract and save crop image
+        let imgMeta: import('sharp').Metadata | null = null;
+        if (d.bbox_w > 0 && d.bbox_h > 0) {
+          imgMeta = await sharp(fullImgPath).metadata();
+          if (imgMeta.width && imgMeta.height) {
+            const left = Math.max(0, Math.min(imgMeta.width - 1, Math.round((d.bbox_x / 1000) * imgMeta.width)));
+            const top = Math.max(0, Math.min(imgMeta.height - 1, Math.round((d.bbox_y / 1000) * imgMeta.height)));
+            const width = Math.max(1, Math.min(imgMeta.width - left, Math.round((d.bbox_w / 1000) * imgMeta.width)));
+            const height = Math.max(1, Math.min(imgMeta.height - top, Math.round((d.bbox_h / 1000) * imgMeta.height)));
+            await sharp(fullImgPath)
+              .extract({ left, top, width, height })
+              .png()
+              .toFile(path.join(imgDir, `${d.id}.png`));
+          }
+        }
+        
+        // ── Python Learning Worker: Continuous Learning via pgvector ──
+        // Call Python API untuk process approved detection → pgvector embeddings
+        try {
+          const projectRow = await db.query("SELECT project_id FROM documents WHERE id=$1", [d.document_id]);
+          const projectId = projectRow.rows[0]?.project_id ?? null;
+          
+          if (projectId && d.bbox_w > 0 && d.bbox_h > 0) {
+            const pythonResponse = await fetch('http://127.0.0.1:8765/learning/process-approval', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                detection_id: d.id,
+                project_id: projectId,
+                asset_tag: d.asset_tag || 'UNKNOWN',
+                asset_type: d.asset_type,
+                symbol_category: d.equipment_class || d.asset_type,
+                bbox_px: {
+                  x: Math.round((d.bbox_x / 1000) * (imgMeta?.width || 1)),
+                  y: Math.round((d.bbox_y / 1000) * (imgMeta?.height || 1)),
+                  width: Math.round((d.bbox_w / 1000) * (imgMeta?.width || 1)),
+                  height: Math.round((d.bbox_h / 1000) * (imgMeta?.height || 1))
+                },
+                bbox_dxf: {
+                  x_min: d.bbox_x,
+                  y_min: d.bbox_y,
+                  x_max: d.bbox_x + d.bbox_w,
+                  y_max: d.bbox_y + d.bbox_h
+                },
+                image_path: fullImgPath,
+                confidence_original: d.confidence || 0.9,
+                approved_by: null, // Future: get from auth session
+              }),
+            });
+            
+            if (pythonResponse.ok) {
+              const result = await pythonResponse.json();
+              console.log(`[learning-python] pgvector embedding saved: ${result.embedding_id}`);
+            } else {
+              console.warn('[learning-python] API call failed:', await pythonResponse.text());
+            }
+          }
+        } catch (pyErr) {
+          console.warn('[learning-python] call failed (non-fatal):', pyErr instanceof Error ? pyErr.message : pyErr);
+        }
+        
+      } catch (dsErr) {
+        console.warn('[dataset] auto-save failed (non-fatal):', dsErr instanceof Error ? dsErr.message : dsErr);
+      }
+    })();
 
     return NextResponse.json({ status: "CONFIRMED" });
   } catch (e: unknown) {

@@ -94,9 +94,18 @@ export default function LegendsPage() {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)', gap: 8 }}>
-            <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
-            <span style={{ fontSize: '14px' }}>Loading legends…</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                border: '3px solid var(--border)',
+                borderTopColor: 'var(--primary)',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--foreground)' }}>Loading legends...</span>
           </div>
         ) : legends.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
@@ -119,7 +128,7 @@ export default function LegendsPage() {
             </button>
           </div>
         ) : (
-          <div style={{ width: '100%', overflowX: 'auto' }}>
+          <div style={{ width: '100%', overflowX: 'auto' }} className="document-table-wrapper">
             <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>

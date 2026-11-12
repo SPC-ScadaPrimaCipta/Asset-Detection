@@ -7,7 +7,7 @@
  */
 
 import { getVisionProvider, type IVisionProvider } from '@/lib/ai-providers';
-import { cleanMdoFieldValue } from '@/lib/mdo-description';
+import { cleanMdoFieldValue, isInstrumentAsset } from '@/lib/mdo-description';
 
 export interface MdoFlowRelation {
   assetTag: string;
@@ -90,13 +90,14 @@ ${assetsSummary}
 INSTRUCTIONS:
 1. For each target asset, visually trace the connecting process piping lines and arrowheads on the drawing:
    - "from": Identify the upstream source equipment tag, supply line, or origin (e.g. "TK-101", "SDV-1012", "GRS", "HEADER-A", or null).
-   - "to": Identify the downstream destination equipment tag, discharge line, or receiver (e.g. "PRESSURE TRANSMITTER A", "VENT", "SUMP TANK", "E-101", or null).
+   - "to": Identify the downstream destination equipment tag, discharge line, or receiver (e.g. "VENT", "SUMP TANK", "E-101", "P-101", or null).
    - "of": Identify the parent header line, pipeline name, or system context (e.g. "HEADER LINE", "METERING B", "SLUG CATCHER", or null).
    - "at": Identify specific location or connection point if labeled (e.g. "WELLHEAD", "DISCHARGE NOZZLE", "TOP TOWER", or null).
    - "size": Identify the nominal pipe or valve size if labeled nearby (e.g. "1/2\"", "2\"", "4\"", or null).
    - "direction": Determine the primary flow direction ("INLET", "OUTLET", or "UNKNOWN").
-2. Clean Omission: If any relation cannot be clearly determined from the drawing, return null. Do NOT invent fake tags.
-3. Return ONLY a single valid JSON object matching this structure:
+2. CRITICAL INSTRUMENT RULE: For instruments, transmitters, gauges, and sensing devices (PT, TT, FT, LT, PI, TI, PG, TG, LG, AT, etc.): Instruments NEVER transport or discharge process fluid downstream. Therefore, "from" and "to" MUST ALWAYS BE null for instruments! For instruments, only identify "of" (parent line/header/vessel being measured), "at" (specific tapping nozzle/location), and "size".
+3. Clean Omission: If any relation cannot be clearly determined from the drawing, return null. Do NOT invent fake tags.
+4. Return ONLY a single valid JSON object matching this structure:
 {
   "relations": [
     {
@@ -131,10 +132,12 @@ INSTRUCTIONS:
         for (const item of rawList) {
           if (!item || !item.assetTag) continue;
           const tagKey = String(item.assetTag).trim().toUpperCase();
+          const targetAsset = validAssets.find((a) => (a.assetTag ?? '').trim().toUpperCase() === tagKey);
+          const isInst = isInstrumentAsset(targetAsset?.assetType, tagKey);
           results.set(tagKey, {
             assetTag: item.assetTag,
-            from: cleanMdoFieldValue(item.from),
-            to: cleanMdoFieldValue(item.to),
+            from: isInst ? null : cleanMdoFieldValue(item.from),
+            to: isInst ? null : cleanMdoFieldValue(item.to),
             of: cleanMdoFieldValue(item.of),
             at: cleanMdoFieldValue(item.at),
             size: cleanMdoFieldValue(item.size),

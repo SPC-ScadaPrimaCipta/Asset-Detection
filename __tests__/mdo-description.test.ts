@@ -25,16 +25,17 @@ describe('assembleMdoDescription - PT Accenture Indonesia Description Rule', () 
     expect(desc).toBe('MTR-PIPE 2" OF PIGR PHASE 2 FROM GRS TO SUMP TANK');
   });
 
-  it('Example 3: correctly formats Press Gauge without Size and without FROM', () => {
+  it('Example 3: correctly formats Press Gauge without Size and enforces Instrument Rule (no FROM/TO, uses OF & AT)', () => {
     const desc = assembleMdoDescription({
       locationPrefix: 'MTR-',
-      equipmentTypeShort: 'PRESS GAUGE',
+      equipmentTypeShort: 'PG',
       size: null,
       ofValue: 'JMPR LINE',
-      fromValue: null,
-      toValue: 'S CATCHER',
+      fromValue: 'SDV-101', // Should be omitted
+      toValue: 'S CATCHER',  // Should be omitted
+      atValue: 'S CATCHER',
     });
-    expect(desc).toBe('MTR-PRESS GAUGE OF JMPR LINE TO S CATCHER');
+    expect(desc).toBe('MTR-PG OF JMPR LINE AT S CATCHER');
   });
 
   it('Example 4: correctly formats Check Valve (CKV)', () => {
@@ -61,16 +62,17 @@ describe('assembleMdoDescription - PT Accenture Indonesia Description Rule', () 
     expect(desc).toBe('MTR-BV 2" OF S CATCHER TO MEASURING LEVEL');
   });
 
-  it('User Example: Pressure Transmitter with GRS prefix and fractional size 1/2"', () => {
+  it('User Example: Pressure Transmitter enforces Instrument Rule (no FROM/TO, uses OF & AT)', () => {
     const desc = assembleMdoDescription({
       locationPrefix: 'GRS',
       equipmentTypeShort: 'PT',
       size: '1/2"',
-      ofValue: 'HEADER LINE',
-      fromValue: null,
-      toValue: 'PRESSURE TRANSMITTER A',
+      ofValue: 'FUEL GAS SYSTEM',
+      fromValue: 'SDV-101', // Should be omitted
+      toValue: 'PRESSURE TRANSMITTER A', // Should be omitted
+      atValue: 'WELLHEAD',
     });
-    expect(desc).toBe('GRS-PT 1/2" OF HEADER LINE TO PRESSURE TRANSMITTER A');
+    expect(desc).toBe('GRS-PT 1/2" OF FUEL GAS SYSTEM AT WELLHEAD');
   });
 
   it('handles clean omission when OF, FROM, or TO are empty or dash', () => {

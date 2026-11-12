@@ -36,6 +36,13 @@ export function validateTagPattern(pattern: string | null | undefined): string |
   if (pattern == null || String(pattern).trim() === '') return null;
   const p = String(pattern).trim().toUpperCase();
   if (p.length > 60) return 'Tag pattern too long (max 60 chars)';
+  
+  // Reject regex syntax (AI sometimes returns regex instead of tag pattern)
+  // e.g. "^(FI|PT|TT)-[0-9]+$" or "(CV|FCV|FV)-?\\s*[a-z]?"
+  if (p.includes('|') || p.includes('^') || p.includes('$') || p.includes('\\') || p.includes('(') || p.includes(')')) {
+    return 'Invalid tag pattern — do not use regex syntax. Use simple format like P-###, FIC-###';
+  }
+  
   // Pola: 1-6 huruf, dash, 1-6 campuran #/*/digit, opsional suffix huruf
   if (!/^[A-Z]{1,6}-[\#\*\d]{1,6}[A-Z]{0,2}$/.test(p)) {
     return 'Invalid tag pattern — expected format like P-###, FIC-###, XV-***';

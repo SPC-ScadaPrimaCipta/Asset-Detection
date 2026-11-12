@@ -127,6 +127,8 @@ Read the project code prefix from the drawing title block or drawing card. If un
 WHAT TO DETECT:
 ✓ All instruments (transmitters, indicators, controllers, switches, analyzers)
 ✓ All valves (gate, ball, check, control, safety, solenoid, butterfly)
+✓ Small inline valves: drain valves, vent valves, bleeder valves, sample valves, gauge root valves (typically 1/2", 3/4", 1", or attached below caps/blinds/flanges). Report them even if untagged or labeled only with pipe size (e.g. "3/4\"", "1/2\"", "3/4\" CAP") — set assetTag=null and report size in descriptors
+✓ Closely-spaced adjacent valves: when two valves sit along the same line or branch (e.g. a main block valve and a drain/bleed valve on the drop leg below it), detect EACH as a SEPARATE asset with its own bbox. Do NOT merge them into one detection
 ✓ All rotating equipment (pumps, compressors, fans, turbines)
 ✓ All vessels, tanks, separators, filters, strainers
 ✓ Junction boxes (JB), local control panels (LCP), fire & gas detectors
@@ -172,6 +174,7 @@ BBOX RULES — CRITICAL:
 • Valves: bbox should be the valve body only, not the actuator or connecting pipes
 • Typical instrument symbol bbox: width 30-80 units, height 30-80 units in 0-1000 space
 • Typical valve bbox: width 20-70 units, height 20-70 units
+• Small valve / drain / vent bbox: width 8-30 units, height 8-30 units
 • Typical pump/vessel bbox: width 50-150 units, height 50-150 units
 • If bbox width or height exceeds 200 units for an instrument/valve, you are likely including pipe lines — shrink it
 

@@ -19,6 +19,30 @@ import { UNKNOWN_ASSET_TYPE, type DxfDetection } from '@/lib/dxf-detection';
 import { sanitizeAssetType } from '@/lib/validation';
 import type { PersistableDetection } from '@/lib/detection/persistence/detection-repository';
 
+/**
+ * Levenshtein edit distance (simple iterative DP, O(m×n)).
+ * Used for fuzzy tag matching to handle OCR typos (XI→FI, TI→TIT).
+ */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,     // deletion
+        matrix[i][j - 1] + 1,     // insertion
+        matrix[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
 export interface VisionDetectionInput {
   assetTag: string | null;
   assetType: string;
@@ -169,6 +193,7 @@ export function mergeVisionDetections(
 
     let match: DxfDetection | null = null;
     if (vTag) {
+      // Step 1: Exact tag match
       let bestD = Infinity;
       for (const d of vector) {
         if (d.pidPage !== pidPage) continue;
@@ -177,6 +202,7 @@ export function mergeVisionDetections(
         const dist = Math.hypot(c.x - vCenter.x, c.y - vCenter.y);
         if (dist <= VISION_MERGE_DIST_NORM && dist < bestD) { bestD = dist; match = d; }
       }
+      // Step 2: Tag base match (prefix)
       if (!match) {
         const base = tagBase(vTag);
         let bestD = Infinity;
@@ -185,6 +211,38 @@ export function mergeVisionDetections(
           const c = bboxCenter(d.bbox);
           const dist = Math.hypot(c.x - vCenter.x, c.y - vCenter.y);
           if (dist <= VISION_MERGE_DIST_NORM * 1.5 && dist < bestD) { bestD = dist; match = d; }
+        }
+      }
+      // Step 3: Fuzzy tag match (OCR typo tolerance: edit distance ≤ 2, IoU ≥ 0.3)
+      // Handles XI→FI, TI→TIT, W-0105→W-O105 (O/0 confusion)
+      if (!match) {
+        const fuzzyMatch = vector
+          .filter((d) => {
+            if (d.pidPage !== pidPage || !d.assetTag) return false;
+            const dTag = normTag(d.assetTag);
+            if (!dTag) return false;
+            // Only fuzzy-match tags with similar length (±2 chars) and IoU overlap
+            if (Math.abs(dTag.length - vTag.length) > 2) return false;
+            const iou = bboxIoU(d.bbox, vBox);
+            if (iou < 0.3) return false; // Must have spatial overlap
+            // Simple edit distance check (Levenshtein ≤ 2)
+            const editDist = levenshtein(dTag, vTag);
+            return editDist <= 2;
+          })
+          .map((d) => ({ d, iou: bboxIoU(d.bbox, vBox), editDist: levenshtein(normTag(d.assetTag)!, vTag) }))
+          .sort((a, b) => {
+            // Prioritize: lower edit distance first, then higher IoU
+            if (a.editDist !== b.editDist) return a.editDist - b.editDist;
+            return b.iou - a.iou;
+          })[0];
+        if (fuzzyMatch) {
+          match = fuzzyMatch.d;
+          // Evidence: OCR typo corrected via DXF text
+          const correctedFrom = vTag;
+          const correctedTo = normTag(match.assetTag)!;
+          if (!match.evidence.includes(`OCR typo corrected: ${correctedFrom} → ${correctedTo}`)) {
+            match.evidence.push(`OCR typo corrected: ${correctedFrom} → ${correctedTo} (DXF text)`);
+          }
         }
       }
     }

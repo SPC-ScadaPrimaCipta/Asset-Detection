@@ -2,8 +2,10 @@ import { extractPidRelations, type PidTextAnchor } from '@/lib/mdo-pid-rules';
 import { graphRelationEvidence, type PidGraph } from '@/lib/pid-graph';
 import { suggestAbbreviation } from '@/lib/tag-generator';
 export const suggestTagPrefix = suggestAbbreviation;
-import { assembleMdoDescription } from '@/lib/mdo-description';
+import { assembleMdoDescription, isInstrumentAsset, INSTRUMENT_SHORT_CODES } from '@/lib/mdo-description';
+export { isInstrumentAsset, INSTRUMENT_SHORT_CODES };
 import type { MdoFlowRelation } from '@/lib/mdo-ai-analyzer';
+import type { DxfParseResult } from '@/lib/dxf-parser';
 
 export interface MdoDetectionInput {
   assetTag: string | null;
@@ -31,6 +33,25 @@ export interface PdfMdoDetectionInput {
   anchors: Array<{ text: string; x: number; y: number }>;
   aiRelation?: MdoFlowRelation | null;
   relationRadiusNorm?: number;
+  locationPrefix?: string | null;
+}
+
+export interface DxfMdoDetectionInput {
+  detection: {
+    assetTag: string | null;
+    assetType: string;
+    description?: string | null;
+    size?: string | null;
+    bbox: { x: number; y: number; width: number; height: number };
+  };
+  dxfData: DxfParseResult;
+  allDetections: Array<{
+    assetTag: string | null;
+    assetType: string;
+    description?: string | null;
+    bbox: { x: number; y: number; width: number; height: number };
+  }>;
+  anchors?: Array<{ text: string; x: number; y: number }>;
   locationPrefix?: string | null;
 }
 
@@ -156,13 +177,17 @@ export function buildMdoRecord(
   const size = detection.size?.trim() || null;
   const locationPrefix = detection.locationPrefix ?? null;
 
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : relations.from;
+  const finalTo = isInstrument ? null : relations.to;
+
   const description = assembleMdoDescription({
     locationPrefix,
     equipmentTypeShort: shortType,
     size,
     ofValue: relations.of,
-    fromValue: relations.from,
-    toValue: relations.to,
+    fromValue: finalFrom,
+    toValue: finalTo,
     atValue: relations.at,
   });
 
@@ -171,8 +196,8 @@ export function buildMdoRecord(
     equipmentTypeShort: shortType,
     equipmentName,
     size,
-    from: relations.from,
-    to: relations.to,
+    from: finalFrom,
+    to: finalTo,
     of: relations.of,
     description,
     locationPrefix,
@@ -216,13 +241,17 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     detection.description,
   );
 
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : from;
+  const finalTo = isInstrument ? null : to;
+
   const description = assembleMdoDescription({
     locationPrefix,
     equipmentTypeShort: shortType,
     size,
     ofValue: of,
-    fromValue: from,
-    toValue: to,
+    fromValue: finalFrom,
+    toValue: finalTo,
     atValue: at,
   });
 
@@ -231,8 +260,102 @@ export function buildPdfMdoRecord(input: PdfMdoDetectionInput): MdoRecordDraft {
     equipmentTypeShort: shortType,
     equipmentName,
     size,
-    from,
-    to,
+    from: finalFrom,
+    to: finalTo,
+    of,
+    description,
+    locationPrefix,
+    equipmentType: upper(detection.assetType),
+    componentName: detection.description?.trim() || null,
+    at,
+  };
+}
+
+export interface DxfMdoDetectionInput {
+  detection: {
+    assetTag: string | null;
+    assetType: string;
+    description?: string | null;
+    size?: string | null;
+    bbox: { x: number; y: number; width: number; height: number };
+  };
+  dxfData: DxfParseResult;
+  allDetections: Array<{
+    assetTag: string | null;
+    assetType: string;
+    description?: string | null;
+    bbox: { x: number; y: number; width: number; height: number };
+  }>;
+  anchors?: PidTextAnchor[];
+  locationPrefix?: string | null;
+}
+
+/**
+ * Builds MDO Record for DXF drawings using vector flow analysis.
+ * Traces pipe connections directly from DXF geometry (LINE, POLYLINE, ARC).
+ * Much more accurate than PDF pixel tracing.
+ */
+export async function buildDxfMdoRecordWithFlowAnalysis(input: DxfMdoDetectionInput): Promise<MdoRecordDraft> {
+  const { detection, dxfData, allDetections, anchors = [], locationPrefix = null } = input;
+
+  // 1. Run DXF flow analysis
+  const { analyzeDxfProcessFlow } = await import('@/lib/mdo-dxf-analyzer');
+  const flowMap = await analyzeDxfProcessFlow(dxfData, allDetections);
+
+  const detectionTag = detection.assetTag?.trim().toUpperCase();
+  const flowRelation = detectionTag ? flowMap.get(detectionTag) : null;
+
+  // 2. Spatial text anchor fallback (if no flow relation or missing fields)
+  const rawCenter = {
+    x: detection.bbox.x + detection.bbox.width / 2,
+    y: detection.bbox.y + detection.bbox.height / 2,
+  };
+  const spatialRelations = anchors.length > 0
+    ? extractPidRelations(anchors, rawCenter, 250)
+    : { from: null, to: null, of: null, at: null, confidence: 0.5, evidence: [] };
+
+  // 3. Fusion: DXF flow takes precedence, spatial text fills gaps
+  const from = flowRelation?.from ?? spatialRelations.from ?? null;
+  const to = flowRelation?.to ?? spatialRelations.to ?? null;
+  let of = flowRelation?.of ?? spatialRelations.of ?? null;
+  const at = flowRelation?.at ?? spatialRelations.at ?? null;
+  const size = detection.size?.trim() || flowRelation?.size?.trim() || null;
+
+  // Fallback: check description for OF clues
+  if (!of && detection.description && detection.description.trim().length > 0) {
+    const desc = detection.description.trim();
+    if (desc.toUpperCase().includes('LINE') || desc.toUpperCase().includes('HEADER') || desc.toUpperCase().includes('SYSTEM')) {
+      of = desc;
+    }
+  }
+
+  const { shortType, equipmentName } = deriveEquipmentNaming(
+    detection.assetType,
+    detection.assetTag,
+    detection.description,
+  );
+
+  const isInstrument = isInstrumentAsset(detection.assetType, shortType);
+  const finalFrom = isInstrument ? null : from;
+  const finalTo = isInstrument ? null : to;
+
+  const description = assembleMdoDescription({
+    locationPrefix,
+    equipmentTypeShort: shortType,
+    size,
+    ofValue: of,
+    fromValue: finalFrom,
+    toValue: finalTo,
+    atValue: at,
+  });
+
+  return {
+    tagNoProposed: detection.assetTag,
+    equipmentTypeShort: shortType,
+    equipmentName,
+    size,
+    from: finalFrom,
+    to: finalTo,
     of,
     description,
     locationPrefix,

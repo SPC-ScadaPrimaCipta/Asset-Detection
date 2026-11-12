@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import {
   Lightning,
   CheckCircle,
@@ -22,9 +23,11 @@ import {
   ArrowClockwise,
   Trash,
   Stack,
+  Crop,
 } from '@phosphor-icons/react';
 import { LegendSelector } from '@/components/ui/LegendSelector';
 import AddManualAssetModal, { BoundingBoxCoords } from '@/components/detection/AddManualAssetModal';
+import type { DxfDrawBbox } from '@/components/DxfViewer';
 import DedupModal from '@/components/detection/DedupModal';
 import { getAssetTypeColor } from '@/lib/asset-type-colors';
 
@@ -70,6 +73,14 @@ interface Detection {
   bbox_y: number | null;
   bbox_w: number | null;
   bbox_h: number | null;
+  world_bbox_x?: number | null;
+  world_bbox_y?: number | null;
+  world_bbox_w?: number | null;
+  world_bbox_h?: number | null;
+  sheet_bbox_x?: number | null;
+  sheet_bbox_y?: number | null;
+  sheet_bbox_w?: number | null;
+  sheet_bbox_h?: number | null;
 }
 
 interface JobProgress {
@@ -140,6 +151,9 @@ function DetectionContent() {
 
   // Multi-selection (Bulk Action)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // Active sheet for DXF viewer — auto-jump to page with detections
+  const [activeSheet, setActiveSheet] = useState<number | null>(null);
 
   // Edit Modal State
   const [editingItem, setEditingItem] = useState<Detection | null>(null);
@@ -152,9 +166,13 @@ function DetectionContent() {
   });
   const [editSaving, setEditSaving] = useState(false);
 
-  // Viewer Pan & Zoom State
+  // Recrop state — track detection being recropped
+  const [recropId, setRecropId] = useState<string | null>(null);
+
+  // Viewer Pan, Zoom & Rotation State
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showAllBboxes, setShowAllBboxes] = useState(true);
@@ -180,6 +198,38 @@ function DetectionContent() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Helper: Map screen client coords -> normalized (0-1000) image coords taking CSS rotation into account
+  const clientToNorm = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } => {
+      const container = imageContainerRef.current;
+      if (!container) return { x: 0, y: 0 };
+      const rect = container.getBoundingClientRect();
+      const W = container.offsetWidth;
+      const H = container.offsetHeight;
+      if (!W || !H) return { x: 0, y: 0 };
+
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = clientX - centerX;
+      const dy = clientY - centerY;
+
+      const rad = (rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+
+      const px = lx + W / 2;
+      const py = ly + H / 2;
+
+      const normX = Math.min(1000, Math.max(0, (px / W) * 1000));
+      const normY = Math.min(1000, Math.max(0, (py / H) * 1000));
+      return { x: normX, y: normY };
+    },
+    [rotation],
+  );
 
   // Manual Asset Drawing State
   const [isDrawingMode, setIsDrawingMode] = useState(false);
@@ -230,15 +280,33 @@ function DetectionContent() {
     }
   }, [imgNatural, containerSize]);
 
-  // Reset zoom & pan when page or document changes
+  // Reset zoom, pan & rotation when page or document changes
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
     setImgNatural(null);
     setIsDrawingMode(false);
     setDrawingStart(null);
     setCurrentDrawRect(null);
   }, [page, documentId]);
+
+  // Auto-navigate to first sheet with detections (DXF viewer)
+  useEffect(() => {
+    console.log('[detection] auto-sheet effect:', { detectionsCount: detections?.length, activeSheet });
+    if (!detections || detections.length === 0) {
+      setActiveSheet(null);
+      return;
+    }
+    // Find pages with detections
+    const pagesWithDet = new Set(detections.map(d => d.pid_page).filter(p => p !== null && p !== undefined));
+    console.log('[detection] pagesWithDet:', Array.from(pagesWithDet));
+    if (pagesWithDet.size > 0) {
+      const firstPageWithDet = Math.min(...Array.from(pagesWithDet as Set<number>));
+      console.log('[detection] setting activeSheet to:', firstPageWithDet);
+      setActiveSheet(firstPageWithDet);
+    }
+  }, [detections]);
 
   // Smooth Zoom via Mouse Scroll Wheel with Cursor-Anchor Focal Point
   useEffect(() => {
@@ -484,6 +552,7 @@ function DetectionContent() {
       setPage(1);
       setPan({ x: 0, y: 0 });
       setZoom(1);
+      setRotation(0);
 
       // Fetch latest job for this document, load detections scoped to that job
       fetch(`/api/detection/jobs?document_id=${documentId}&limit=1`)
@@ -638,6 +707,18 @@ function DetectionContent() {
     });
   };
 
+  const handleRecrop = (id: string) => {
+    setRecropId(id);
+    setSelectedId(id);
+    setIsDrawingMode(true);
+    // Scroll ke card di list
+    setTimeout(() => cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+  };
+
+  const handleEditFromViewer = (detection: Detection) => {
+    handleOpenEdit(detection);
+  };
+
   const handleSaveEdit = async () => {
     if (!editingItem) return;
     setEditSaving(true);
@@ -790,20 +871,28 @@ function DetectionContent() {
 
   const selectedItem = detections.find((d) => d.id === selectedId) ?? null;
 
-  // Zoom handlers
+  // Zoom & Rotation handlers
   const handleZoomIn = () => setZoom((z) => Math.min(8, Number((z * 1.25).toFixed(2))));
   const handleZoomOut = () => setZoom((z) => Math.max(0.2, Number((z * 0.8).toFixed(2))));
+  const handleRotate = () => setRotation((r) => (r + 90) % 360);
   const handleResetZoom = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
   };
 
   const imgSrc = documentId && !isDxf ? `/api/documents/${documentId}/pages/${page}/image` : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
+    <>
+      <LoadingOverlay
+        isVisible={running}
+        message="Starting Detection Job..."
+        subMessage="Submitting to AI detection queue. This may take a moment."
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - var(--topbar-height) - 48px)', overflow: 'hidden' }}>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0, padding: '4px 0' }} className="detection-controls">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
           {/* Project Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1301,9 +1390,9 @@ function DetectionContent() {
       )}
 
       {/* ── Main Workspace Area (Split Viewer + Cards) ─────────────────── */}
-      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }} className="detection-viewer-row">
         {/* Left Side: Interactive Canvas / DXF Viewer */}
-        <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ ...cardStyle, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} className="detection-canvas-container">
           {/* Viewer Toolbar */}
           <div
             style={{
@@ -1366,6 +1455,25 @@ function DetectionContent() {
                 >
                   Reset
                 </button>
+                <button
+                  onClick={handleRotate}
+                  title="Putar 90° (0° / 90° / 180° / 270°)"
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: 11,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    cursor: 'pointer',
+                    borderRadius: 'var(--radius-sm)',
+                    marginLeft: 4,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  <ArrowClockwise size={12} />
+                  {rotation > 0 && <span>{rotation}°</span>}
+                </button>
               </div>
 
               <div style={{ width: 1, height: 14, background: 'var(--border)' }} />
@@ -1395,7 +1503,7 @@ function DetectionContent() {
                   setDrawingStart(null);
                   setCurrentDrawRect(null);
                 }}
-                disabled={!documentId || isDxf}
+                disabled={!documentId}
                 style={{
                   padding: '3px 10px',
                   fontSize: 11,
@@ -1403,15 +1511,15 @@ function DetectionContent() {
                   border: `1px solid ${isDrawingMode ? '#22c55e' : 'var(--border)'}`,
                   background: isDrawingMode ? 'rgba(34, 197, 94, 0.18)' : 'var(--surface)',
                   color: isDrawingMode ? '#22c55e' : 'var(--foreground)',
-                  cursor: !documentId || isDxf ? 'not-allowed' : 'pointer',
+                  cursor: !documentId ? 'not-allowed' : 'pointer',
                   fontWeight: 600,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 5,
-                  opacity: !documentId || isDxf ? 0.5 : 1,
+                  opacity: !documentId ? 0.5 : 1,
                   boxShadow: isDrawingMode ? '0 0 10px rgba(34,197,94,0.3)' : 'none',
                 }}
-                title={isDxf ? 'Manual add is available for PDF drawings' : 'Draw bounding box on PDF preview to add asset'}
+                title={isDxf ? 'Klik dan drag area simbol pada viewer DXF untuk menambah aset' : 'Draw bounding box on PDF preview to add asset'}
               >
                 <Plus size={12} weight="bold" />
                 {isDrawingMode ? 'Drawing Mode Active' : 'Add Asset Manual'}
@@ -1435,13 +1543,18 @@ function DetectionContent() {
                 flexShrink: 0,
               }}
             >
-              <span>Mode Seleksi Aktif: Klik dan drag mouse pada gambar P&ID untuk menandai area simbol asset baru.</span>
+              <span>
+                {recropId 
+                  ? 'Mode Recrop: Klik dan drag untuk menandai ulang area simbol yang terdeteksi.'
+                  : 'Mode Seleksi Aktif: Klik dan drag mouse pada gambar P&ID untuk menandai area simbol asset baru.'}
+              </span>
               <button
                 type="button"
                 onClick={() => {
                   setIsDrawingMode(false);
                   setDrawingStart(null);
                   setCurrentDrawRect(null);
+                  setRecropId(null);
                 }}
                 style={{
                   background: 'none',
@@ -1464,11 +1577,9 @@ function DetectionContent() {
             onMouseDown={(e) => {
               if (isDrawingMode) {
                 if (!imageContainerRef.current) return;
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                const normX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
-                const normY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
-                setDrawingStart({ x: normX, y: normY });
-                setCurrentDrawRect({ x: normX, y: normY, w: 0, h: 0 });
+                const norm = clientToNorm(e.clientX, e.clientY);
+                setDrawingStart(norm);
+                setCurrentDrawRect({ x: norm.x, y: norm.y, w: 0, h: 0 });
               } else if (e.button === 0 || e.button === 1) {
                 setDragging(true);
                 setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -1476,47 +1587,43 @@ function DetectionContent() {
             }}
             onMouseMove={(e) => {
               if (dragBbox && imageContainerRef.current) {
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  const dx = ((e.clientX - dragBbox.startX) / rect.width) * 1000;
-                  const dy = ((e.clientY - dragBbox.startY) / rect.height) * 1000;
-                  let nx = dragBbox.origX;
-                  let ny = dragBbox.origY;
-                  let nw = dragBbox.origW;
-                  let nh = dragBbox.origH;
+                const curNorm = clientToNorm(e.clientX, e.clientY);
+                const dx = curNorm.x - dragBbox.startX;
+                const dy = curNorm.y - dragBbox.startY;
+                let nx = dragBbox.origX;
+                let ny = dragBbox.origY;
+                let nw = dragBbox.origW;
+                let nh = dragBbox.origH;
 
-                  if (dragBbox.mode === 'move') {
-                    nx = Math.max(0, Math.min(1000 - nw, Math.round(dragBbox.origX + dx)));
-                    ny = Math.max(0, Math.min(1000 - nh, Math.round(dragBbox.origY + dy)));
-                  } else if (dragBbox.mode === 'br') {
-                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
-                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
-                  } else if (dragBbox.mode === 'tl') {
-                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
-                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
-                    nw = dragBbox.origX + dragBbox.origW - nx;
-                    nh = dragBbox.origY + dragBbox.origH - ny;
-                  } else if (dragBbox.mode === 'tr') {
-                    ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
-                    nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
-                    nh = dragBbox.origY + dragBbox.origH - ny;
-                  } else if (dragBbox.mode === 'bl') {
-                    nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
-                    nw = dragBbox.origX + dragBbox.origW - nx;
-                    nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
-                  }
-                  setDragBbox((prev) => (prev ? { ...prev, x: nx, y: ny, w: nw, h: nh } : null));
-                  suppressClickRef.current = true;
+                if (dragBbox.mode === 'move') {
+                  nx = Math.max(0, Math.min(1000 - nw, Math.round(dragBbox.origX + dx)));
+                  ny = Math.max(0, Math.min(1000 - nh, Math.round(dragBbox.origY + dy)));
+                } else if (dragBbox.mode === 'br') {
+                  nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                  nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
+                } else if (dragBbox.mode === 'tl') {
+                  nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                  ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                  nw = dragBbox.origX + dragBbox.origW - nx;
+                  nh = dragBbox.origY + dragBbox.origH - ny;
+                } else if (dragBbox.mode === 'tr') {
+                  ny = Math.max(0, Math.min(dragBbox.origY + dragBbox.origH - 10, Math.round(dragBbox.origY + dy)));
+                  nw = Math.max(10, Math.min(1000 - nx, Math.round(dragBbox.origW + dx)));
+                  nh = dragBbox.origY + dragBbox.origH - ny;
+                } else if (dragBbox.mode === 'bl') {
+                  nx = Math.max(0, Math.min(dragBbox.origX + dragBbox.origW - 10, Math.round(dragBbox.origX + dx)));
+                  nw = dragBbox.origX + dragBbox.origW - nx;
+                  nh = Math.max(10, Math.min(1000 - ny, Math.round(dragBbox.origH + dy)));
                 }
+                setDragBbox((prev) => (prev ? { ...prev, x: nx, y: ny, w: nw, h: nh } : null));
+                suppressClickRef.current = true;
               } else if (isDrawingMode && drawingStart) {
                 if (!imageContainerRef.current) return;
-                const rect = imageContainerRef.current.getBoundingClientRect();
-                const currentX = Math.min(1000, Math.max(0, ((e.clientX - rect.left) / rect.width) * 1000));
-                const currentY = Math.min(1000, Math.max(0, ((e.clientY - rect.top) / rect.height) * 1000));
-                const rx = Math.min(drawingStart.x, currentX);
-                const ry = Math.min(drawingStart.y, currentY);
-                const rw = Math.abs(currentX - drawingStart.x);
-                const rh = Math.abs(currentY - drawingStart.y);
+                const curNorm = clientToNorm(e.clientX, e.clientY);
+                const rx = Math.min(drawingStart.x, curNorm.x);
+                const ry = Math.min(drawingStart.y, curNorm.y);
+                const rw = Math.abs(curNorm.x - drawingStart.x);
+                const rh = Math.abs(curNorm.y - drawingStart.y);
                 setCurrentDrawRect({ x: rx, y: ry, w: rw, h: rh });
               } else if (dragging) {
                 setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
@@ -1597,6 +1704,9 @@ function DetectionContent() {
                   url={`/api/documents/${documentId}/raw`}
                   detections={detections}
                   selectedId={selectedId}
+                  showAll={showAllBboxes}
+                  rotation={rotation}
+                  onRotateChange={setRotation}
                   onSelectAsset={(id: string) => {
                     setSelectedId(id);
                     // find which list-page this detection is on and scroll to it
@@ -1607,7 +1717,95 @@ function DetectionContent() {
                     }
                     setTimeout(() => cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
                   }}
-                  activeSheet={null}
+                  activeSheet={activeSheet}
+                  onDeleteAsset={(id: string) => handleDelete(id)}
+                  onRecrop={handleRecrop}
+                  onEdit={handleEditFromViewer}
+                  onBboxUpdate={(id, bbox) => {
+                    // Auto-save immediate
+                    setDetections((prev) =>
+                      prev.map((d) =>
+                        d.id === id
+                          ? {
+                              ...d,
+                              bbox_x: bbox.x,
+                              bbox_y: bbox.y,
+                              bbox_w: bbox.width,
+                              bbox_h: bbox.height,
+                              world_bbox_x: bbox.world?.x ?? d.world_bbox_x,
+                              world_bbox_y: bbox.world?.y ?? d.world_bbox_y,
+                              world_bbox_w: bbox.world?.width ?? d.world_bbox_w,
+                              world_bbox_h: bbox.world?.height ?? d.world_bbox_h,
+                            }
+                          : d
+                      )
+                    );
+                    fetch(`/api/detections/${id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        bbox_x: bbox.x,
+                        bbox_y: bbox.y,
+                        bbox_w: bbox.width,
+                        bbox_h: bbox.height,
+                        world_bbox_x: bbox.world?.x,
+                        world_bbox_y: bbox.world?.y,
+                        world_bbox_w: bbox.world?.width,
+                        world_bbox_h: bbox.world?.height,
+                      }),
+                    }).catch((err) => console.error('[detection] bbox update failed:', err));
+                  }}
+                  drawingEnabled={isDrawingMode}
+                  onDrawComplete={(bbox: DxfDrawBbox) => {
+                    if (recropId) {
+                      // Recrop existing detection
+                      setDetections((prev) =>
+                        prev.map((d) =>
+                          d.id === recropId
+                            ? {
+                                ...d,
+                                bbox_x: bbox.x,
+                                bbox_y: bbox.y,
+                                bbox_w: bbox.width,
+                                bbox_h: bbox.height,
+                                world_bbox_x: bbox.world?.x,
+                                world_bbox_y: bbox.world?.y,
+                                world_bbox_w: bbox.world?.width,
+                                world_bbox_h: bbox.world?.height,
+                              }
+                            : d
+                        )
+                      );
+                      // Save ke API
+                      fetch(`/api/detections/${recropId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          bbox_x: bbox.x,
+                          bbox_y: bbox.y,
+                          bbox_w: bbox.width,
+                          bbox_h: bbox.height,
+                          world_bbox_x: bbox.world?.x,
+                          world_bbox_y: bbox.world?.y,
+                          world_bbox_w: bbox.world?.width,
+                          world_bbox_h: bbox.world?.height,
+                        }),
+                      }).catch((err) => console.error('[detection] recrop failed:', err));
+                      
+                      // Open edit modal untuk ubah nama
+                      const detection = detections.find(d => d.id === recropId);
+                      if (detection) {
+                        handleOpenEdit(detection);
+                      }
+                      setRecropId(null);
+                      setIsDrawingMode(false);
+                    } else {
+                      // Manual add baru
+                      setPendingBbox(bbox);
+                      setManualModalOpen(true);
+                      setIsDrawingMode(false);
+                    }
+                  }}
                   style={{ position: 'absolute', inset: 0, minHeight: 0 }}
                 />
             ) : imgSrc ? (
@@ -1620,7 +1818,7 @@ function DetectionContent() {
                   maxWidth: baseSize ? undefined : '100%',
                   maxHeight: baseSize ? undefined : '100%',
                   flexShrink: 0,
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  transform: `translate(${pan.x}px, ${pan.y}px) rotate(${rotation}deg)`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
                   transition: dragging || (isDrawingMode && drawingStart) ? 'none' : 'transform 40ms ease-out',
                   display: 'flex',
@@ -1697,11 +1895,12 @@ function DetectionContent() {
                               e.stopPropagation();
                               suppressClickRef.current = false;
                               const handle = (e.target as Element).getAttribute?.('data-handle') as 'tl' | 'tr' | 'bl' | 'br' | null;
+                              const startNorm = clientToNorm(e.clientX, e.clientY);
                               if (handle) {
                                 setDragBbox({
                                   id: d.id,
                                   x, y, w, h,
-                                  startX: e.clientX, startY: e.clientY,
+                                  startX: startNorm.x, startY: startNorm.y,
                                   origX: x, origY: y, origW: w, origH: h,
                                   mode: handle,
                                 });
@@ -1709,7 +1908,7 @@ function DetectionContent() {
                                 setDragBbox({
                                   id: d.id,
                                   x, y, w, h,
-                                  startX: e.clientX, startY: e.clientY,
+                                  startX: startNorm.x, startY: startNorm.y,
                                   origX: x, origY: y, origW: w, origH: h,
                                   mode: 'move',
                                 });
@@ -1872,6 +2071,7 @@ function DetectionContent() {
 
         {/* Right Side: Compact Cards List (Legend Preview Layout) */}
         <aside
+          className="detection-sidebar"
           style={{
             ...cardStyle,
             width: 380,
@@ -2261,6 +2461,27 @@ function DetectionContent() {
                       >
                         <PencilSimple size={11} />
                       </button>
+                      {isDxf && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRecrop(d.id);
+                          }}
+                          title="Recrop Bbox"
+                          style={{
+                            background: recropId === d.id ? 'rgba(59,130,246,0.2)' : 'var(--surface-muted)',
+                            color: recropId === d.id ? '#60a5fa' : 'var(--foreground-muted)',
+                            border: 'none',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '3px 6px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <Crop size={11} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -2481,6 +2702,7 @@ function DetectionContent() {
         />
       )}
     </div>
+    </>
   );
 }
 

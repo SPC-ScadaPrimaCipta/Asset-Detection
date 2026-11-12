@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ArrowCounterClockwise, PencilLine, SquaresFour, CheckCircle, SealCheck, PencilSimple, XCircle, Trash, FloppyDisk, X, CaretLeft, CaretRight, Plus, Minus } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { validateTagPattern } from '@/lib/legend-schemas';
 import { referenceCropUrl } from '@/lib/legend-url';
 
@@ -777,7 +778,13 @@ const r = await fetch(`/api/legends/${legendId}`, { method: 'PUT', headers: { 'C
   const pagedSymbols = filteredSymbols.slice((symPage - 1) * SYMS_PER_PAGE, symPage * SYMS_PER_PAGE);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 24px)', overflow: 'hidden' }}>
+    <>
+      <LoadingOverlay
+        isVisible={validatingAll}
+        message="Validating symbols..."
+        subMessage="Processing all symbols in legend"
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - var(--topbar-height) - 24px)', overflow: 'hidden' }}>
       {/* ΓöÇΓöÇ Add Symbol Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
       {addModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -1345,5 +1352,6 @@ const color = sym.status === 'REJECTED' ? '#ef4444' : sym.status === 'ACTIVE' ? 
         </div>
       )}
     </div>
+    </>
   );
 }

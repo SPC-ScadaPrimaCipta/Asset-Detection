@@ -69,6 +69,7 @@ export interface DetectionTuning {
   bboxDegenerateUnits: number;
   bboxMaxSymbolUnits: number;
   bboxMaxLargeEquipmentUnits: number;
+  bboxExpansionMultiplier: number;  // Spatial expansion multiplier for description text association (default 2.5)
   capUnknownConfidence: number;
   capOversizedBboxConfidence: number;
   capDegenerateBboxConfidence: number;
@@ -366,6 +367,7 @@ export function buildTuning(overrides?: TuningOverrides | null): Tuning {
       bboxDegenerateUnits: num(d.bboxDegenerateUnits, env.DETECTION_BBOX_DEGENERATE_UNITS),
       bboxMaxSymbolUnits: num(d.bboxMaxSymbolUnits, env.DETECTION_BBOX_MAX_SYMBOL_UNITS),
       bboxMaxLargeEquipmentUnits: num(d.bboxMaxLargeEquipmentUnits, env.DETECTION_BBOX_MAX_LARGE_EQUIPMENT_UNITS),
+      bboxExpansionMultiplier: num(d.bboxExpansionMultiplier, 1.5),  // Conservative: was 2.5, now 1.5× for tighter bbox
       capUnknownConfidence: num(d.capUnknownConfidence, env.DETECTION_CAP_UNKNOWN_CONFIDENCE),
       capOversizedBboxConfidence: num(d.capOversizedBboxConfidence, env.DETECTION_CAP_OVERSIZED_BBOX_CONFIDENCE),
       capDegenerateBboxConfidence: num(d.capDegenerateBboxConfidence, env.DETECTION_CAP_DEGENERATE_BBOX_CONFIDENCE),

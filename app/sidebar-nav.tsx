@@ -18,6 +18,7 @@ import {
   LogOut,
   User as UserIcon,
   Users,
+  X,
 } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -31,7 +32,7 @@ const MENU_ITEMS = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export default function SidebarNav() {
+export default function SidebarNav({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, refreshUser } = useUser();
@@ -88,61 +89,95 @@ export default function SidebarNav() {
     >
       <div>
         {/* Brand / Logo */}
-        <Link
-          href="/"
+        <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
-            textDecoration: 'none',
+            justifyContent: 'space-between',
+            gap: 8,
             padding: '4px 8px 24px',
             borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
             marginBottom: 20,
           }}
         >
-          {/* TagFlow Logo */}
-          <img
-            src="/logo.svg"
-            alt="TagFlow Logo"
-            width={42}
-            height={42}
+          <Link
+            href="/"
+            onClick={onClose}
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: 10,
-              flexShrink: 0,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              textDecoration: 'none',
+              minWidth: 0,
             }}
-          />
-          <div>
-            <span
+          >
+            {/* TagFlow Logo */}
+            <img
+              src="/logo.svg"
+              alt="TagFlow Logo"
+              width={42}
+              height={42}
               style={{
-                fontSize: 22,
-                fontWeight: 700,
+                width: 42,
+                height: 42,
+                borderRadius: 10,
+                flexShrink: 0,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+              }}
+            />
+            <div>
+              <span
+                style={{
+                  fontSize: 22,
+                  fontWeight: 700,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.1,
+                  display: 'block',
+                }}
+              >
+                TagFlow.
+              </span>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 500,
+                  color: 'var(--sidebar-item-text, #DCE3FF)',
+                  opacity: 0.85,
+                  letterSpacing: '0.01em',
+                  lineHeight: 1.25,
+                  display: 'block',
+                  marginTop: 2,
+                }}
+              >
+                AI Asset Detection<br />Intelligence
+              </span>
+            </div>
+          </Link>
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Tutup Menu"
+              style={{
+                background: 'rgba(255, 255, 255, 0.12)',
+                border: 'none',
                 color: '#FFFFFF',
-                letterSpacing: '-0.02em',
-                lineHeight: 1.1,
-                display: 'block',
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
               }}
             >
-              TagFlow.
-            </span>
-            <span
-              style={{
-                fontSize: 10.5,
-                fontWeight: 500,
-                color: 'var(--sidebar-item-text, #DCE3FF)',
-                opacity: 0.85,
-                letterSpacing: '0.01em',
-                lineHeight: 1.25,
-                display: 'block',
-                marginTop: 2,
-              }}
-            >
-              AI Asset Detection<br />Intelligence
-            </span>
-          </div>
-        </Link>
+              <X size={18} />
+            </button>
+          )}
+        </div>
 
         {/* Group Label */}
         <p
@@ -171,6 +206,7 @@ export default function SidebarNav() {
               <Link
                 key={href}
                 href={href}
+                onClick={onClose}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -245,7 +281,7 @@ export default function SidebarNav() {
         <p style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.85)', margin: '0 0 12px', lineHeight: 1.4 }}>
           {engineInfo.provider} {engineInfo.model ? `(${engineInfo.model})` : ''} & queue worker active for P&ID extraction.
         </p>
-        <Link href="/settings" style={{ textDecoration: 'none', display: 'block' }}>
+        <Link href="/settings" onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
           <button
             type="button"
             style={{
@@ -359,6 +395,7 @@ export default function SidebarNav() {
         ) : (
           <Link
             href="/login"
+            onClick={onClose}
             style={{
               display: 'flex',
               alignItems: 'center',

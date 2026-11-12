@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { UploadSimple, Lightning, Trash, CaretLeft, CaretRight, CheckCircle, FileText, FileCode } from '@phosphor-icons/react';
 import { Card, CardHeader, Button, Badge } from '@/components/ui';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,7 +140,13 @@ export default function DocumentsPage() {
   const canUpload = !!selectedProjectId && !!selectedFile && !uploading;
 
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <>
+      <LoadingOverlay
+        isVisible={uploading}
+        message="Uploading document..."
+        subMessage="Processing file. This may take a moment."
+      />
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Header */}
       <div>
         <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--foreground)', margin: '0 0 8px' }}>Documents</h1>
@@ -278,9 +285,18 @@ export default function DocumentsPage() {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: 'var(--foreground-muted)', gap: 8 }}>
-            <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
-            <span style={{ fontSize: '14px' }}>Loading documents…</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                border: '3px solid var(--border)',
+                borderTopColor: 'var(--primary)',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--foreground)' }}>Loading documents...</span>
           </div>
         ) : documents.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', color: 'var(--foreground-muted)' }}>
@@ -288,7 +304,7 @@ export default function DocumentsPage() {
             <p style={{ fontSize: '14px', margin: 0 }}>No documents uploaded yet. Choose a project and upload a file above.</p>
           </div>
         ) : (
-          <div style={{ width: '100%', overflowX: 'auto' }}>
+          <div style={{ width: '100%', overflowX: 'auto' }} className="document-table-wrapper">
             <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
@@ -433,6 +449,7 @@ export default function DocumentsPage() {
           </Button>
         </div>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }

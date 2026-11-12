@@ -46,7 +46,7 @@ export default function Header({
             type="button"
             onClick={onMenuToggle}
             aria-label="Open Navigation Menu"
-            className="md:hidden"
+            className="mobile-menu-btn"
             style={{
               width: 44,
               height: 44,
@@ -54,10 +54,10 @@ export default function Header({
               background: 'var(--surface)',
               border: '1px solid var(--border)',
               color: 'var(--text-primary)',
-              display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
             <Menu size={20} />

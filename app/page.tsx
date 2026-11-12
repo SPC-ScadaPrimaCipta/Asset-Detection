@@ -20,6 +20,7 @@ interface Stats {
   jobs: Record<string, number>;
   detections: { total: number; confirmed: number; pending: number; rejected: number; avg_confidence: number };
   assets: { total: number; confirmed: number; pending: number };
+  dataset?: { confirmed: number; threshold: number; readyForRetrain: boolean };
 }
 
 export default function Dashboard() {
@@ -119,6 +120,7 @@ export default function Dashboard() {
               gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
               gap: 20,
             }}
+            className="stat-cards-row"
           >
             <StatCard
               label="Detected Assets"
@@ -133,6 +135,17 @@ export default function Dashboard() {
               trend={`${pendingCount} need validation`}
               trendPositive={pendingCount === 0}
               sparkline={<Sparkline positive={pendingCount === 0} data={[35, 30, 28, 22, 18, 14, 12, 8]} />}
+            />
+            <StatCard
+              label="YOLO Dataset (Active Learning)"
+              value={`${(stats?.dataset?.confirmed ?? confirmedCount).toLocaleString()} / 500`}
+              trend={
+                (stats?.dataset?.readyForRetrain ?? confirmedCount >= 500)
+                  ? 'Ready for Colab Retrain'
+                  : `${Math.max(0, 500 - (stats?.dataset?.confirmed ?? confirmedCount))} to next threshold`
+              }
+              trendPositive={stats?.dataset?.readyForRetrain ?? confirmedCount >= 500}
+              sparkline={<Sparkline positive={true} data={[10, 25, 45, 80, 120, 180, 240, stats?.dataset?.confirmed ?? confirmedCount]} />}
             />
           </div>
 

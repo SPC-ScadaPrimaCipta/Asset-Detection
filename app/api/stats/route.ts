@@ -47,6 +47,11 @@ export async function GET() {
         confirmed: parseInt(as_.confirmed ?? '0', 10),
         pending:   parseInt(as_.pending ?? '0', 10),
       },
+      dataset: {
+        confirmed:       parseInt(ds.confirmed ?? '0', 10),
+        threshold:       500,
+        readyForRetrain: parseInt(ds.confirmed ?? '0', 10) >= 500,
+      },
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

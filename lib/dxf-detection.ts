@@ -330,18 +330,33 @@ function matchTagToLegend(tag: string, legend: LegendSymbolRef[]): LegendSymbolR
     try { if (buildTagRegex(sym.tag_pattern).test(tag)) return sym; } catch { /* skip */ }
   }
 
-  // Fallback 1: match tag prefix (letters before first dash/number) against aliases.
-  // e.g. tag "GV-068" → prefix "GV" → match alias "GV" in Gate Valve symbol.
-  const prefixMatch = tag.match(/^([A-Za-z]{1,6})/);
-  const prefix = prefixMatch?.[1]?.toUpperCase() ?? '';
-  if (prefix.length >= 1) {
+  // Fallback 1: multi-character prefix match (PSH, FIC, LCV) — more specific
+  // Extract all letters before first dash/digit: PSH-P-0201 → PSH
+  const fullPrefixMatch = tag.match(/^([A-Za-z]{2,6})[-_0-9]/);
+  if (fullPrefixMatch) {
+    const fullPrefix = fullPrefixMatch[1].toUpperCase();
+    for (const sym of legend) {
+      if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
+      const aliases: string[] = Array.isArray(sym.aliases)
+        ? (sym.aliases as string[]).map((a: string) => a.trim().toUpperCase())
+        : [];
+      if (aliases.includes(fullPrefix)) return sym;
+      const sn = (sym.symbol_name ?? '').toUpperCase();
+      if (sn && (sn === fullPrefix || sn.startsWith(fullPrefix + ' ') || sn.startsWith(fullPrefix + '-'))) return sym;
+    }
+  }
+
+  // Fallback 2: single-letter prefix ONLY if tag has 1 letter + dash/digit (P-101, V-201)
+  // Reject multi-letter tags (PSH-P-0201) to avoid false match P→Piping
+  const singlePrefixMatch = tag.match(/^([A-Za-z])[-_0-9]/);
+  if (singlePrefixMatch && tag.match(/^[A-Za-z][-_0-9]/)) {
+    const prefix = singlePrefixMatch[1].toUpperCase();
     for (const sym of legend) {
       if (UNCLASSIFIED_TYPES.has((sym.asset_type ?? '').trim().toLowerCase())) continue;
       const aliases: string[] = Array.isArray(sym.aliases)
         ? (sym.aliases as string[]).map((a: string) => a.trim().toUpperCase())
         : [];
       if (aliases.includes(prefix)) return sym;
-      // Also try symbol_name starts-with prefix
       const sn = (sym.symbol_name ?? '').toUpperCase();
       if (sn && (sn === prefix || sn.startsWith(prefix + ' ') || sn.startsWith(prefix + '-'))) return sym;
     }
@@ -409,8 +424,9 @@ function estimateBbox(
 ): DxfDetection['bbox'] {
   const hw = extents.width * ratio, hh = extents.height * ratio;
   const center = dxfToNorm(pos, extents);
-  const w = Math.max(12, Math.round((hw * 2 / extents.width) * 1000));
-  const h = Math.max(12, Math.round((hh * 2 / extents.height) * 1000));
+  const minBboxSize = env.DXF_MIN_BBOX_SIZE ?? 12;
+  const w = Math.max(minBboxSize, Math.round((hw * 2 / extents.width) * 1000));
+  const h = Math.max(minBboxSize, Math.round((hh * 2 / extents.height) * 1000));
   const x = Math.max(0, center.x - Math.round(w / 2));
   const y = Math.max(0, center.y - Math.round(h / 2));
   // Clamp agar tidak overflow 1000 (viewer/SVG overlay berasumsi x+w ≤ 1000).
@@ -511,11 +527,12 @@ export function shouldExpandBboxWithDescription(
   bbox: DxfDetection['bbox'],
   point: DxfPoint,
   extents: DxfParseResult['extents'],
+  multiplier = 1.5, // Tunable: lower = tighter bbox (exclude distant setpoint text)
 ): boolean {
   const p = dxfToNorm(point, extents);
   const dx = Math.max(bbox.x - p.x, 0, p.x - (bbox.x + bbox.width));
   const dy = Math.max(bbox.y - p.y, 0, p.y - (bbox.y + bbox.height));
-  const localLimit = Math.max(24, Math.max(bbox.width, bbox.height) * 2.5);
+  const localLimit = Math.max(24, Math.max(bbox.width, bbox.height) * multiplier);
   return Math.hypot(dx, dy) <= localLimit;
 }
 
@@ -905,6 +922,82 @@ function markRegionConflicts(detections: DxfDetection[], regionIndex: number): D
   return detections;
 }
 
+// ── Vertical text stacking merge ──────────────────────────────────────────────
+/**
+ * Merge vertically-stacked TEXT entities that form multi-line instrument tags.
+ * Example: "PSH" above "P-0201" → "PSH-P-0201" (single entity).
+ * Returns new array with merged entities; originals untouched.
+ */
+function mergeVerticalTextStack(
+  texts: DxfTextEntity[],
+  medianTextHeight: number | undefined,
+): DxfTextEntity[] {
+  if (!medianTextHeight || medianTextHeight <= 0) return texts;
+  
+  // Vertical tolerance: 1.5× median text height (close enough to be same tag)
+  const vTol = medianTextHeight * 1.5;
+  // Horizontal tolerance: must align (X within 30% of text height)
+  const hTol = medianTextHeight * 0.3;
+  
+  const consumed = new Set<DxfTextEntity>();
+  const result: DxfTextEntity[] = [];
+  
+  // Sort by layer then Y-descending (top to bottom in visual space)
+  const sorted = [...texts].sort((a, b) => {
+    if (a.layer !== b.layer) return a.layer.localeCompare(b.layer);
+    return b.position.y - a.position.y; // DXF Y: larger = higher
+  });
+  
+  for (let i = 0; i < sorted.length; i++) {
+    if (consumed.has(sorted[i])) continue;
+    
+    const top = sorted[i];
+    let stacked = [top];
+    consumed.add(top);
+    
+    // Look for texts below this one (lower Y)
+    for (let j = i + 1; j < sorted.length; j++) {
+      const below = sorted[j];
+      if (consumed.has(below)) continue;
+      if (below.layer !== top.layer) break; // different layer
+      
+      const last = stacked[stacked.length - 1];
+      const vDist = Math.abs(last.position.y - below.position.y);
+      const hDist = Math.abs(last.position.x - below.position.x);
+      
+      if (vDist <= vTol && hDist <= hTol) {
+        stacked.push(below);
+        consumed.add(below);
+      } else if (vDist > vTol * 2) {
+        // Too far vertically, stop searching
+        break;
+      }
+    }
+    
+    // Merge if multi-line found
+    if (stacked.length > 1) {
+      // Concatenate with hyphen if missing (PSH + P-0201 → PSH-P-0201)
+      const parts = stacked.map(t => t.text.trim()).filter(Boolean);
+      const merged = parts.join(parts.some(p => p.includes('-')) ? '' : '-');
+      
+      // Use topmost entity as template (highest Y)
+      result.push({
+        ...top,
+        text: merged,
+        // Position = center of bounding box
+        position: {
+          x: stacked.reduce((sum, t) => sum + t.position.x, 0) / stacked.length,
+          y: stacked.reduce((sum, t) => sum + t.position.y, 0) / stacked.length,
+        },
+      });
+    } else {
+      result.push(top);
+    }
+  }
+  
+  return result;
+}
+
 // ── Confidence guard ──────────────────────────────────────────────────────────
 // Bbox tanpa geometri asli (estimasi dari posisi tag) DILARANG tampil yakin:
 // cap 0.55 + wajib vision/klasifikasi lanjutan.
@@ -988,6 +1081,8 @@ export function runDxfDetection(
     adaptiveSpatial?: boolean;
     /** Pre-parsed DXF (Blok 9: hindari parse ganda file besar). */
     parsed?: DxfParseResult;
+    /** Spatial expansion multiplier for description text association (default 1.5). */
+    bboxExpansionMultiplier?: number;
   } = {},
 ): DxfDetectionResult {
   const {
@@ -995,6 +1090,7 @@ export function runDxfDetection(
     layerProfiles = [],
     adaptiveSpatial = true,
     parsed: parsedOpt,
+    bboxExpansionMultiplier = 1.5,
   } = options;
 
   const parsed = parsedOpt ?? parseDxf(buffer);
@@ -1074,9 +1170,16 @@ export function runDxfDetection(
       return fromBottom < titleStripHeight;
     };
 
+    // 0. Merge vertically-stacked TEXT entities (multi-line tags like PSH\nP-0201)
+    // P&ID software often splits instrument tags into multiple TEXT entities:
+    //   Line 1: "PSH" (function code)
+    //   Line 2: "P-0201" (tag number)
+    // Merge them BEFORE isTagText so pattern matching sees "PSH-P-0201" not just "P-0201".
+    const mergedTexts = mergeVerticalTextStack(allTexts, medTextH);
+
     // 1. Collect all tag texts from tag layers — excluding title block area
     // dan HARD-EXCLUDE layer construction/revision/title (sebelumnya lolos jadi duplikat).
-    const tagTexts = allTexts.filter(t =>
+    const tagTexts = mergedTexts.filter(t =>
       isTagLayer(t.layer, lookup) &&
       !isExcludedLayer(t.layer, lookup) &&
       isTagText(t.text, legendTagRegexes) &&
@@ -1085,7 +1188,7 @@ export function runDxfDetection(
 
     // 1b. Tier kedua: teks pola-tag di layer 'unknown' TAPI cocok pola legend
     // (recall untuk layer non-standar; base confidence lebih rendah).
-    const unknownTierTags = allTexts.filter(t => {
+    const unknownTierTags = mergedTexts.filter(t => {
       if (getLayerProfile(t.layer, lookup).category !== 'unknown') return false;
       if (isInTitleStrip(t.position)) return false;
       const txt = t.text.trim();
@@ -1107,7 +1210,7 @@ export function runDxfDetection(
     // Excluded: title strip, excluded layers, texts already picked up as tagTexts.
     const alreadyTagSet = new Set(tagTexts.map(t => t.text.trim().toUpperCase()));
     const destLabelTags: Array<{ text: DxfTextEntity; extractedTag: string; labelText: string }> = [];
-    for (const t of allTexts) {
+    for (const t of mergedTexts) {
       if (isExcludedLayer(t.layer, lookup)) continue;
       if (isInTitleStrip(t.position)) continue;
       const raw = t.text.trim();
@@ -1122,7 +1225,7 @@ export function runDxfDetection(
     }
 
     // 2. Description texts — layer ignore/title tidak boleh jadi deskripsi.
-    const descTexts = buildDescTexts(allTexts, lookup, legendTagRegexes, medTextH);
+    const descTexts = buildDescTexts(mergedTexts, lookup, legendTagRegexes, medTextH);
 
     // 3. Deduplicate tag texts: same tag at same position across layers → keep best
     const dedupedTags: DxfTextEntity[] = [];
@@ -1261,7 +1364,7 @@ export function runDxfDetection(
         }
       }
 
-      if (descMatch && shouldExpandBboxWithDescription(bbox, descMatch.position, globalExtents)) {
+      if (descMatch && shouldExpandBboxWithDescription(bbox, descMatch.position, globalExtents, bboxExpansionMultiplier)) {
         bbox = expandBbox(bbox, descMatch.position, globalExtents);
       }
 
@@ -1365,17 +1468,59 @@ export function runDxfDetection(
     for (const cc of circleCandidates) {
       if (coveredCircles.has(cc)) continue;
 
-      // Check if any tag text is near this circle — HANYA dari layer non-excluded
-      // (sebelumnya teks construction ikut jadi tag → duplikat & salah label).
-      const nearTag = allTexts
-        .filter(t => !isExcludedLayer(t.layer, lookup) && isTagText(t.text, legendTagRegexes))
+      // ── ISA Instrument Circle: group all TEXT within radius ──
+      // Typical structure: TI (type) + W-0105 (tag) + B (modifier) stacked vertically.
+      // Collect ALL text within 1.2× radius, then parse composite tag.
+      const textsInCircle = allTexts
+        .filter(t => !isExcludedLayer(t.layer, lookup))
         .map(t => ({ t, d: dist(t.position, cc.center) }))
-        .filter(({ d }) => d <= cc.radius * 4)
-        .sort((a, b) => a.d - b.d)[0]?.t ?? null;
+        .filter(({ d }) => d <= cc.radius * 1.2) // inside circle + small margin
+        .sort((a, b) => b.t.position.y - a.t.position.y) // top to bottom (Y descending)
+        .map(({ t }) => t.text.trim());
 
-      const tag = nearTag ? nearTag.text.trim() : null;
+      // Parse composite: find tag (pattern match), type indicator, modifier
+      let compositeTag: string | null = null;
+      let typeIndicator: string | null = null;
+      let modifier: string | null = null;
+
+      for (const txt of textsInCircle) {
+        if (!compositeTag && isTagText(txt, legendTagRegexes)) {
+          compositeTag = txt; // primary tag (e.g. W-0105)
+        } else if (!typeIndicator && /^[A-Z]{1,4}$/i.test(txt) && txt.length <= 4) {
+          // Short alpha code: TI, TIT, PDT, PSH, FI, etc.
+          typeIndicator = txt.toUpperCase();
+        } else if (!modifier && /^[A-Z]$/i.test(txt)) {
+          // Single letter modifier: B, H, C, etc.
+          modifier = txt.toUpperCase();
+        }
+      }
+
+      // Fallback: if no tag found via pattern, check any nearby tag text (original logic)
+      if (!compositeTag) {
+        const nearTag = allTexts
+          .filter(t => !isExcludedLayer(t.layer, lookup) && isTagText(t.text, legendTagRegexes))
+          .map(t => ({ t, d: dist(t.position, cc.center) }))
+          .filter(({ d }) => d <= cc.radius * 4)
+          .sort((a, b) => a.d - b.d)[0]?.t ?? null;
+        compositeTag = nearTag ? nearTag.text.trim() : null;
+      }
+
+      const tag = compositeTag;
       const legendMatch = tag ? matchTagToLegend(tag, legend) : null;
-      const assetType = legendMatch?.asset_type ?? UNKNOWN_ASSET_TYPE;
+      // AssetType: prefer legend match, then infer from type indicator (TI → Temperature Indicator)
+      let assetType = legendMatch?.asset_type ?? UNKNOWN_ASSET_TYPE;
+      if (assetType === UNKNOWN_ASSET_TYPE && typeIndicator) {
+        // Simple type mapping (expand as needed)
+        const typeMap: Record<string, string> = {
+          TI: 'Temperature Indicator', TIT: 'Temperature Indicator Transmitter',
+          PI: 'Pressure Indicator', PIT: 'Pressure Indicator Transmitter',
+          PDT: 'Pressure Differential Transmitter', PSH: 'Pressure Switch High',
+          FI: 'Flow Indicator', FIT: 'Flow Indicator Transmitter',
+          LI: 'Level Indicator', LIT: 'Level Indicator Transmitter',
+          LG: 'Level Glass', LSH: 'Level Switch High', LSL: 'Level Switch Low',
+        };
+        assetType = typeMap[typeIndicator] ?? UNKNOWN_ASSET_TYPE;
+      }
 
       const r = cc.radius;
       const raw: RawBbox = { minX: cc.center.x-r, minY: cc.center.y-r, maxX: cc.center.x+r, maxY: cc.center.y+r };
@@ -1397,11 +1542,19 @@ export function runDxfDetection(
       const needsAi = !tag && !legendMatch;
       if (needsAi) { aiCandidates++; }
 
+      // Build evidence with composite info
+      const evidenceItems: string[] = [];
+      if (tag) evidenceItems.push(`Tag: ${tag}`);
+      if (typeIndicator) evidenceItems.push(`Type indicator: ${typeIndicator}`);
+      if (modifier) evidenceItems.push(`Modifier: ${modifier}`);
+      if (textsInCircle.length > 0) evidenceItems.push(`Composite label: ${textsInCircle.join(' / ')}`);
+      if (!tag && !typeIndicator) evidenceItems.push('CIRCLE entity detected', 'No tag or type found');
+
       if (classifyDxfCandidate({
         source: 'CIRCLE',
         assetTag: tag,
         assetType,
-        evidence: tag ? [`Nearby tag text: ${tag}`] : ['CIRCLE entity detected', 'No legend match'],
+        evidence: evidenceItems.length > 0 ? evidenceItems : ['CIRCLE entity detected'],
       }) === 'DROP') {
         continue;
       }
@@ -1515,9 +1668,11 @@ export function runDxfDetection(
 
     // Merge distance anchored to label height (mm-anchored, Blok 8):
     // same-tag boxes within ~3 label-heights merge; clamped to sane bounds.
+    // Use DXF_DEDUP_MERGE_DIST env var to override (default 40, lenient mode 150)
     const scopeSpan = Math.max(extents.width, extents.height);
     const medHNorm = medTextH && scopeSpan > 0 ? (medTextH / scopeSpan) * 1000 : DEFAULT_MERGE_DIST_NORM / 3;
-    const mergeDist = Math.min(80, Math.max(20, medHNorm * 3));
+    const autoMergeDist = Math.min(80, Math.max(20, medHNorm * 3));
+    const mergeDist = env.DXF_DEDUP_MERGE_DIST ?? autoMergeDist;
     const regionDets = markRegionConflicts(deduplicate(detections, lookup, mergeDist), regionIndex);
     for (const d of regionDets) { d.regionIndex = regionIndex; d.pidPage = pidPage; }
     allDetections.push(...regionDets);

@@ -1,0 +1,14 @@
+# YOLO Detection Worker Dependencies
+ultralytics==8.3.0        # YOLOv8
+opencv-python==4.10.0.84  # Image processing
+pillow==10.4.0            # Image I/O
+numpy==1.26.4             # Array operations
+torch==2.4.0              # PyTorch backend
+torchvision==0.19.0       # Vision transforms
+
+# Optional OCR (choose one)
+# pytesseract==0.3.13     # Tesseract wrapper
+paddleocr==2.8.1          # PaddleOCR (better multi-language)
+
+# Vector embeddings
+sentence-transformers==3.1.0  # CLIP embeddings

@@ -1,0 +1,14 @@
+node_modules
+.next
+storage
+dataset_yolo
+*.zip
+.git
+.gitignore
+.env*.local
+*.log
+coverage
+__tests__
+eval
+test-fixtures
+
