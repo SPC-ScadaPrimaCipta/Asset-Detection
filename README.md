@@ -267,3 +267,4 @@ npm run worker
 
 TagFlow dikembangkan sebagai solusi industri independen untuk otomasi teknik perminyakan, gas, dan petrokimia.
 Hak Cipta © 2026 Tim Pengembang TagFlow.
+"# Asset-Detection" 
