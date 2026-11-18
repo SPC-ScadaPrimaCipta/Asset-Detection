@@ -397,6 +397,32 @@ async function migrate() {
       console.warn('  019b migration warning (non-fatal):', e.message);
     }
 
+    // Migration 021: additive SQL files that existed but were never wired into
+    // this runner (missing detections.main_equipment broke Run Detection).
+    // All are idempotent (IF NOT EXISTS). migrate-mdo-v3.sql is deliberately
+    // excluded: it DROPs detection_mdo_records columns the current code uses.
+    for (const file of [
+      'migrate-detection-columns.sql',
+      'migrate-validation-status.sql',
+      'migrate-field-metadata.sql',
+      'migrate-knowledge-first.sql',
+      'migrate-company-knowledge.sql',
+      'migrate-builtin-standards.sql',
+      'migrate-training-tracking.sql',
+      'migrate-dxf-pipe-relations.sql',
+      'migrate-pgvector-training.sql',
+    ]) {
+      try {
+        const f = join(__dirname, '..', 'sql', file);
+        if (existsSync(f)) {
+          await p.query(readFileSync(f, 'utf-8'));
+          console.log(`  021: ${file} OK`);
+        }
+      } catch (e) {
+        console.warn(`  021 ${file} warning (non-fatal):`, e.message);
+      }
+    }
+
     const r = await p.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     console.log('Tables:', r.rows.map(x => x.tablename).join(', '));
     console.log('Migration complete.');

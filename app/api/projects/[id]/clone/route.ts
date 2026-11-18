@@ -51,6 +51,7 @@ export async function POST(
     // 3. Clone custom project legends (if any)
     const legRes = await client.query('SELECT * FROM legends WHERE project_id = $1', [sourceProjectId]);
     const legendMap = new Map<string, string>(); // oldLegendId -> newLegendId
+    const symbolMap = new Map<string, string>(); // oldSymbolId -> newSymbolId
 
     for (const leg of legRes.rows) {
       const newLegendId = uuidv4();
@@ -65,6 +66,8 @@ export async function POST(
       // Clone symbols
       const symRes = await client.query('SELECT * FROM legend_symbols WHERE legend_id = $1', [leg.id]);
       for (const sym of symRes.rows) {
+        const newSymbolId = uuidv4();
+        symbolMap.set(sym.id, newSymbolId);
         await client.query(
           `INSERT INTO legend_symbols (
              id, legend_id, asset_type, symbol_name, tag_pattern, description,
@@ -73,7 +76,7 @@ export async function POST(
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
           [
-            uuidv4(),
+            newSymbolId,
             newLegendId,
             sym.asset_type,
             sym.symbol_name,
@@ -125,7 +128,33 @@ export async function POST(
       }
     }
 
-    // 5. Clone detection jobs and detections
+    // 5. Clone detection jobs and detections.
+    // Detections are copied server-side with every column the table actually
+    // has (read from information_schema), so the clone keeps review state,
+    // MDO fields, etc. and never breaks when migrations add or rename columns.
+    // Only the foreign keys that point into the cloned project are remapped.
+    const remappedDetectionCols = [
+      'id', 'job_id', 'document_id', 'document_page_id',
+      'legend_id', 'legend_symbol_id', 'legend_reference_id',
+    ];
+    const detColRes = await client.query<{ column_name: string; udt_name: string }>(
+      `SELECT column_name, udt_name FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'detections'
+       ORDER BY ordinal_position`
+    );
+    const detCols = detColRes.rows.map((r) => r.column_name);
+    // Params: $1 = source detection id, $2.. = remapped values in remappedDetectionCols order.
+    // Explicit casts: parameters in an INSERT ... SELECT list are not typed from
+    // the target column, so an untyped $n would arrive as text and fail on uuid.
+    const detSelectExprs = detColRes.rows.map(({ column_name, udt_name }) => {
+      const i = remappedDetectionCols.indexOf(column_name);
+      return i >= 0 ? `$${i + 2}::${udt_name}` : `"${column_name}"`;
+    });
+    const cloneDetectionSql = `INSERT INTO detections (${detCols.map((c) => `"${c}"`).join(', ')})
+       SELECT ${detSelectExprs.join(', ')} FROM detections WHERE id = $1`;
+    const remapLegend = (lid: string | null) => (lid ? legendMap.get(lid) || lid : null);
+    const remapSymbol = (sid: string | null) => (sid ? symbolMap.get(sid) || sid : null);
+
     const jobRes = await client.query('SELECT * FROM detection_jobs WHERE project_id = $1', [sourceProjectId]);
     for (const job of jobRes.rows) {
       const newJobId = uuidv4();
@@ -155,48 +184,24 @@ export async function POST(
       );
 
       // Clone detections
-      const detRes = await client.query('SELECT * FROM detections WHERE job_id = $1', [job.id]);
+      const detRes = await client.query(
+        'SELECT id, document_page_id, legend_id, legend_symbol_id, legend_reference_id FROM detections WHERE job_id = $1',
+        [job.id]
+      );
       for (const det of detRes.rows) {
-        const mappedPageId = det.document_page_id ? pageMap.get(det.document_page_id) : null;
-        const mappedDetLegendId = det.legend_id ? (legendMap.get(det.legend_id) || det.legend_id) : null;
-
-        await client.query(
-          `INSERT INTO detections (
-             id, job_id, document_id, document_page_id, asset_tag, asset_type,
-             description, confidence, bbox_x, bbox_y, bbox_w, bbox_h,
-             legend_symbol_id, evidence, status, legend_id, tag_confidence,
-             tag_verified, tag_format_valid, validation_status, validation_notes,
-             component_name, mdo_confidence, mdo_suggested_tag, mdo_approved
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
-          [
-            uuidv4(),
-            newJobId,
-            mappedDocId,
-            mappedPageId,
-            det.asset_tag,
-            det.asset_type,
-            det.description,
-            det.confidence,
-            det.bbox_x,
-            det.bbox_y,
-            det.bbox_w,
-            det.bbox_h,
-            det.legend_symbol_id,
-            det.evidence,
-            det.status,
-            mappedDetLegendId,
-            det.tag_confidence,
-            det.tag_verified,
-            det.tag_format_valid,
-            det.validation_status,
-            det.validation_notes,
-            det.component_name,
-            det.mdo_confidence,
-            det.mdo_suggested_tag,
-            det.mdo_approved,
-          ]
-        );
+        const remapped: Record<string, string | null> = {
+          id: uuidv4(),
+          job_id: newJobId,
+          document_id: mappedDocId,
+          document_page_id: det.document_page_id ? pageMap.get(det.document_page_id) ?? null : null,
+          legend_id: remapLegend(det.legend_id),
+          legend_symbol_id: remapSymbol(det.legend_symbol_id),
+          legend_reference_id: remapSymbol(det.legend_reference_id),
+        };
+        await client.query(cloneDetectionSql, [
+          det.id,
+          ...remappedDetectionCols.map((col) => remapped[col]),
+        ]);
       }
     }
 
